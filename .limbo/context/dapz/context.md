@@ -7,6 +7,9 @@ Run: simaris add 'test knowledge' --type fact --source inbox && simaris show 1 â
 ## Result
 Working atom: a single knowledge unit can be created, stored, linked, and read back from SQLite.
 
+## Outcome
+Knowledge unit atom verified. SQLite schema with units + links tables, 3 CLI commands (add/show/link), 11 passing tests. Schema supports all born-with fields (id, content, type, source, confidence, verified, tags, conditions, created, updated) and grows-over-time fields via links table. Committed as 99935f8.
+
 ## AcceptanceCriteria
 1. simaris add 'test knowledge' --type fact --source inbox exits 0, prints unit ID. 2. simaris show 1 displays: content, type=fact, source=inbox, non-empty created, confidence=1.0, verified=0. 3. simaris add 'related thing' --type procedure --source inbox creates unit id 2. 4. simaris link 1 2 --rel related_to exits 0. 5. simaris show 1 after linking displays outgoing link to unit 2 with rel=related_to. 6. Unit test: invalid type 'bogus' returns CHECK constraint error. 7. Unit test: duplicate link returns PK violation. 8. Unit test: deleting unit cascades to remove its links. 9. Integration test: SIMARIS_HOME override creates db at that path.
 

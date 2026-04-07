@@ -25,6 +25,14 @@ pub struct Link {
     pub relationship: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InboxItem {
+    pub id: i64,
+    pub content: String,
+    pub source: String,
+    pub created: String,
+}
+
 pub fn data_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("SIMARIS_HOME") {
         return PathBuf::from(dir);
@@ -68,7 +76,14 @@ fn initialize(conn: &Connection) -> Result<()> {
             PRIMARY KEY (from_id, to_id, relationship)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_links_to ON links(to_id);",
+        CREATE INDEX IF NOT EXISTS idx_links_to ON links(to_id);
+
+        CREATE TABLE IF NOT EXISTS inbox (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            content TEXT NOT NULL,
+            source  TEXT NOT NULL DEFAULT 'cli',
+            created TEXT NOT NULL DEFAULT (datetime('now'))
+        );",
     )?;
     Ok(())
 }
@@ -149,6 +164,33 @@ pub fn add_link(conn: &Connection, from_id: i64, to_id: i64, relationship: &str)
     Ok(())
 }
 
+pub fn drop_item(conn: &Connection, content: &str, source: &str) -> Result<i64> {
+    if content.trim().is_empty() {
+        anyhow::bail!("Content cannot be empty");
+    }
+    conn.execute(
+        "INSERT INTO inbox (content, source) VALUES (?1, ?2)",
+        params![content, source],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn list_inbox(conn: &Connection) -> Result<Vec<InboxItem>> {
+    let mut stmt =
+        conn.prepare("SELECT id, content, source, created FROM inbox ORDER BY created ASC")?;
+    let items = stmt
+        .query_map([], |row| {
+            Ok(InboxItem {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                source: row.get(2)?,
+                created: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(items)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,12 +207,12 @@ mod tests {
         let conn = memory_db();
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('units','links')",
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('units','links','inbox')",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 2);
+        assert_eq!(count, 3);
     }
 
     #[test]
@@ -214,5 +256,58 @@ mod tests {
 
         let links = get_links_to(&conn, 2).unwrap();
         assert!(links.is_empty());
+    }
+
+    #[test]
+    fn test_inbox_schema_created() {
+        let conn = memory_db();
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='inbox'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_add_inbox_item_defaults() {
+        let conn = memory_db();
+        let id = drop_item(&conn, "raw thought", "cli").unwrap();
+        assert_eq!(id, 1);
+        let items = list_inbox(&conn).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].content, "raw thought");
+        assert_eq!(items[0].source, "cli");
+        assert!(!items[0].created.is_empty());
+    }
+
+    #[test]
+    fn test_add_inbox_item_custom_source() {
+        let conn = memory_db();
+        drop_item(&conn, "phone idea", "phone").unwrap();
+        let items = list_inbox(&conn).unwrap();
+        assert_eq!(items[0].source, "phone");
+    }
+
+    #[test]
+    fn test_get_inbox_items_ordering() {
+        let conn = memory_db();
+        drop_item(&conn, "first", "cli").unwrap();
+        drop_item(&conn, "second", "cli").unwrap();
+        drop_item(&conn, "third", "cli").unwrap();
+        let items = list_inbox(&conn).unwrap();
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].content, "first");
+        assert_eq!(items[1].content, "second");
+        assert_eq!(items[2].content, "third");
+    }
+
+    #[test]
+    fn test_add_inbox_item_empty_content_rejected() {
+        let conn = memory_db();
+        assert!(drop_item(&conn, "", "cli").is_err());
+        assert!(drop_item(&conn, "   ", "cli").is_err());
     }
 }

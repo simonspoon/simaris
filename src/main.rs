@@ -49,6 +49,19 @@ enum Command {
         #[arg(long)]
         rel: Relationship,
     },
+
+    /// Drop raw knowledge into the inbox
+    Drop {
+        /// Content to capture
+        content: String,
+
+        /// Source of the capture
+        #[arg(long, default_value = "cli")]
+        source: String,
+    },
+
+    /// List pending inbox items
+    Inbox,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -123,6 +136,14 @@ fn main() -> Result<()> {
         } => {
             db::add_link(&conn, from_id, to_id, rel.as_str())?;
             display::print_linked(from_id, to_id, rel.as_str(), cli.json);
+        }
+        Command::Drop { content, source } => {
+            let id = db::drop_item(&conn, &content, &source)?;
+            display::print_dropped(id, cli.json);
+        }
+        Command::Inbox => {
+            let items = db::list_inbox(&conn)?;
+            display::print_inbox(&items, cli.json);
         }
     }
 

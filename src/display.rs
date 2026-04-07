@@ -1,4 +1,4 @@
-use crate::db::{Link, Unit};
+use crate::db::{InboxItem, Link, Unit};
 
 pub fn print_unit(unit: &Unit, outgoing: &[Link], incoming: &[Link], json: bool) {
     if json {
@@ -57,5 +57,39 @@ pub fn print_linked(from_id: i64, to_id: i64, relationship: &str, json: bool) {
         );
     } else {
         println!("Linked {from_id} -> {to_id} ({relationship})");
+    }
+}
+
+pub fn print_dropped(id: i64, json: bool) {
+    if json {
+        println!("{}", serde_json::json!({ "id": id }));
+    } else {
+        println!("Dropped item {id}");
+    }
+}
+
+pub fn print_inbox(items: &[InboxItem], json: bool) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(items).unwrap());
+    } else if items.is_empty() {
+        println!("Inbox is empty.");
+    } else {
+        for item in items {
+            let content = if item.content.chars().count() > 80 {
+                let end = item
+                    .content
+                    .char_indices()
+                    .nth(80)
+                    .map(|(i, _)| i)
+                    .unwrap_or(item.content.len());
+                format!("{}...", &item.content[..end])
+            } else {
+                item.content.clone()
+            };
+            println!(
+                "[{}] {} ({})  {}",
+                item.id, item.created, item.source, content
+            );
+        }
     }
 }

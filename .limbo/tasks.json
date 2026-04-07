@@ -5,7 +5,7 @@
       "id": "dapz",
       "name": "Define knowledge unit schema and verify the atom",
       "parent": null,
-      "status": "in-review",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -37,10 +37,70 @@
           "to": "in-review",
           "by": "pm",
           "at": "2026-04-07T13:45:31.152728-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-07T13:48:27.682436-04:00"
         }
       ],
       "created": "2026-04-07T13:37:07.558536-04:00",
-      "updated": "2026-04-07T13:45:31.152728-04:00"
+      "updated": "2026-04-07T13:48:27.682436-04:00"
+    },
+    {
+      "id": "tfue",
+      "name": "Add inbox capture — simaris drop command",
+      "parent": null,
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-07T14:34:19.54144-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-07T14:35:23.288606-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-07T14:35:28.364898-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-07T14:35:28.379779-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-07T14:39:09.487505-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "in-progress",
+          "by": "pm",
+          "at": "2026-04-07T14:40:23.459319-04:00",
+          "reason": "Code review: display.rs byte-index slice panics on multi-byte UTF-8 chars"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-07T14:40:42.935168-04:00"
+        }
+      ],
+      "created": "2026-04-07T14:32:45.024148-04:00",
+      "updated": "2026-04-07T14:40:42.935168-04:00"
     }
   ]
 }

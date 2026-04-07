@@ -105,3 +105,57 @@ fn test_json_output() {
     assert_eq!(parsed["unit"]["content"], "json test");
     assert_eq!(parsed["unit"]["type"], "fact");
 }
+
+#[test]
+fn test_drop_command() {
+    let env = TestEnv::new("drop");
+    let out = env.run_ok(&["drop", "raw idea about caching"]);
+    assert!(out.contains("Dropped item 1"), "got: {out}");
+
+    let out = env.run_ok(&["inbox"]);
+    assert!(out.contains("raw idea about caching"), "got: {out}");
+}
+
+#[test]
+fn test_drop_command_custom_source() {
+    let env = TestEnv::new("dropsource");
+    env.run_ok(&["drop", "phone idea", "--source", "phone"]);
+    let out = env.run_ok(&["inbox"]);
+    assert!(out.contains("(phone)"), "got: {out}");
+}
+
+#[test]
+fn test_inbox_empty() {
+    let env = TestEnv::new("inboxempty");
+    let out = env.run_ok(&["inbox"]);
+    assert!(out.contains("Inbox is empty."), "got: {out}");
+}
+
+#[test]
+fn test_drop_empty_content_rejected() {
+    let env = TestEnv::new("dropempty");
+    let output = env.run(&["drop", ""]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Content cannot be empty"),
+        "got stderr: {stderr}"
+    );
+}
+
+#[test]
+fn test_inbox_json_output() {
+    let env = TestEnv::new("inboxjson");
+    env.run_ok(&["drop", "first thought"]);
+    env.run_ok(&["drop", "second thought", "--source", "api"]);
+
+    let out = env.run_ok(&["--json", "inbox"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+    assert_eq!(parsed.len(), 2);
+    assert_eq!(parsed[0]["content"], "first thought");
+    assert_eq!(parsed[0]["source"], "cli");
+    assert_eq!(parsed[1]["content"], "second thought");
+    assert_eq!(parsed[1]["source"], "api");
+    assert!(parsed[0]["id"].is_number());
+    assert!(parsed[0]["created"].is_string());
+}
