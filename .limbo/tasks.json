@@ -52,7 +52,7 @@
       "id": "tfue",
       "name": "Add inbox capture — simaris drop command",
       "parent": null,
-      "status": "in-review",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -97,10 +97,57 @@
           "to": "in-review",
           "by": "pm",
           "at": "2026-04-07T14:40:42.935168-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-07T14:41:29.20189-04:00"
         }
       ],
       "created": "2026-04-07T14:32:45.024148-04:00",
-      "updated": "2026-04-07T14:40:42.935168-04:00"
+      "updated": "2026-04-07T14:41:29.20189-04:00"
+    },
+    {
+      "id": "carr",
+      "name": "Add promote command — bridge inbox items to typed units",
+      "parent": null,
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-07T14:47:07.487404-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-07T14:47:17.053421-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-07T14:47:21.074514-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-07T14:47:21.089764-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-07T14:49:44.474029-04:00"
+        }
+      ],
+      "created": "2026-04-07T14:46:12.083756-04:00",
+      "updated": "2026-04-07T14:49:44.474029-04:00"
     }
   ]
 }

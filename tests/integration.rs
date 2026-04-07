@@ -159,3 +159,31 @@ fn test_inbox_json_output() {
     assert!(parsed[0]["id"].is_number());
     assert!(parsed[0]["created"].is_string());
 }
+
+#[test]
+fn test_promote_command() {
+    let env = TestEnv::new("promote");
+    env.run_ok(&["drop", "caching matters for perf"]);
+
+    let out = env.run_ok(&["promote", "1", "--type", "fact"]);
+    assert!(out.contains("Added unit 1"), "got: {out}");
+
+    let out = env.run_ok(&["show", "1"]);
+    assert!(out.contains("caching matters for perf"), "got: {out}");
+    assert!(out.contains("fact"), "got: {out}");
+
+    let out = env.run_ok(&["inbox"]);
+    assert!(out.contains("Inbox is empty."), "got: {out}");
+}
+
+#[test]
+fn test_promote_nonexistent_id() {
+    let env = TestEnv::new("promotebad");
+    let output = env.run(&["promote", "999", "--type", "fact"]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Inbox item 999 not found"),
+        "got stderr: {stderr}"
+    );
+}

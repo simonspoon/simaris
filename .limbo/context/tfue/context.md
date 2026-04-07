@@ -7,6 +7,9 @@ Run: simaris drop 'raw idea about caching' && simaris drop 'another thought' && 
 ## Result
 Working inbox: raw knowledge can be captured with zero friction and listed for later processing.
 
+## Outcome
+Inbox capture working. simaris drop for zero-friction text capture, simaris inbox to list pending items. Separate inbox table (id, content, source, created). UTF-8 safe truncation. Empty content validation. 21 total tests passing. Committed as 7c19822.
+
 ## AcceptanceCriteria
 1. simaris drop 'some raw text' exits 0, prints Dropped item N. 2. simaris inbox lists the item with ID, timestamp, content. 3. simaris inbox on empty inbox prints 'Inbox is empty.' exit 0. 4. simaris drop '' (empty) exits non-zero with error. 5. Drop 3 items then simaris inbox shows all 3 in chronological order. 6. simaris inbox --json returns JSON array with id, content, source, created per item. 7. simaris drop 'thing' --source phone shows source=phone in inbox listing. 8. cargo test passes with new inbox tests + no regression on existing 11 tests. 9. simaris show and simaris link still work (no regression).
 

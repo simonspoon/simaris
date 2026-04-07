@@ -175,6 +175,37 @@ pub fn drop_item(conn: &Connection, content: &str, source: &str) -> Result<i64> 
     Ok(conn.last_insert_rowid())
 }
 
+pub fn get_inbox_item(conn: &Connection, id: i64) -> Result<InboxItem> {
+    let item = conn
+        .query_row(
+            "SELECT id, content, source, created FROM inbox WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(InboxItem {
+                    id: row.get(0)?,
+                    content: row.get(1)?,
+                    source: row.get(2)?,
+                    created: row.get(3)?,
+                })
+            },
+        )
+        .context(format!("Inbox item {id} not found"))?;
+    Ok(item)
+}
+
+pub fn promote_item(conn: &Connection, inbox_id: i64, unit_type: &str) -> Result<i64> {
+    let tx = conn.unchecked_transaction()?;
+    let item = get_inbox_item(&tx, inbox_id)?;
+    tx.execute(
+        "INSERT INTO units (content, type, source) VALUES (?1, ?2, ?3)",
+        params![item.content, unit_type, item.source],
+    )?;
+    let unit_id = tx.last_insert_rowid();
+    tx.execute("DELETE FROM inbox WHERE id = ?1", params![inbox_id])?;
+    tx.commit()?;
+    Ok(unit_id)
+}
+
 pub fn list_inbox(conn: &Connection) -> Result<Vec<InboxItem>> {
     let mut stmt =
         conn.prepare("SELECT id, content, source, created FROM inbox ORDER BY created ASC")?;
@@ -309,5 +340,41 @@ mod tests {
         let conn = memory_db();
         assert!(drop_item(&conn, "", "cli").is_err());
         assert!(drop_item(&conn, "   ", "cli").is_err());
+    }
+
+    #[test]
+    fn test_promote_item() {
+        let conn = memory_db();
+        drop_item(&conn, "promote me", "cli").unwrap();
+        let unit_id = promote_item(&conn, 1, "fact").unwrap();
+        let unit = get_unit(&conn, unit_id).unwrap();
+        assert_eq!(unit.content, "promote me");
+        assert_eq!(unit.unit_type, "fact");
+        assert_eq!(unit.source, "cli");
+    }
+
+    #[test]
+    fn test_promote_deletes_inbox_item() {
+        let conn = memory_db();
+        drop_item(&conn, "ephemeral", "cli").unwrap();
+        promote_item(&conn, 1, "idea").unwrap();
+        let items = list_inbox(&conn).unwrap();
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_promote_nonexistent_fails() {
+        let conn = memory_db();
+        let result = promote_item(&conn, 999, "fact");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_promote_preserves_source() {
+        let conn = memory_db();
+        drop_item(&conn, "phone thought", "phone").unwrap();
+        let unit_id = promote_item(&conn, 1, "lesson").unwrap();
+        let unit = get_unit(&conn, unit_id).unwrap();
+        assert_eq!(unit.source, "phone");
     }
 }

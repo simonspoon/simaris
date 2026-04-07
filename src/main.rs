@@ -60,6 +60,16 @@ enum Command {
         source: String,
     },
 
+    /// Promote an inbox item to a typed knowledge unit
+    Promote {
+        /// Inbox item ID
+        id: i64,
+
+        /// Type for the new unit
+        #[arg(long, rename_all = "snake_case")]
+        r#type: UnitType,
+    },
+
     /// List pending inbox items
     Inbox,
 }
@@ -140,6 +150,10 @@ fn main() -> Result<()> {
         Command::Drop { content, source } => {
             let id = db::drop_item(&conn, &content, &source)?;
             display::print_dropped(id, cli.json);
+        }
+        Command::Promote { id, r#type } => {
+            let unit_id = db::promote_item(&conn, id, r#type.as_str())?;
+            display::print_added(unit_id, cli.json);
         }
         Command::Inbox => {
             let items = db::list_inbox(&conn)?;
