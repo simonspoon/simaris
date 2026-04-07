@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Unit {
@@ -34,12 +34,25 @@ pub struct InboxItem {
 }
 
 pub fn data_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("SIMARIS_HOME") {
-        return PathBuf::from(dir);
+    let base = if let Ok(dir) = std::env::var("SIMARIS_HOME") {
+        PathBuf::from(dir)
+    } else {
+        dirs::home_dir()
+            .expect("Could not determine home directory")
+            .join(".simaris")
+    };
+    if std::env::var("SIMARIS_ENV").as_deref() == Ok("dev") {
+        return base.join("dev");
     }
-    dirs::home_dir()
-        .expect("Could not determine home directory")
-        .join(".simaris")
+    base
+}
+
+pub fn db_path() -> PathBuf {
+    data_dir().join("sanctuary.db")
+}
+
+pub fn backup_dir() -> PathBuf {
+    data_dir().join("backups")
 }
 
 pub fn connect() -> Result<Connection> {
@@ -295,6 +308,69 @@ pub fn list_inbox(conn: &Connection) -> Result<Vec<InboxItem>> {
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(items)
+}
+
+pub fn create_backup(conn: &Connection) -> Result<PathBuf> {
+    let dir = backup_dir();
+    std::fs::create_dir_all(&dir)?;
+    let timestamp = conn.query_row("SELECT strftime('%Y%m%d-%H%M%S', 'now')", [], |r| {
+        r.get::<_, String>(0)
+    })?;
+    let backup_path = dir.join(format!("sanctuary-{timestamp}.db"));
+    conn.execute("VACUUM INTO ?1", [backup_path.to_str().unwrap()])?;
+    prune_backups(&dir, 10)?;
+    Ok(backup_path)
+}
+
+fn prune_backups(dir: &Path, keep: usize) -> Result<()> {
+    let mut entries: Vec<_> = std::fs::read_dir(dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .map(|n| n.starts_with("sanctuary-") && n.ends_with(".db"))
+                .unwrap_or(false)
+        })
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+    if entries.len() > keep {
+        for entry in &entries[..entries.len() - keep] {
+            std::fs::remove_file(entry.path())?;
+        }
+    }
+    Ok(())
+}
+
+pub fn list_backups() -> Result<Vec<String>> {
+    let dir = backup_dir();
+    if !dir.exists() {
+        return Ok(vec![]);
+    }
+    let mut names: Vec<String> = std::fs::read_dir(&dir)?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_str()?.to_string();
+            if name.starts_with("sanctuary-") && name.ends_with(".db") {
+                Some(name)
+            } else {
+                None
+            }
+        })
+        .collect();
+    names.sort();
+    Ok(names)
+}
+
+pub fn restore_backup(filename: &str) -> Result<()> {
+    let backup_path = backup_dir().join(filename);
+    if !backup_path.exists() {
+        anyhow::bail!("Backup not found: {filename}");
+    }
+    let db = db_path();
+    let _ = std::fs::remove_file(db.with_extension("db-wal"));
+    let _ = std::fs::remove_file(db.with_extension("db-shm"));
+    std::fs::copy(&backup_path, &db)?;
+    Ok(())
 }
 
 #[cfg(test)]

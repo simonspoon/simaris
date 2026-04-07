@@ -1,4 +1,5 @@
 use crate::db::{InboxItem, Link, Unit};
+use std::path::Path;
 
 pub fn print_unit(unit: &Unit, outgoing: &[Link], incoming: &[Link], json: bool) {
     if json {
@@ -117,5 +118,36 @@ pub fn print_inbox(items: &[InboxItem], json: bool) {
                 item.id, item.created, item.source, content
             );
         }
+    }
+}
+
+pub fn print_backup_created(path: &Path, json: bool) {
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({ "path": path.to_str().unwrap_or("") })
+        );
+    } else {
+        println!("Backup created: {}", path.display());
+    }
+}
+
+pub fn print_backups(names: &[String], json: bool) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(names).unwrap());
+    } else if names.is_empty() {
+        println!("No backups found.");
+    } else {
+        for name in names {
+            println!("{name}");
+        }
+    }
+}
+
+pub fn print_restored(filename: &str, json: bool) {
+    if json {
+        println!("{}", serde_json::json!({ "restored": filename }));
+    } else {
+        println!("Restored from: {filename}");
     }
 }

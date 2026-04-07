@@ -159,7 +159,7 @@
       "id": "tmwu",
       "name": "Add list and search commands with FTS5",
       "parent": null,
-      "status": "in-review",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -191,10 +191,57 @@
           "to": "in-review",
           "by": "pm",
           "at": "2026-04-07T15:22:10.886571-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-07T15:23:58.853754-04:00"
         }
       ],
       "created": "2026-04-07T15:16:24.176211-04:00",
-      "updated": "2026-04-07T15:22:10.886576-04:00"
+      "updated": "2026-04-07T15:23:58.853754-04:00"
+    },
+    {
+      "id": "mxih",
+      "name": "Add backup/restore and dev environment safety",
+      "parent": null,
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-07T16:26:06.071017-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-07T16:26:20.278993-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-07T16:26:20.287505-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-07T16:26:20.303895-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-07T16:30:24.961827-04:00"
+        }
+      ],
+      "created": "2026-04-07T16:24:56.600333-04:00",
+      "updated": "2026-04-07T16:30:24.961827-04:00"
     }
   ]
 }

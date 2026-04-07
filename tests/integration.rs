@@ -246,3 +246,152 @@ fn test_list_json_output() {
     assert!(parsed[0]["id"].is_number());
     assert!(parsed[0]["type"].is_string());
 }
+
+#[test]
+fn test_backup_command() {
+    let env = TestEnv::new("backup");
+    env.run_ok(&["add", "important knowledge", "--type", "fact"]);
+    let out = env.run_ok(&["backup"]);
+    assert!(out.contains("Backup created:"), "got: {out}");
+    let backups_dir = env.dir.join("backups");
+    assert!(backups_dir.exists(), "backups directory should exist");
+    let entries: Vec<_> = std::fs::read_dir(&backups_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(entries.len(), 1, "should have exactly one backup");
+    let name = entries[0].file_name().to_str().unwrap().to_string();
+    assert!(
+        name.starts_with("sanctuary-") && name.ends_with(".db"),
+        "backup name should match pattern: {name}"
+    );
+}
+
+#[test]
+fn test_restore_command() {
+    let env = TestEnv::new("restore");
+    // Seed original data
+    env.run_ok(&["add", "original knowledge", "--type", "fact"]);
+    // Create backup
+    env.run_ok(&["backup"]);
+    // Add more data after backup
+    env.run_ok(&["add", "extra stuff", "--type", "lesson"]);
+    // Verify both items exist
+    let out = env.run_ok(&["--json", "list"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(parsed.len(), 2, "should have 2 units before restore");
+
+    // Find the backup filename
+    let backups_dir = env.dir.join("backups");
+    let backup_name = std::fs::read_dir(&backups_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .next()
+        .unwrap()
+        .file_name()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    // Restore
+    let out = env.run_ok(&["restore", &backup_name]);
+    assert!(out.contains("Restored from:"), "got: {out}");
+
+    // Verify only original data remains
+    let out = env.run_ok(&["--json", "list"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(
+        parsed.len(),
+        1,
+        "should have 1 unit after restore, got: {out}"
+    );
+    assert_eq!(parsed[0]["content"], "original knowledge");
+}
+
+#[test]
+fn test_backup_prune() {
+    let env = TestEnv::new("prune");
+    let backups_dir = env.dir.join("backups");
+    std::fs::create_dir_all(&backups_dir).unwrap();
+    // Create 12 backup files manually to avoid timing issues
+    for i in 0..12 {
+        let name = format!("sanctuary-20260101-{:06}.db", i);
+        std::fs::write(backups_dir.join(&name), "fake backup").unwrap();
+    }
+    // Seed data and run a real backup (which triggers pruning)
+    env.run_ok(&["add", "prune test", "--type", "fact"]);
+    env.run_ok(&["backup"]);
+    // Count remaining backups
+    let remaining: Vec<_> = std::fs::read_dir(&backups_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name().to_str().unwrap().to_string();
+            name.starts_with("sanctuary-") && name.ends_with(".db")
+        })
+        .collect();
+    assert!(
+        remaining.len() <= 10,
+        "should have at most 10 backups after pruning, got: {}",
+        remaining.len()
+    );
+}
+
+#[test]
+fn test_restore_list() {
+    let env = TestEnv::new("restorelist");
+    let backups_dir = env.dir.join("backups");
+    std::fs::create_dir_all(&backups_dir).unwrap();
+    // Create two backup files
+    std::fs::write(
+        backups_dir.join("sanctuary-20260101-000000.db"),
+        "fake backup 1",
+    )
+    .unwrap();
+    std::fs::write(
+        backups_dir.join("sanctuary-20260201-000000.db"),
+        "fake backup 2",
+    )
+    .unwrap();
+    // List backups (restore with no args)
+    let out = env.run_ok(&["restore"]);
+    assert!(
+        out.contains("sanctuary-20260101-000000.db"),
+        "should list first backup: {out}"
+    );
+    assert!(
+        out.contains("sanctuary-20260201-000000.db"),
+        "should list second backup: {out}"
+    );
+}
+
+#[test]
+fn test_env_dev_isolation() {
+    let dir =
+        std::env::temp_dir().join(format!("simaris-test-devisolation-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bin = env!("CARGO_BIN_EXE_simaris");
+    let output = Command::new(bin)
+        .args(["add", "dev test", "--type", "fact"])
+        .env("SIMARIS_HOME", &dir)
+        .env("SIMARIS_ENV", "dev")
+        .output()
+        .expect("Failed to execute simaris");
+    assert!(
+        output.status.success(),
+        "command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // DB should be created in the dev subdirectory
+    assert!(
+        dir.join("dev").join("sanctuary.db").exists(),
+        "DB should be at {}/dev/sanctuary.db",
+        dir.display()
+    );
+    // DB should NOT be at the base dir
+    assert!(
+        !dir.join("sanctuary.db").exists(),
+        "DB should not be at base dir"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

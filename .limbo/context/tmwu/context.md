@@ -7,6 +7,9 @@ Seed 5 units of mixed types. simaris list shows all 5. simaris list --type fact 
 ## Result
 Units are findable by type filter and full-text search. Unblocks assembly (ask) and immune system (scan).
 
+## Outcome
+List and search working. FTS5 full-text index on content/type/tags/source. simaris list with --type filter, simaris search with BM25 ranking. 38 total tests. Committed as 6b1bda7.
+
 ## AcceptanceCriteria
 1. simaris list shows all units ordered by created DESC. 2. simaris list --type fact shows only facts. 3. simaris list --type bogus returns empty (exit 0). 4. simaris list --json returns JSON array. 5. simaris search 'query' returns matching units by relevance. 6. simaris search 'nonexistent' returns empty (exit 0). 7. simaris search --json returns JSON array. 8. FTS5 stays in sync after add and promote. 9. All existing 27 tests pass. 10. cargo fmt && cargo clippy -- -D warnings && cargo test.
 

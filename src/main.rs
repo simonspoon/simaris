@@ -85,6 +85,15 @@ enum Command {
         /// Search query
         query: String,
     },
+
+    /// Create a backup of the knowledge store
+    Backup,
+
+    /// Restore from a backup (no args = list backups)
+    Restore {
+        /// Backup filename to restore
+        filename: Option<String>,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -135,6 +144,23 @@ impl Relationship {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Commands that don't need a connection
+    if let Command::Restore { filename } = &cli.command {
+        match filename {
+            Some(f) => {
+                db::restore_backup(f)?;
+                display::print_restored(f, cli.json);
+            }
+            None => {
+                let backups = db::list_backups()?;
+                display::print_backups(&backups, cli.json);
+            }
+        }
+        return Ok(());
+    }
+
+    // All other commands need a connection
     let conn = db::connect()?;
 
     match cli.command {
@@ -181,6 +207,11 @@ fn main() -> Result<()> {
             let units = db::search_units(&conn, &query)?;
             display::print_units(&units, cli.json);
         }
+        Command::Backup => {
+            let path = db::create_backup(&conn)?;
+            display::print_backup_created(&path, cli.json);
+        }
+        Command::Restore { .. } => unreachable!(),
     }
 
     Ok(())
