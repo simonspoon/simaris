@@ -366,6 +366,16 @@ fn test_restore_list() {
 }
 
 #[test]
+fn test_digest_empty_inbox() {
+    let env = TestEnv::new("digestempty");
+    let out = env.run_ok(&["digest"]);
+    assert!(
+        out.contains("Nothing to digest") || out.contains("empty"),
+        "got: {out}"
+    );
+}
+
+#[test]
 fn test_env_dev_isolation() {
     let dir =
         std::env::temp_dir().join(format!("simaris-test-devisolation-{}", std::process::id()));

@@ -206,7 +206,7 @@
       "id": "mxih",
       "name": "Add backup/restore and dev environment safety",
       "parent": null,
-      "status": "in-review",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -238,10 +238,70 @@
           "to": "in-review",
           "by": "pm",
           "at": "2026-04-07T16:30:24.961827-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-07T16:32:03.623208-04:00"
         }
       ],
       "created": "2026-04-07T16:24:56.600333-04:00",
-      "updated": "2026-04-07T16:30:24.961827-04:00"
+      "updated": "2026-04-07T16:32:03.623208-04:00"
+    },
+    {
+      "id": "vnhw",
+      "name": "Add digest command — LLM-powered inbox processing",
+      "parent": null,
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-07T16:48:18.707908-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-07T16:48:32.063306-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-07T16:48:32.072137-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-07T16:48:32.088871-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-07T16:50:49.842838-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "in-progress",
+          "by": "pm",
+          "at": "2026-04-07T16:52:56.112416-04:00",
+          "reason": "Code review: fence stripping bug, missing transaction, DB error handling in loop"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-07T16:54:23.678145-04:00"
+        }
+      ],
+      "created": "2026-04-07T16:45:39.22133-04:00",
+      "updated": "2026-04-07T16:54:23.678146-04:00"
     }
   ]
 }

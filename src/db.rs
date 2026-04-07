@@ -252,6 +252,53 @@ pub fn add_link(conn: &Connection, from_id: i64, to_id: i64, relationship: &str)
     Ok(())
 }
 
+#[allow(dead_code)]
+pub fn add_unit_full(
+    conn: &Connection,
+    content: &str,
+    unit_type: &str,
+    source: &str,
+    tags: &[String],
+) -> Result<i64> {
+    let tags_json = serde_json::to_string(tags)?;
+    conn.execute(
+        "INSERT INTO units (content, type, source, tags) VALUES (?1, ?2, ?3, ?4)",
+        params![content, unit_type, source, tags_json],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+#[allow(dead_code)]
+pub fn delete_inbox_item(conn: &Connection, id: i64) -> Result<()> {
+    let affected = conn.execute("DELETE FROM inbox WHERE id = ?1", params![id])?;
+    if affected == 0 {
+        anyhow::bail!("Inbox item {id} not found");
+    }
+    Ok(())
+}
+
+/// Atomically create a unit from an inbox item and delete the inbox item.
+/// Used by the digest command to ensure no duplicates on failure.
+pub fn digest_inbox_item(
+    conn: &Connection,
+    inbox_id: i64,
+    content: &str,
+    unit_type: &str,
+    source: &str,
+    tags: &[String],
+) -> Result<i64> {
+    let tx = conn.unchecked_transaction()?;
+    let tags_json = serde_json::to_string(tags)?;
+    tx.execute(
+        "INSERT INTO units (content, type, source, tags) VALUES (?1, ?2, ?3, ?4)",
+        params![content, unit_type, source, tags_json],
+    )?;
+    let unit_id = tx.last_insert_rowid();
+    tx.execute("DELETE FROM inbox WHERE id = ?1", params![inbox_id])?;
+    tx.commit()?;
+    Ok(unit_id)
+}
+
 pub fn drop_item(conn: &Connection, content: &str, source: &str) -> Result<i64> {
     if content.trim().is_empty() {
         anyhow::bail!("Content cannot be empty");
@@ -573,6 +620,38 @@ mod tests {
         add_unit(&conn, "some content here", "fact", "test").unwrap();
         let units = search_units(&conn, "nonexistent").unwrap();
         assert!(units.is_empty());
+    }
+
+    #[test]
+    fn test_add_unit_full() {
+        let conn = memory_db();
+        let tags = vec!["rust".to_string(), "performance".to_string()];
+        let id = add_unit_full(&conn, "tagged content", "fact", "test", &tags).unwrap();
+        let unit = get_unit(&conn, id).unwrap();
+        assert_eq!(unit.content, "tagged content");
+        assert_eq!(unit.unit_type, "fact");
+        assert_eq!(unit.source, "test");
+        assert_eq!(unit.tags, vec!["rust", "performance"]);
+    }
+
+    #[test]
+    fn test_delete_inbox_item() {
+        let conn = memory_db();
+        drop_item(&conn, "to delete", "cli").unwrap();
+        let items = list_inbox(&conn).unwrap();
+        assert_eq!(items.len(), 1);
+        delete_inbox_item(&conn, items[0].id).unwrap();
+        let items = list_inbox(&conn).unwrap();
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_delete_inbox_item_nonexistent() {
+        let conn = memory_db();
+        let result = delete_inbox_item(&conn, 999);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("999"), "error should mention the id: {err}");
     }
 
     #[test]

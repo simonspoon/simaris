@@ -7,6 +7,9 @@ DEV: SIMARIS_ENV=dev simaris add 'test' --type fact && ls ~/.simaris/dev/sanctua
 ## Result
 Brain is protected: dev isolation prevents accidents during development, backup/restore protects against data loss in production use.
 
+## Outcome
+Backup/restore + dev env working. SIMARIS_ENV=dev for isolation. VACUUM INTO for safe backups. Auto-prune keeps 10. Restore with WAL/SHM cleanup. main() restructured for deferred connect. 43 total tests. Committed as a059e98.
+
 ## AcceptanceCriteria
 1. SIMARIS_ENV=dev routes to ~/.simaris/dev/sanctuary.db. 2. SIMARIS_HOME still overrides everything. 3. simaris backup creates timestamped file in backups/. 4. simaris restore lists available backups when no arg given. 5. simaris restore <file> replaces DB with backup, deletes wal/shm sidecars. 6. After restore, data matches backup state. 7. Creating 12 backups leaves only 10 (oldest pruned). 8. All existing 38 tests pass. 9. cargo fmt && cargo clippy && cargo test.
 

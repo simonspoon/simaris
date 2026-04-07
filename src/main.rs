@@ -1,4 +1,5 @@
 mod db;
+mod digest;
 mod display;
 
 use anyhow::Result;
@@ -94,6 +95,9 @@ enum Command {
         /// Backup filename to restore
         filename: Option<String>,
     },
+
+    /// Digest inbox items through LLM classification
+    Digest,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -210,6 +214,56 @@ fn main() -> Result<()> {
         Command::Backup => {
             let path = db::create_backup(&conn)?;
             display::print_backup_created(&path, cli.json);
+        }
+        Command::Digest => {
+            let items = db::list_inbox(&conn)?;
+            if items.is_empty() {
+                println!("Inbox is empty. Nothing to digest.");
+                return Ok(());
+            }
+            digest::check_claude()?;
+            println!("Processing {} inbox item(s)...\n", items.len());
+            let mut success = 0;
+            let mut failed = 0;
+            for item in &items {
+                print!(
+                    "[{}] {}... ",
+                    item.id,
+                    &item.content.chars().take(50).collect::<String>()
+                );
+                match digest::classify(&item.content) {
+                    Ok(result) => {
+                        let content = result.content.as_deref().unwrap_or(&item.content);
+                        match db::digest_inbox_item(
+                            &conn,
+                            item.id,
+                            content,
+                            &result.unit_type,
+                            &item.source,
+                            &result.tags,
+                        ) {
+                            Ok(unit_id) => {
+                                println!(
+                                    "-> unit {} ({}) [{}]",
+                                    unit_id,
+                                    result.unit_type,
+                                    result.tags.join(", ")
+                                );
+                                success += 1;
+                            }
+                            Err(e) => {
+                                println!("DB ERROR: {e}");
+                                failed += 1;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("SKIP: {e}");
+                        failed += 1;
+                    }
+                }
+            }
+            println!("\nDigested: {success}, Skipped: {failed}");
         }
         Command::Restore { .. } => unreachable!(),
     }
