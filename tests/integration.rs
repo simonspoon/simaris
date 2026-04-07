@@ -187,3 +187,62 @@ fn test_promote_nonexistent_id() {
         "got stderr: {stderr}"
     );
 }
+
+#[test]
+fn test_list_command() {
+    let env = TestEnv::new("list");
+    env.run_ok(&["add", "fact one", "--type", "fact"]);
+    env.run_ok(&["add", "procedure one", "--type", "procedure"]);
+    env.run_ok(&["add", "idea one", "--type", "idea"]);
+    let out = env.run_ok(&["list"]);
+    assert!(out.contains("fact one"), "got: {out}");
+    assert!(out.contains("procedure one"), "got: {out}");
+    assert!(out.contains("idea one"), "got: {out}");
+}
+
+#[test]
+fn test_list_filter() {
+    let env = TestEnv::new("listfilter");
+    env.run_ok(&["add", "fact one", "--type", "fact"]);
+    env.run_ok(&["add", "fact two", "--type", "fact"]);
+    env.run_ok(&["add", "idea one", "--type", "idea"]);
+    let out = env.run_ok(&["list", "--type", "fact"]);
+    assert!(out.contains("fact one"), "got: {out}");
+    assert!(out.contains("fact two"), "got: {out}");
+    assert!(!out.contains("idea one"), "got: {out}");
+}
+
+#[test]
+fn test_search_command() {
+    let env = TestEnv::new("search");
+    env.run_ok(&["add", "caching improves performance", "--type", "fact"]);
+    env.run_ok(&["add", "deploy with cargo install", "--type", "procedure"]);
+    let out = env.run_ok(&["search", "caching"]);
+    assert!(out.contains("caching improves performance"), "got: {out}");
+    assert!(!out.contains("deploy"), "got: {out}");
+}
+
+#[test]
+fn test_search_empty_result() {
+    let env = TestEnv::new("searchempty");
+    env.run_ok(&["add", "some content", "--type", "fact"]);
+    let output = env.run(&["search", "nonexistent"]);
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("No units found."), "got: {stdout}");
+}
+
+#[test]
+fn test_list_json_output() {
+    let env = TestEnv::new("listjson");
+    env.run_ok(&["add", "fact one", "--type", "fact", "--source", "test"]);
+    env.run_ok(&["add", "idea one", "--type", "idea", "--source", "test"]);
+
+    let out = env.run_ok(&["--json", "list"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+    assert_eq!(parsed.len(), 2);
+    assert!(parsed.iter().any(|u| u["content"] == "fact one"));
+    assert!(parsed.iter().any(|u| u["content"] == "idea one"));
+    assert!(parsed[0]["id"].is_number());
+    assert!(parsed[0]["type"].is_string());
+}

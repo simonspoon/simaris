@@ -68,6 +68,32 @@ pub fn print_dropped(id: i64, json: bool) {
     }
 }
 
+pub fn print_units(units: &[Unit], json: bool) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(units).unwrap());
+    } else if units.is_empty() {
+        println!("No units found.");
+    } else {
+        for unit in units {
+            let content = if unit.content.chars().count() > 80 {
+                let end = unit
+                    .content
+                    .char_indices()
+                    .nth(80)
+                    .map(|(i, _)| i)
+                    .unwrap_or(unit.content.len());
+                format!("{}...", &unit.content[..end])
+            } else {
+                unit.content.clone()
+            };
+            println!(
+                "[{}] {} ({})  {}",
+                unit.id, unit.unit_type, unit.source, content
+            );
+        }
+    }
+}
+
 pub fn print_inbox(items: &[InboxItem], json: bool) {
     if json {
         println!("{}", serde_json::to_string_pretty(items).unwrap());

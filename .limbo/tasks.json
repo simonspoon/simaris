@@ -112,7 +112,7 @@
       "id": "carr",
       "name": "Add promote command — bridge inbox items to typed units",
       "parent": null,
-      "status": "in-review",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -144,10 +144,57 @@
           "to": "in-review",
           "by": "pm",
           "at": "2026-04-07T14:49:44.474029-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-07T14:52:55.309626-04:00"
         }
       ],
       "created": "2026-04-07T14:46:12.083756-04:00",
-      "updated": "2026-04-07T14:49:44.474029-04:00"
+      "updated": "2026-04-07T14:52:55.309626-04:00"
+    },
+    {
+      "id": "tmwu",
+      "name": "Add list and search commands with FTS5",
+      "parent": null,
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-07T15:18:16.844067-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-07T15:18:30.348796-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-07T15:18:30.356971-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-07T15:18:30.37327-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-07T15:22:10.886571-04:00"
+        }
+      ],
+      "created": "2026-04-07T15:16:24.176211-04:00",
+      "updated": "2026-04-07T15:22:10.886576-04:00"
     }
   ]
 }

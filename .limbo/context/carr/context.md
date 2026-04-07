@@ -7,6 +7,9 @@ Run: simaris drop 'caching is important for perf' && simaris promote 1 --type fa
 ## Result
 Complete capture pipeline: drop → inbox → promote → unit. Raw knowledge flows from inbox into the typed store.
 
+## Outcome
+Promote command working. Full capture pipeline: drop → inbox → promote → unit. Transaction-safe (atomic read+insert+delete). Source preserved from inbox item. 27 total tests passing. Committed as 4793063.
+
 ## AcceptanceCriteria
 1. promote on valid inbox id returns new unit id with correct content/type/source. 2. Inbox item deleted after promote — inbox list empty. 3. Promote nonexistent id returns error. 4. Promote with invalid type returns CHECK constraint error. 5. Full pipeline: drop → promote → show unit → inbox empty. 6. All existing tests pass (no regression). 7. cargo fmt && cargo clippy -- -D warnings && cargo test.
 

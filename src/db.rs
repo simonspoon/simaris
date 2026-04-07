@@ -85,7 +85,61 @@ fn initialize(conn: &Connection) -> Result<()> {
             created TEXT NOT NULL DEFAULT (datetime('now'))
         );",
     )?;
+
+    let fts_exists: bool = conn.query_row(
+        "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='units_fts'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if !fts_exists {
+        conn.execute_batch(
+            "
+            CREATE VIRTUAL TABLE units_fts USING fts5(
+                content, type, tags, source,
+                content=units, content_rowid=id
+            );
+
+            CREATE TRIGGER units_ai AFTER INSERT ON units BEGIN
+                INSERT INTO units_fts(rowid, content, type, tags, source)
+                VALUES (new.id, new.content, new.type, new.tags, new.source);
+            END;
+
+            CREATE TRIGGER units_ad AFTER DELETE ON units BEGIN
+                INSERT INTO units_fts(units_fts, rowid, content, type, tags, source)
+                VALUES ('delete', old.id, old.content, old.type, old.tags, old.source);
+            END;
+
+            CREATE TRIGGER units_au AFTER UPDATE ON units BEGIN
+                INSERT INTO units_fts(units_fts, rowid, content, type, tags, source)
+                VALUES ('delete', old.id, old.content, old.type, old.tags, old.source);
+                INSERT INTO units_fts(rowid, content, type, tags, source)
+                VALUES (new.id, new.content, new.type, new.tags, new.source);
+            END;
+            ",
+        )?;
+    }
+
     Ok(())
+}
+
+fn row_to_unit(row: &rusqlite::Row) -> rusqlite::Result<Unit> {
+    let tags_str: String = row.get(6)?;
+    let conditions_str: String = row.get(7)?;
+    let verified_int: i32 = row.get(5)?;
+    Ok(Unit {
+        id: row.get(0)?,
+        content: row.get(1)?,
+        unit_type: row.get(2)?,
+        source: row.get(3)?,
+        confidence: row.get(4)?,
+        verified: verified_int != 0,
+        tags: serde_json::from_str(&tags_str).unwrap_or_default(),
+        conditions: serde_json::from_str(&conditions_str)
+            .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+        created: row.get(8)?,
+        updated: row.get(9)?,
+    })
 }
 
 pub fn add_unit(conn: &Connection, content: &str, unit_type: &str, source: &str) -> Result<i64> {
@@ -97,30 +151,51 @@ pub fn add_unit(conn: &Connection, content: &str, unit_type: &str, source: &str)
 }
 
 pub fn get_unit(conn: &Connection, id: i64) -> Result<Unit> {
-    let unit = conn.query_row(
-        "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
-         FROM units WHERE id = ?1",
-        params![id],
-        |row| {
-            let tags_str: String = row.get(6)?;
-            let conditions_str: String = row.get(7)?;
-            let verified_int: i32 = row.get(5)?;
-            Ok(Unit {
-                id: row.get(0)?,
-                content: row.get(1)?,
-                unit_type: row.get(2)?,
-                source: row.get(3)?,
-                confidence: row.get(4)?,
-                verified: verified_int != 0,
-                tags: serde_json::from_str(&tags_str).unwrap_or_default(),
-                conditions: serde_json::from_str(&conditions_str)
-                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
-                created: row.get(8)?,
-                updated: row.get(9)?,
-            })
-        },
-    ).context(format!("Unit {id} not found"))?;
+    let unit = conn
+        .query_row(
+            "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
+             FROM units WHERE id = ?1",
+            params![id],
+            row_to_unit,
+        )
+        .context(format!("Unit {id} not found"))?;
     Ok(unit)
+}
+
+pub fn list_units(conn: &Connection, type_filter: Option<&str>) -> Result<Vec<Unit>> {
+    let units = match type_filter {
+        Some(t) => {
+            let mut stmt = conn.prepare(
+                "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
+                 FROM units WHERE type = ?1 ORDER BY created DESC",
+            )?;
+            stmt.query_map(params![t], row_to_unit)?
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        None => {
+            let mut stmt = conn.prepare(
+                "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
+                 FROM units ORDER BY created DESC",
+            )?;
+            stmt.query_map([], row_to_unit)?
+                .collect::<Result<Vec<_>, _>>()?
+        }
+    };
+    Ok(units)
+}
+
+pub fn search_units(conn: &Connection, query: &str) -> Result<Vec<Unit>> {
+    let mut stmt = conn.prepare(
+        "SELECT u.id, u.content, u.type, u.source, u.confidence, u.verified, u.tags, u.conditions, u.created, u.updated
+         FROM units_fts
+         JOIN units u ON u.id = units_fts.rowid
+         WHERE units_fts MATCH ?1
+         ORDER BY rank",
+    )?;
+    let units = stmt
+        .query_map(params![query], row_to_unit)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(units)
 }
 
 pub fn get_links_from(conn: &Connection, id: i64) -> Result<Vec<Link>> {
@@ -376,5 +451,60 @@ mod tests {
         let unit_id = promote_item(&conn, 1, "lesson").unwrap();
         let unit = get_unit(&conn, unit_id).unwrap();
         assert_eq!(unit.source, "phone");
+    }
+
+    #[test]
+    fn test_list_all_units() {
+        let conn = memory_db();
+        add_unit(&conn, "fact one", "fact", "test").unwrap();
+        add_unit(&conn, "procedure one", "procedure", "test").unwrap();
+        add_unit(&conn, "principle one", "principle", "test").unwrap();
+        let units = list_units(&conn, None).unwrap();
+        assert_eq!(units.len(), 3);
+    }
+
+    #[test]
+    fn test_list_filter_by_type() {
+        let conn = memory_db();
+        add_unit(&conn, "fact one", "fact", "test").unwrap();
+        add_unit(&conn, "fact two", "fact", "test").unwrap();
+        add_unit(&conn, "procedure one", "procedure", "test").unwrap();
+        let units = list_units(&conn, Some("fact")).unwrap();
+        assert_eq!(units.len(), 2);
+        assert!(units.iter().all(|u| u.unit_type == "fact"));
+    }
+
+    #[test]
+    fn test_list_empty() {
+        let conn = memory_db();
+        let units = list_units(&conn, None).unwrap();
+        assert!(units.is_empty());
+    }
+
+    #[test]
+    fn test_search_finds_match() {
+        let conn = memory_db();
+        add_unit(&conn, "caching improves performance", "fact", "test").unwrap();
+        add_unit(&conn, "deploy with cargo install", "procedure", "test").unwrap();
+        let units = search_units(&conn, "caching").unwrap();
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].content, "caching improves performance");
+    }
+
+    #[test]
+    fn test_search_no_match() {
+        let conn = memory_db();
+        add_unit(&conn, "some content here", "fact", "test").unwrap();
+        let units = search_units(&conn, "nonexistent").unwrap();
+        assert!(units.is_empty());
+    }
+
+    #[test]
+    fn test_fts_sync_after_add() {
+        let conn = memory_db();
+        add_unit(&conn, "unique searchable content", "fact", "test").unwrap();
+        let units = search_units(&conn, "searchable").unwrap();
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].content, "unique searchable content");
     }
 }

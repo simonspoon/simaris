@@ -72,6 +72,19 @@ enum Command {
 
     /// List pending inbox items
     Inbox,
+
+    /// List knowledge units
+    List {
+        /// Filter by type
+        #[arg(long, rename_all = "snake_case")]
+        r#type: Option<UnitType>,
+    },
+
+    /// Search knowledge units
+    Search {
+        /// Search query
+        query: String,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -158,6 +171,15 @@ fn main() -> Result<()> {
         Command::Inbox => {
             let items = db::list_inbox(&conn)?;
             display::print_inbox(&items, cli.json);
+        }
+        Command::List { r#type } => {
+            let filter = r#type.as_ref().map(|t| t.as_str());
+            let units = db::list_units(&conn, filter)?;
+            display::print_units(&units, cli.json);
+        }
+        Command::Search { query } => {
+            let units = db::search_units(&conn, &query)?;
+            display::print_units(&units, cli.json);
         }
     }
 
