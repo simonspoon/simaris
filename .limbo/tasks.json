@@ -1,0 +1,46 @@
+{
+  "version": "6.0.0",
+  "tasks": [
+    {
+      "id": "dapz",
+      "name": "Define knowledge unit schema and verify the atom",
+      "parent": null,
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-07T13:39:12.749033-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-07T13:40:52.089754-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-07T13:40:57.446287-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-07T13:41:01.246965-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-07T13:45:31.152728-04:00"
+        }
+      ],
+      "created": "2026-04-07T13:37:07.558536-04:00",
+      "updated": "2026-04-07T13:45:31.152728-04:00"
+    }
+  ]
+}
