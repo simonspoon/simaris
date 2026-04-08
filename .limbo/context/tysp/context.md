@@ -6,3 +6,6 @@ simaris ask --debug 'how do I release?' 2>trace.log — stdout has answer, trace
 
 ## Result
 Full visibility into ask pipeline for debugging and prompt tuning.
+
+## Outcome
+Debug flag working. stderr trace shows all 4 phases. JSON mode includes debug object. 51 tests. Committed as 031eebd.

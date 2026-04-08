@@ -354,7 +354,7 @@
       "id": "tysp",
       "name": "Add --debug flag to ask command with stderr trace output",
       "parent": null,
-      "status": "in-progress",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -380,10 +380,16 @@
           "to": "in-progress",
           "by": "tl",
           "at": "2026-04-08T10:33:12.414446-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-08T10:38:19.732831-04:00"
         }
       ],
       "created": "2026-04-08T10:33:07.186679-04:00",
-      "updated": "2026-04-08T10:33:12.414446-04:00"
+      "updated": "2026-04-08T10:38:19.732832-04:00"
     }
   ]
 }
