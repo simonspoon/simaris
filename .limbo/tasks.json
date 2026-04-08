@@ -349,6 +349,41 @@
       ],
       "created": "2026-04-08T10:00:24.306452-04:00",
       "updated": "2026-04-08T10:14:04.721479-04:00"
+    },
+    {
+      "id": "tysp",
+      "name": "Add --debug flag to ask command with stderr trace output",
+      "parent": null,
+      "status": "in-progress",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-08T10:33:12.380232-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-08T10:33:12.389078-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-08T10:33:12.397483-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-08T10:33:12.414446-04:00"
+        }
+      ],
+      "created": "2026-04-08T10:33:07.186679-04:00",
+      "updated": "2026-04-08T10:33:12.414446-04:00"
     }
   ]
 }

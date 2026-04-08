@@ -13,6 +13,10 @@ struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
+    /// Show debug trace of internal processing
+    #[arg(long, global = true)]
+    debug: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -279,7 +283,7 @@ fn main() -> Result<()> {
         }
         Command::Ask { query } => {
             digest::check_claude()?;
-            let result = ask::ask(&conn, &query)?;
+            let result = ask::ask(&conn, &query, cli.debug)?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&result).unwrap());
             } else {

@@ -10,6 +10,18 @@ pub struct AskResult {
     pub query: String,
     pub response: String,
     pub units_used: Vec<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub debug: Option<DebugTrace>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DebugTrace {
+    pub search_queries: Vec<String>,
+    pub matches_per_query: HashMap<String, usize>,
+    pub total_gathered: usize,
+    pub steering_sufficient: bool,
+    pub steering_explore: Vec<i64>,
+    pub units_in_synthesis: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,23 +59,69 @@ fn model() -> String {
 }
 
 /// Main entry point: search the knowledge graph and synthesize a response.
-pub fn ask(conn: &Connection, query: &str) -> Result<AskResult> {
+pub fn ask(conn: &Connection, query: &str, debug: bool) -> Result<AskResult> {
     // Phase 0: LLM extracts intent + search keywords
     let intent = extract_intent(query)?;
 
+    if debug {
+        eprintln!("\u{250c}\u{2500} PHASE 0: Intent Extraction (haiku)");
+        eprintln!("\u{2502}  query: {:?}", query);
+        eprintln!("\u{2502}  search_queries: {:?}", intent.search_queries);
+        eprintln!("\u{2502}");
+    }
+
     // Phase 1: gather initial matches using LLM-chosen keywords
-    let mut gathered = gather_initial(conn, &intent.search_queries)?;
+    let gather = gather_initial_traced(conn, &intent.search_queries)?;
+    let mut gathered = gather.units;
+    let matches_per_query = gather.matches_per_query;
+
+    if debug {
+        eprintln!("\u{251c}\u{2500} PHASE 1: Graph Search");
+        for (sq, count) in &matches_per_query {
+            let label = if *count == 1 { "match" } else { "matches" };
+            eprintln!("\u{2502}  {:?} \u{2192} {} {}", sq, count, label);
+        }
+        eprintln!(
+            "\u{2502}  deduplicated: {} unique units",
+            gather.direct_count
+        );
+        eprintln!(
+            "\u{2502}  1-hop expansion: +{} linked units \u{2192} {} total",
+            gather.expansion_count,
+            gathered.len()
+        );
+        eprintln!("\u{2502}");
+    }
 
     if gathered.is_empty() {
         return Ok(AskResult {
             query: query.to_string(),
             response: "No knowledge found for that query.".to_string(),
             units_used: vec![],
+            debug: if debug {
+                Some(DebugTrace {
+                    search_queries: intent.search_queries,
+                    matches_per_query,
+                    total_gathered: 0,
+                    steering_sufficient: true,
+                    steering_explore: vec![],
+                    units_in_synthesis: 0,
+                })
+            } else {
+                None
+            },
         });
     }
 
     // Phase 2: LLM steering — ask which units need deeper exploration
     let steering = steer(query, &gathered)?;
+
+    if debug {
+        eprintln!("\u{251c}\u{2500} PHASE 2: Steering (sonnet)");
+        eprintln!("\u{2502}  sufficient: {}", steering.sufficient);
+        eprintln!("\u{2502}  explore: {:?}", steering.explore);
+        eprintln!("\u{2502}");
+    }
 
     // Phase 3: fetch additional units if steering says more is needed
     if !steering.sufficient && !steering.explore.is_empty() {
@@ -72,12 +130,30 @@ pub fn ask(conn: &Connection, query: &str) -> Result<AskResult> {
 
     // Phase 4: synthesize a response from all gathered units
     let units_used: Vec<i64> = gathered.iter().map(|u| u.id).collect();
+
+    if debug {
+        eprintln!("\u{2514}\u{2500} PHASE 3: Synthesis (sonnet)");
+        eprintln!("   units_used: {}", units_used.len());
+    }
+
     let response = synthesize(query, &gathered)?;
 
     Ok(AskResult {
         query: query.to_string(),
         response,
         units_used,
+        debug: if debug {
+            Some(DebugTrace {
+                search_queries: intent.search_queries,
+                matches_per_query,
+                total_gathered: gathered.len(),
+                steering_sufficient: steering.sufficient,
+                steering_explore: steering.explore,
+                units_in_synthesis: gathered.len(),
+            })
+        } else {
+            None
+        },
     })
 }
 
@@ -192,26 +268,39 @@ fn sanitize_fts_query(query: &str) -> String {
     terms.join(" OR ")
 }
 
+struct GatherResult {
+    units: Vec<ContextUnit>,
+    matches_per_query: HashMap<String, usize>,
+    direct_count: usize,
+    expansion_count: usize,
+}
+
 /// Phase 1: FTS5 search using multiple LLM-extracted queries + 1-hop link expansion.
-fn gather_initial(conn: &Connection, search_queries: &[String]) -> Result<Vec<ContextUnit>> {
+fn gather_initial_traced(conn: &Connection, search_queries: &[String]) -> Result<GatherResult> {
     // Run each search query and collect unique matches
     let mut seen_ids = std::collections::HashSet::new();
     let mut all_matches = vec![];
+    let mut matches_per_query = HashMap::new();
 
     for sq in search_queries {
         let fts_query = sanitize_fts_query(sq);
         if fts_query.is_empty() {
+            matches_per_query.insert(sq.clone(), 0);
             continue;
         }
         let results = db::search_units(conn, &fts_query).unwrap_or_default();
+        let mut count = 0;
         for unit in results {
             if seen_ids.insert(unit.id) {
                 all_matches.push(unit);
+                count += 1;
             }
         }
+        matches_per_query.insert(sq.clone(), count);
     }
 
     let matches: Vec<_> = all_matches.into_iter().take(15).collect();
+    let direct_count = matches.len();
 
     let mut units_by_id: HashMap<i64, ContextUnit> = HashMap::new();
 
@@ -294,7 +383,13 @@ fn gather_initial(conn: &Connection, search_queries: &[String]) -> Result<Vec<Co
             .cmp(&a.is_direct_match)
             .then(a.id.cmp(&b.id))
     });
-    Ok(result)
+    let expansion_count = result.len().saturating_sub(direct_count);
+    Ok(GatherResult {
+        units: result,
+        matches_per_query,
+        direct_count,
+        expansion_count,
+    })
 }
 
 /// Phase 2: Ask the LLM which units need deeper exploration.

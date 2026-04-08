@@ -427,3 +427,39 @@ fn test_ask_empty_store_json() {
     assert!(parsed["units_used"].is_array());
     assert_eq!(parsed["units_used"].as_array().unwrap().len(), 0);
 }
+
+#[test]
+fn test_ask_debug_flag() {
+    let env = TestEnv::new("askdebug");
+    let output = env.run(&["--debug", "ask", "what is rust?"]);
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("PHASE 0"),
+        "debug output should contain PHASE 0, got stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("PHASE 1"),
+        "debug output should contain PHASE 1, got stderr: {stderr}"
+    );
+    // stdout should still contain the normal response
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("No knowledge found"),
+        "stdout should contain normal response, got: {stdout}"
+    );
+}
+
+#[test]
+fn test_ask_debug_json() {
+    let env = TestEnv::new("askdebugjson");
+    let out = env.run_ok(&["--json", "--debug", "ask", "what is rust?"]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(parsed["query"], "what is rust?");
+    assert!(
+        parsed["debug"].is_object(),
+        "JSON should include debug field when --debug is set, got: {out}"
+    );
+    assert!(parsed["debug"]["search_queries"].is_array());
+    assert!(parsed["debug"]["matches_per_query"].is_object());
+}
