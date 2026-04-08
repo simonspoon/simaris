@@ -241,6 +241,21 @@ pub fn get_links_to(conn: &Connection, id: i64) -> Result<Vec<Link>> {
     Ok(links)
 }
 
+/// Get all units linked from or to a given unit ID
+pub fn get_linked_unit_ids(conn: &Connection, id: i64) -> Result<Vec<(i64, String, String)>> {
+    // Returns (linked_unit_id, relationship, direction)
+    let mut ids = vec![];
+    let outgoing = get_links_from(conn, id)?;
+    for link in outgoing {
+        ids.push((link.to_id, link.relationship, "outgoing".to_string()));
+    }
+    let incoming = get_links_to(conn, id)?;
+    for link in incoming {
+        ids.push((link.from_id, link.relationship, "incoming".to_string()));
+    }
+    Ok(ids)
+}
+
 pub fn add_link(conn: &Connection, from_id: i64, to_id: i64, relationship: &str) -> Result<()> {
     conn.execute(
         "INSERT INTO links (from_id, to_id, relationship) VALUES (?1, ?2, ?3)",

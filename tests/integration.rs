@@ -405,3 +405,25 @@ fn test_env_dev_isolation() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn test_ask_empty_store() {
+    let env = TestEnv::new("askempty");
+    // Ask on a fresh store with no units — should handle gracefully without calling LLM
+    let out = env.run_ok(&["ask", "what is rust?"]);
+    assert!(
+        out.contains("No knowledge found"),
+        "should report no knowledge on empty store, got: {out}"
+    );
+}
+
+#[test]
+fn test_ask_empty_store_json() {
+    let env = TestEnv::new("askemptyjson");
+    let out = env.run_ok(&["--json", "ask", "what is rust?"]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(parsed["query"], "what is rust?");
+    assert!(parsed["response"].is_string());
+    assert!(parsed["units_used"].is_array());
+    assert_eq!(parsed["units_used"].as_array().unwrap().len(), 0);
+}

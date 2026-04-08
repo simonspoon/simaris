@@ -1,3 +1,4 @@
+mod ask;
 mod db;
 mod digest;
 mod display;
@@ -98,6 +99,12 @@ enum Command {
 
     /// Digest inbox items through LLM classification
     Digest,
+
+    /// Ask the knowledge store a question
+    Ask {
+        /// Your question or context
+        query: String,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -269,6 +276,15 @@ fn main() -> Result<()> {
                 "\nDigested: {} items -> {} units, Skipped: {}",
                 success, total_units, failed
             );
+        }
+        Command::Ask { query } => {
+            digest::check_claude()?;
+            let result = ask::ask(&conn, &query)?;
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&result).unwrap());
+            } else {
+                println!("{}", result.response);
+            }
         }
         Command::Restore { .. } => unreachable!(),
     }

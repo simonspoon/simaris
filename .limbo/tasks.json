@@ -308,6 +308,41 @@
       ],
       "created": "2026-04-07T16:45:39.22133-04:00",
       "updated": "2026-04-07T16:54:39.029908-04:00"
+    },
+    {
+      "id": "wnvr",
+      "name": "Add ask command — hybrid context assembly with LLM-steered traversal",
+      "parent": null,
+      "status": "in-progress",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-08T10:00:36.668036-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-08T10:00:36.676355-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-08T10:00:36.684544-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-08T10:00:36.701024-04:00"
+        }
+      ],
+      "created": "2026-04-08T10:00:24.306452-04:00",
+      "updated": "2026-04-08T10:00:36.701025-04:00"
     }
   ]
 }
