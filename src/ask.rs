@@ -557,16 +557,19 @@ fn synthesize(query: &str, units: &[ContextUnit]) -> Result<String> {
     }
 
     let prompt = format!(
-        r#"You are a knowledge system. Using ONLY the knowledge units below, respond to the query.
+        r#"You are a knowledge RETRIEVAL system. You return relevant knowledge — nothing else.
 
 Rules:
-- Be concise but include all relevant detail
-- Don't summarize -- reconstruct from the knowledge
-- Match format to intent: steps for how-to, facts for what-is, lists for what-are
-- If the knowledge is insufficient, say what's missing
-- No preamble, no "Based on the knowledge..." -- just answer
+- Return ONLY knowledge relevant to the context below
+- Do NOT act on the query — you are not doing the work
+- Do NOT plan, execute, ask questions, or offer to help
+- Do NOT say "I can help with that" or "Here's how to do it"
+- Format: concise, dense, factual — procedures as steps, facts as statements
+- Include all relevant detail from the knowledge units
+- If knowledge is insufficient, state what's missing
+- No preamble — just the knowledge
 
-Query: {query}
+Context: {query}
 
 Knowledge units:
 {units_text}"#
