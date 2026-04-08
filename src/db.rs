@@ -96,7 +96,16 @@ fn initialize(conn: &Connection) -> Result<()> {
             content TEXT NOT NULL,
             source  TEXT NOT NULL DEFAULT 'cli',
             created TEXT NOT NULL DEFAULT (datetime('now'))
-        );",
+        );
+
+        CREATE TABLE IF NOT EXISTS marks (
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            unit_id  INTEGER NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+            kind     TEXT NOT NULL CHECK(kind IN ('used','wrong','outdated','helpful')),
+            created  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_marks_unit ON marks(unit_id);",
     )?;
 
     let fts_exists: bool = conn.query_row(
@@ -355,6 +364,39 @@ pub fn digest_inbox_item_multi(
     tx.execute("DELETE FROM inbox WHERE id = ?1", params![inbox_id])?;
     tx.commit()?;
     Ok(ids)
+}
+
+pub fn add_mark(conn: &Connection, unit_id: i64, kind: &str, delta: f64) -> Result<f64> {
+    // Verify unit exists
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM units WHERE id = ?)",
+        [unit_id],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        anyhow::bail!("Unit {} not found", unit_id);
+    }
+
+    // Insert mark
+    conn.execute(
+        "INSERT INTO marks (unit_id, kind) VALUES (?, ?)",
+        params![unit_id, kind],
+    )?;
+
+    // Update confidence with clamping
+    conn.execute(
+        "UPDATE units SET confidence = MAX(0.0, MIN(1.0, confidence + ?)) WHERE id = ?",
+        params![delta, unit_id],
+    )?;
+
+    // Return new confidence
+    let confidence: f64 = conn.query_row(
+        "SELECT confidence FROM units WHERE id = ?",
+        [unit_id],
+        |row| row.get(0),
+    )?;
+
+    Ok(confidence)
 }
 
 pub fn drop_item(conn: &Connection, content: &str, source: &str) -> Result<i64> {
@@ -719,5 +761,78 @@ mod tests {
         let units = search_units(&conn, "searchable").unwrap();
         assert_eq!(units.len(), 1);
         assert_eq!(units[0].content, "unique searchable content");
+    }
+
+    #[test]
+    fn test_mark_unit() {
+        let conn = memory_db();
+        add_unit(&conn, "test", "fact", "test").unwrap();
+        let confidence = add_mark(&conn, 1, "helpful", 0.1).unwrap();
+        assert!((confidence - 1.0).abs() < f64::EPSILON); // 1.0 + 0.1 clamped to 1.0
+
+        let confidence = add_mark(&conn, 1, "wrong", -0.2).unwrap();
+        assert!((confidence - 0.8).abs() < f64::EPSILON);
+
+        // Verify mark was recorded
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM marks WHERE unit_id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_mark_confidence_clamping() {
+        let conn = memory_db();
+        add_unit(&conn, "test", "fact", "test").unwrap();
+
+        // Drive confidence to 0
+        for _ in 0..10 {
+            add_mark(&conn, 1, "wrong", -0.2).unwrap();
+        }
+        let confidence: f64 = conn
+            .query_row("SELECT confidence FROM units WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert!(confidence >= 0.0);
+        assert!((confidence - 0.0).abs() < f64::EPSILON);
+
+        // Drive confidence back up
+        for _ in 0..20 {
+            add_mark(&conn, 1, "helpful", 0.1).unwrap();
+        }
+        let confidence: f64 = conn
+            .query_row("SELECT confidence FROM units WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert!(confidence <= 1.0);
+        assert!((confidence - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_mark_nonexistent_unit() {
+        let conn = memory_db();
+        let result = add_mark(&conn, 999, "used", 0.05);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_mark_cascade_delete() {
+        let conn = memory_db();
+        add_unit(&conn, "test", "fact", "test").unwrap();
+        add_mark(&conn, 1, "used", 0.05).unwrap();
+
+        // Delete the unit
+        conn.execute("DELETE FROM units WHERE id = 1", []).unwrap();
+
+        // Marks should be gone too
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM marks", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
     }
 }

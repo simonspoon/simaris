@@ -395,9 +395,42 @@
       "id": "wwlw",
       "name": "Add mark command — feedback loop for knowledge units",
       "parent": null,
-      "status": "captured",
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-08T14:16:31.759182-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-08T14:18:17.810742-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-08T14:18:26.16393-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-08T14:18:30.151301-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-08T14:24:26.705466-04:00"
+        }
+      ],
       "created": "2026-04-08T12:06:01.825359-04:00",
-      "updated": "2026-04-08T12:06:01.825359-04:00"
+      "updated": "2026-04-08T14:24:26.705466-04:00"
     },
     {
       "id": "riuh",

@@ -456,6 +456,65 @@ fn test_ask_debug_flag() {
 }
 
 #[test]
+fn test_mark_command() {
+    let env = TestEnv::new("mark");
+    env.run_ok(&["add", "test unit", "--type", "fact"]);
+    let out = env.run_ok(&["mark", "1", "--kind", "wrong"]);
+    assert!(out.contains("Marked unit 1 as wrong"), "got: {out}");
+    assert!(out.contains("confidence: 0.80"), "got: {out}");
+}
+
+#[test]
+fn test_mark_json_output() {
+    let env = TestEnv::new("markjson");
+    env.run_ok(&["add", "test unit", "--type", "fact"]);
+    let out = env.run_ok(&["--json", "mark", "1", "--kind", "outdated"]);
+    let v: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(v["id"], 1);
+    assert_eq!(v["mark"], "outdated");
+    assert!(v["confidence"].as_f64().unwrap() < 1.0);
+}
+
+#[test]
+fn test_mark_nonexistent() {
+    let env = TestEnv::new("marknonexist");
+    let output = env.run(&["mark", "999", "--kind", "used"]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.to_lowercase().contains("not found"),
+        "got stderr: {stderr}"
+    );
+}
+
+#[test]
+fn test_mark_confidence_accumulation() {
+    let env = TestEnv::new("markaccum");
+    env.run_ok(&["add", "test unit", "--type", "fact"]);
+    env.run_ok(&["mark", "1", "--kind", "wrong"]); // 1.0 -> 0.8
+    let out = env.run_ok(&["mark", "1", "--kind", "helpful"]); // 0.8 -> 0.9
+    assert!(out.contains("0.90"), "got: {out}");
+}
+
+#[test]
+fn test_mark_clamping() {
+    let env = TestEnv::new("markclamp");
+    env.run_ok(&["add", "test unit", "--type", "fact"]);
+    for _ in 0..10 {
+        env.run_ok(&["mark", "1", "--kind", "wrong"]);
+    }
+    let out = env.run_ok(&["show", "1"]);
+    assert!(out.contains("confidence: 0  verified"), "got: {out}");
+}
+
+#[test]
+fn test_mark_no_kind() {
+    let env = TestEnv::new("marknokind");
+    let output = env.run(&["mark", "1"]);
+    assert!(!output.status.success());
+}
+
+#[test]
 fn test_ask_debug_json() {
     let env = TestEnv::new("askdebugjson");
     let out = env.run_ok(&["--json", "--debug", "ask", "what is rust?"]);

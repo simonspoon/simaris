@@ -151,3 +151,19 @@ pub fn print_restored(filename: &str, json: bool) {
         println!("Restored from: {filename}");
     }
 }
+
+pub fn print_marked(id: i64, kind: &str, confidence: f64, json: bool) {
+    if json {
+        let out = serde_json::json!({
+            "id": id,
+            "mark": kind,
+            "confidence": (confidence * 100.0).round() / 100.0,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        println!(
+            "Marked unit {} as {} (confidence: {:.2})",
+            id, kind, confidence
+        );
+    }
+}

@@ -104,6 +104,15 @@ enum Command {
     /// Digest inbox items through LLM classification
     Digest,
 
+    /// Record feedback on a knowledge unit
+    Mark {
+        /// Unit ID to mark
+        id: i64,
+        /// Kind of feedback
+        #[arg(long)]
+        kind: MarkKind,
+    },
+
     /// Ask the knowledge store a question
     Ask {
         /// Your question or context
@@ -157,6 +166,34 @@ impl Relationship {
             Relationship::Contradicts => "contradicts",
             Relationship::Supersedes => "supersedes",
             Relationship::SourcedFrom => "sourced_from",
+        }
+    }
+}
+
+#[derive(Clone, ValueEnum)]
+enum MarkKind {
+    Used,
+    Wrong,
+    Outdated,
+    Helpful,
+}
+
+impl MarkKind {
+    fn as_str(&self) -> &str {
+        match self {
+            MarkKind::Used => "used",
+            MarkKind::Wrong => "wrong",
+            MarkKind::Outdated => "outdated",
+            MarkKind::Helpful => "helpful",
+        }
+    }
+
+    fn delta(&self) -> f64 {
+        match self {
+            MarkKind::Used => 0.05,
+            MarkKind::Wrong => -0.2,
+            MarkKind::Outdated => -0.1,
+            MarkKind::Helpful => 0.1,
         }
     }
 }
@@ -229,6 +266,10 @@ fn main() -> Result<()> {
         Command::Backup => {
             let path = db::create_backup(&conn)?;
             display::print_backup_created(&path, cli.json);
+        }
+        Command::Mark { id, kind } => {
+            let confidence = db::add_mark(&conn, id, kind.as_str(), kind.delta())?;
+            display::print_marked(id, kind.as_str(), confidence, cli.json);
         }
         Command::Digest => {
             let items = db::list_inbox(&conn)?;
