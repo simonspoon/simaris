@@ -7,6 +7,9 @@ Store a suda memory, verify it appears in simaris inbox. End a session, verify e
 ## Result
 Knowledge flows into simaris automatically from existing tools.
 
+## Outcome
+simaris-observer.sh hook created in ~/.claude/hook-scripts/. Fires on Stop, reads session transcript with byte-offset tracking, extracts knowledge via claude --bare --model haiku, drops into simaris inbox via simaris drop --source session. Registered in ~/.claude/settings.json. Binary discovery falls through PATH, ~/.cargo/bin, /usr/local/bin, and ~/claudehub/simaris/target/release/. Code reviewed and verified — all checks pass.
+
 ## AcceptanceCriteria
 1. A Stop hook exists in ~/.claude/settings.json pointing to simaris-observer.sh. 2. After a session with substantive technical discussion, simaris inbox contains new items extracted from that session. 3. Uses incremental processing (byte-offset tracking) to avoid re-processing old transcript content. 4. No dependency on suda — reads transcript directly. 5. Extracted items have source field indicating session origin.
 

@@ -502,7 +502,7 @@
       "id": "uhbu",
       "name": "Simaris session extraction hook",
       "parent": null,
-      "status": "in-review",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -547,10 +547,16 @@
           "to": "in-review",
           "by": "pm",
           "at": "2026-04-08T19:19:24.959158-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-08T19:20:31.710456-04:00"
         }
       ],
       "created": "2026-04-08T12:06:01.84306-04:00",
-      "updated": "2026-04-08T19:19:24.959158-04:00"
+      "updated": "2026-04-08T19:20:31.710456-04:00"
     },
     {
       "id": "vcbi",
@@ -603,9 +609,42 @@
       "id": "npjy",
       "name": "Populate production store from dev2 and suda memories",
       "parent": null,
-      "status": "captured",
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-08T19:29:30.726676-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-08T19:33:27.060491-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-08T19:33:32.942419-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-08T19:33:36.727489-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-08T19:41:25.33945-04:00"
+        }
+      ],
       "created": "2026-04-08T12:06:01.860363-04:00",
-      "updated": "2026-04-08T12:06:01.860363-04:00"
+      "updated": "2026-04-08T19:43:24.349499-04:00"
     },
     {
       "id": "ptbn",
