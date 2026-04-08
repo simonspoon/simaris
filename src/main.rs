@@ -225,45 +225,50 @@ fn main() -> Result<()> {
             println!("Processing {} inbox item(s)...\n", items.len());
             let mut success = 0;
             let mut failed = 0;
+            let mut total_units = 0;
             for item in &items {
-                print!(
-                    "[{}] {}... ",
+                println!(
+                    "[{}] {}...",
                     item.id,
                     &item.content.chars().take(50).collect::<String>()
                 );
                 match digest::classify(&item.content) {
                     Ok(result) => {
-                        let content = result.content.as_deref().unwrap_or(&item.content);
-                        match db::digest_inbox_item(
+                        match db::digest_inbox_item_multi(
                             &conn,
                             item.id,
-                            content,
-                            &result.unit_type,
+                            &result.units,
                             &item.source,
-                            &result.tags,
                         ) {
-                            Ok(unit_id) => {
-                                println!(
-                                    "-> unit {} ({}) [{}]",
-                                    unit_id,
-                                    result.unit_type,
-                                    result.tags.join(", ")
-                                );
+                            Ok(ids) => {
+                                for (id, unit) in ids.iter().zip(result.units.iter()) {
+                                    let marker = if unit.is_overview { "*" } else { " " };
+                                    println!(
+                                        "  {marker} -> unit {} ({}) [{}]",
+                                        id,
+                                        unit.unit_type,
+                                        unit.tags.join(", ")
+                                    );
+                                }
+                                total_units += ids.len();
                                 success += 1;
                             }
                             Err(e) => {
-                                println!("DB ERROR: {e}");
+                                println!("  DB ERROR: {e}");
                                 failed += 1;
                             }
                         }
                     }
                     Err(e) => {
-                        println!("SKIP: {e}");
+                        println!("  SKIP: {e}");
                         failed += 1;
                     }
                 }
             }
-            println!("\nDigested: {success}, Skipped: {failed}");
+            println!(
+                "\nDigested: {} items -> {} units, Skipped: {}",
+                success, total_units, failed
+            );
         }
         Command::Restore { .. } => unreachable!(),
     }

@@ -279,6 +279,7 @@ pub fn delete_inbox_item(conn: &Connection, id: i64) -> Result<()> {
 
 /// Atomically create a unit from an inbox item and delete the inbox item.
 /// Used by the digest command to ensure no duplicates on failure.
+#[allow(dead_code)]
 pub fn digest_inbox_item(
     conn: &Connection,
     inbox_id: i64,
@@ -297,6 +298,48 @@ pub fn digest_inbox_item(
     tx.execute("DELETE FROM inbox WHERE id = ?1", params![inbox_id])?;
     tx.commit()?;
     Ok(unit_id)
+}
+
+/// Atomically create multiple units from an inbox item, link children to overview, delete inbox item.
+pub fn digest_inbox_item_multi(
+    conn: &Connection,
+    inbox_id: i64,
+    units: &[crate::digest::DigestUnit],
+    source: &str,
+) -> Result<Vec<i64>> {
+    let tx = conn.unchecked_transaction()?;
+    let mut ids = Vec::new();
+    let mut overview_id: Option<i64> = None;
+
+    for unit in units {
+        let tags_json = serde_json::to_string(&unit.tags)?;
+        tx.execute(
+            "INSERT INTO units (content, type, source, tags) VALUES (?1, ?2, ?3, ?4)",
+            params![unit.content, unit.unit_type, source, tags_json],
+        )?;
+        let id = tx.last_insert_rowid();
+        ids.push(id);
+
+        if unit.is_overview {
+            overview_id = Some(id);
+        }
+    }
+
+    // Link non-overview units to the overview via part_of
+    if let Some(ov_id) = overview_id {
+        for (id, unit) in ids.iter().zip(units.iter()) {
+            if !unit.is_overview {
+                tx.execute(
+                    "INSERT INTO links (from_id, to_id, relationship) VALUES (?1, ?2, ?3)",
+                    params![id, ov_id, "part_of"],
+                )?;
+            }
+        }
+    }
+
+    tx.execute("DELETE FROM inbox WHERE id = ?1", params![inbox_id])?;
+    tx.commit()?;
+    Ok(ids)
 }
 
 pub fn drop_item(conn: &Connection, content: &str, source: &str) -> Result<i64> {

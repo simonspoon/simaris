@@ -7,6 +7,9 @@ Drop a skill file content into inbox. Run simaris digest. Verify: inbox is empty
 ## Result
 Inbox items are automatically processed by LLM into typed, tagged knowledge units. The brain can organize incoming raw information.
 
+## Outcome
+Digest command working. Shells out to claude CLI for classification. Transaction-safe, error-tolerant, code-fence-robust. 47 total tests. Committed as 0a15c02. Ready for live testing with real data.
+
 ## AcceptanceCriteria
 1. simaris digest with inbox items creates typed/tagged units. 2. Inbox empty after digest. 3. Empty inbox — exits cleanly with message. 4. Claude CLI not found — clear error. 5. Malformed LLM response — skip item, report error, leave in inbox. 6. Tags populated on created units. 7. All existing 43 tests pass.
 

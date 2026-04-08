@@ -253,7 +253,7 @@
       "id": "vnhw",
       "name": "Add digest command — LLM-powered inbox processing",
       "parent": null,
-      "status": "in-review",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -298,10 +298,16 @@
           "to": "in-review",
           "by": "pm",
           "at": "2026-04-07T16:54:23.678145-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-07T16:54:39.029908-04:00"
         }
       ],
       "created": "2026-04-07T16:45:39.22133-04:00",
-      "updated": "2026-04-07T16:54:23.678146-04:00"
+      "updated": "2026-04-07T16:54:39.029908-04:00"
     }
   ]
 }
