@@ -390,6 +390,46 @@
       ],
       "created": "2026-04-08T10:33:07.186679-04:00",
       "updated": "2026-04-08T10:38:19.732832-04:00"
+    },
+    {
+      "id": "wwlw",
+      "name": "Add mark command — feedback loop for knowledge units",
+      "parent": null,
+      "status": "captured",
+      "created": "2026-04-08T12:06:01.825359-04:00",
+      "updated": "2026-04-08T12:06:01.825359-04:00"
+    },
+    {
+      "id": "riuh",
+      "name": "Add scan command — immune system for knowledge health",
+      "parent": null,
+      "status": "captured",
+      "created": "2026-04-08T12:06:01.834017-04:00",
+      "updated": "2026-04-08T12:06:01.834017-04:00"
+    },
+    {
+      "id": "uhbu",
+      "name": "Integration hooks — suda feeder and extraction pipeline",
+      "parent": null,
+      "status": "captured",
+      "created": "2026-04-08T12:06:01.84306-04:00",
+      "updated": "2026-04-08T12:06:01.84306-04:00"
+    },
+    {
+      "id": "vcbi",
+      "name": "Refactor ask to code-only mode (no internal LLM calls)",
+      "parent": null,
+      "status": "captured",
+      "created": "2026-04-08T12:06:01.851514-04:00",
+      "updated": "2026-04-08T12:06:01.851514-04:00"
+    },
+    {
+      "id": "npjy",
+      "name": "Populate production store from dev2 and suda memories",
+      "parent": null,
+      "status": "captured",
+      "created": "2026-04-08T12:06:01.860363-04:00",
+      "updated": "2026-04-08T12:06:01.860363-04:00"
     }
   ]
 }
