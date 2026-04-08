@@ -33,6 +33,25 @@ pub struct InboxItem {
     pub created: String,
 }
 
+const LOW_CONFIDENCE_THRESHOLD: f64 = 0.6;
+
+#[derive(Debug, Serialize)]
+pub struct ScanResult {
+    pub low_confidence: Vec<Unit>,
+    pub negative_marks: Vec<Unit>,
+    pub contradictions: Vec<ContradictionPair>,
+    pub orphans: Vec<Unit>,
+    pub stale: Vec<Unit>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ContradictionPair {
+    pub from_id: i64,
+    pub from_content: String,
+    pub to_id: i64,
+    pub to_content: String,
+}
+
 pub fn data_dir() -> PathBuf {
     let base = if let Ok(dir) = std::env::var("SIMARIS_HOME") {
         PathBuf::from(dir)
@@ -397,6 +416,77 @@ pub fn add_mark(conn: &Connection, unit_id: i64, kind: &str, delta: f64) -> Resu
     )?;
 
     Ok(confidence)
+}
+
+pub fn scan(conn: &Connection, stale_days: u32) -> Result<ScanResult> {
+    // Low confidence
+    let mut stmt = conn.prepare(
+        "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
+         FROM units WHERE confidence < ?1",
+    )?;
+    let low_confidence = stmt
+        .query_map(params![LOW_CONFIDENCE_THRESHOLD], row_to_unit)?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Negative marks (units with wrong or outdated marks in marks table)
+    let mut stmt = conn.prepare(
+        "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
+         FROM units u
+         WHERE EXISTS (SELECT 1 FROM marks WHERE unit_id = u.id AND kind IN ('wrong', 'outdated'))",
+    )?;
+    let negative_marks = stmt
+        .query_map([], row_to_unit)?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Contradictions (dedup via from_id < to_id)
+    let mut stmt = conn.prepare(
+        "SELECT l.from_id, u1.content, l.to_id, u2.content
+         FROM links l
+         JOIN units u1 ON u1.id = l.from_id
+         JOIN units u2 ON u2.id = l.to_id
+         WHERE l.relationship = 'contradicts' AND l.from_id < l.to_id",
+    )?;
+    let contradictions = stmt
+        .query_map([], |row| {
+            Ok(ContradictionPair {
+                from_id: row.get(0)?,
+                from_content: row.get(1)?,
+                to_id: row.get(2)?,
+                to_content: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Orphans (no links in either direction)
+    let mut stmt = conn.prepare(
+        "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
+         FROM units u
+         WHERE NOT EXISTS (SELECT 1 FROM links WHERE from_id = u.id)
+           AND NOT EXISTS (SELECT 1 FROM links WHERE to_id = u.id)",
+    )?;
+    let orphans = stmt
+        .query_map([], row_to_unit)?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Stale (old and never marked)
+    let stale_modifier = format!("-{stale_days} days");
+    let mut stmt = conn.prepare(
+        "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
+         FROM units u
+         WHERE created < datetime('now', ?1)
+           AND NOT EXISTS (SELECT 1 FROM marks WHERE unit_id = u.id)",
+    )?;
+    let stale = stmt
+        .query_map(params![stale_modifier], row_to_unit)?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(ScanResult {
+        low_confidence,
+        negative_marks,
+        contradictions,
+        orphans,
+        stale,
+    })
 }
 
 pub fn drop_item(conn: &Connection, content: &str, source: &str) -> Result<i64> {
@@ -834,5 +924,177 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM marks", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_scan_empty_store() {
+        let conn = memory_db();
+        let result = scan(&conn, 90).unwrap();
+        assert!(result.low_confidence.is_empty());
+        assert!(result.negative_marks.is_empty());
+        assert!(result.contradictions.is_empty());
+        assert!(result.orphans.is_empty());
+        assert!(result.stale.is_empty());
+    }
+
+    #[test]
+    fn test_scan_low_confidence() {
+        let conn = memory_db();
+        add_unit(&conn, "shaky fact", "fact", "test").unwrap();
+        conn.execute("UPDATE units SET confidence = 0.5 WHERE id = 1", [])
+            .unwrap();
+        let result = scan(&conn, 90).unwrap();
+        assert_eq!(result.low_confidence.len(), 1);
+        assert_eq!(result.low_confidence[0].id, 1);
+    }
+
+    #[test]
+    fn test_scan_low_confidence_boundary() {
+        let conn = memory_db();
+        add_unit(&conn, "boundary fact", "fact", "test").unwrap();
+        conn.execute("UPDATE units SET confidence = 0.6 WHERE id = 1", [])
+            .unwrap();
+        let result = scan(&conn, 90).unwrap();
+        assert!(
+            result.low_confidence.is_empty(),
+            "unit at exactly 0.6 should NOT appear"
+        );
+    }
+
+    #[test]
+    fn test_scan_negative_marks() {
+        let conn = memory_db();
+        add_unit(&conn, "wrong fact", "fact", "test").unwrap();
+        add_mark(&conn, 1, "wrong", -0.2).unwrap();
+        let result = scan(&conn, 90).unwrap();
+        assert_eq!(result.negative_marks.len(), 1);
+        assert_eq!(result.negative_marks[0].id, 1);
+    }
+
+    #[test]
+    fn test_scan_negative_marks_outdated() {
+        let conn = memory_db();
+        add_unit(&conn, "outdated fact", "fact", "test").unwrap();
+        add_mark(&conn, 1, "outdated", -0.1).unwrap();
+        let result = scan(&conn, 90).unwrap();
+        assert_eq!(result.negative_marks.len(), 1);
+        assert_eq!(result.negative_marks[0].id, 1);
+    }
+
+    #[test]
+    fn test_scan_contradictions() {
+        let conn = memory_db();
+        add_unit(&conn, "the sky is blue", "fact", "test").unwrap();
+        add_unit(&conn, "the sky is green", "fact", "test").unwrap();
+        add_link(&conn, 1, 2, "contradicts").unwrap();
+        let result = scan(&conn, 90).unwrap();
+        assert_eq!(result.contradictions.len(), 1);
+        assert_eq!(result.contradictions[0].from_id, 1);
+        assert_eq!(result.contradictions[0].to_id, 2);
+    }
+
+    #[test]
+    fn test_scan_orphans() {
+        let conn = memory_db();
+        add_unit(&conn, "connected a", "fact", "test").unwrap();
+        add_unit(&conn, "connected b", "fact", "test").unwrap();
+        add_unit(&conn, "lonely orphan", "fact", "test").unwrap();
+        add_link(&conn, 1, 2, "related_to").unwrap();
+        let result = scan(&conn, 90).unwrap();
+        assert_eq!(result.orphans.len(), 1);
+        assert_eq!(result.orphans[0].id, 3);
+        assert_eq!(result.orphans[0].content, "lonely orphan");
+    }
+
+    #[test]
+    fn test_scan_stale() {
+        let conn = memory_db();
+        add_unit(&conn, "old fact", "fact", "test").unwrap();
+        conn.execute(
+            "UPDATE units SET created = datetime('now', '-91 days') WHERE id = 1",
+            [],
+        )
+        .unwrap();
+        let result = scan(&conn, 90).unwrap();
+        assert_eq!(result.stale.len(), 1);
+        assert_eq!(result.stale[0].id, 1);
+    }
+
+    #[test]
+    fn test_scan_stale_with_mark_not_stale() {
+        let conn = memory_db();
+        add_unit(&conn, "old but marked", "fact", "test").unwrap();
+        conn.execute(
+            "UPDATE units SET created = datetime('now', '-91 days') WHERE id = 1",
+            [],
+        )
+        .unwrap();
+        add_mark(&conn, 1, "used", 0.05).unwrap();
+        let result = scan(&conn, 90).unwrap();
+        assert!(
+            result.stale.is_empty(),
+            "unit with a mark should NOT be stale"
+        );
+    }
+
+    #[test]
+    fn test_scan_stale_days_override() {
+        let conn = memory_db();
+        add_unit(&conn, "91 day old", "fact", "test").unwrap();
+        conn.execute(
+            "UPDATE units SET created = datetime('now', '-91 days') WHERE id = 1",
+            [],
+        )
+        .unwrap();
+        // With 100 days threshold, should not appear
+        let result = scan(&conn, 100).unwrap();
+        assert!(
+            result.stale.is_empty(),
+            "91-day unit with 100-day threshold should not be stale"
+        );
+        // With 90 days threshold, should appear
+        let result = scan(&conn, 90).unwrap();
+        assert_eq!(
+            result.stale.len(),
+            1,
+            "91-day unit with 90-day threshold should be stale"
+        );
+    }
+
+    #[test]
+    fn test_scan_multi_section() {
+        let conn = memory_db();
+        // Create a unit that's low-confidence + has wrong mark + orphan + stale
+        add_unit(&conn, "troubled unit", "fact", "test").unwrap();
+        conn.execute("UPDATE units SET confidence = 0.3 WHERE id = 1", [])
+            .unwrap();
+        conn.execute(
+            "UPDATE units SET created = datetime('now', '-91 days') WHERE id = 1",
+            [],
+        )
+        .unwrap();
+        // Add wrong mark but need to undo its effect on stale check:
+        // marks table entry will make it NOT stale, so insert mark directly
+        conn.execute("INSERT INTO marks (unit_id, kind) VALUES (1, 'wrong')", [])
+            .unwrap();
+
+        let result = scan(&conn, 90).unwrap();
+        // Should appear in low_confidence
+        assert!(
+            result.low_confidence.iter().any(|u| u.id == 1),
+            "should be low confidence"
+        );
+        // Should appear in negative_marks
+        assert!(
+            result.negative_marks.iter().any(|u| u.id == 1),
+            "should have negative marks"
+        );
+        // Should be orphan (no links)
+        assert!(result.orphans.iter().any(|u| u.id == 1), "should be orphan");
+        // Should NOT be stale (has a mark)
+        assert!(
+            !result.stale.iter().any(|u| u.id == 1),
+            "should not be stale because it has a mark"
+        );
     }
 }

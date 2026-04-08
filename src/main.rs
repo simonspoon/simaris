@@ -122,6 +122,13 @@ enum Command {
         #[arg(long)]
         synthesize: bool,
     },
+
+    /// Health-check the knowledge store
+    Scan {
+        /// Days without marks before a unit is considered stale
+        #[arg(long, default_value = "90")]
+        stale_days: u32,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -358,6 +365,10 @@ fn main() -> Result<()> {
                     println!();
                 }
             }
+        }
+        Command::Scan { stale_days } => {
+            let result = db::scan(&conn, stale_days)?;
+            display::print_scan(&result, cli.json);
         }
         Command::Restore { .. } => unreachable!(),
     }

@@ -1,4 +1,4 @@
-use crate::db::{InboxItem, Link, Unit};
+use crate::db::{InboxItem, Link, ScanResult, Unit};
 use std::path::Path;
 
 pub fn print_unit(unit: &Unit, outgoing: &[Link], incoming: &[Link], json: bool) {
@@ -165,5 +165,92 @@ pub fn print_marked(id: i64, kind: &str, confidence: f64, json: bool) {
             "Marked unit {} as {} (confidence: {:.2})",
             id, kind, confidence
         );
+    }
+}
+
+fn truncate_content(content: &str) -> String {
+    if content.chars().count() > 80 {
+        let end = content
+            .char_indices()
+            .nth(80)
+            .map(|(i, _)| i)
+            .unwrap_or(content.len());
+        format!("{}...", &content[..end])
+    } else {
+        content.to_string()
+    }
+}
+
+pub fn print_scan(result: &ScanResult, json: bool) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(result).unwrap());
+        return;
+    }
+
+    let mut found_issues = false;
+
+    if !result.low_confidence.is_empty() {
+        found_issues = true;
+        println!("Low confidence:");
+        for unit in &result.low_confidence {
+            println!(
+                "  [{}] ({:.2}) {}",
+                unit.id,
+                unit.confidence,
+                truncate_content(&unit.content)
+            );
+        }
+        println!();
+    }
+
+    if !result.negative_marks.is_empty() {
+        found_issues = true;
+        println!("Negative marks:");
+        for unit in &result.negative_marks {
+            println!("  [{}] {}", unit.id, truncate_content(&unit.content));
+        }
+        println!();
+    }
+
+    if !result.contradictions.is_empty() {
+        found_issues = true;
+        println!("Contradictions:");
+        for pair in &result.contradictions {
+            println!(
+                "  [{}] {} <-> [{}] {}",
+                pair.from_id,
+                truncate_content(&pair.from_content),
+                pair.to_id,
+                truncate_content(&pair.to_content)
+            );
+        }
+        println!();
+    }
+
+    if !result.orphans.is_empty() {
+        found_issues = true;
+        println!("Orphans:");
+        for unit in &result.orphans {
+            println!("  [{}] {}", unit.id, truncate_content(&unit.content));
+        }
+        println!();
+    }
+
+    if !result.stale.is_empty() {
+        found_issues = true;
+        println!("Stale:");
+        for unit in &result.stale {
+            println!(
+                "  [{}] ({}) {}",
+                unit.id,
+                unit.created,
+                truncate_content(&unit.content)
+            );
+        }
+        println!();
+    }
+
+    if !found_issues {
+        println!("No issues found.");
     }
 }
