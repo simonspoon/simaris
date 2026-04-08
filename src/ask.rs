@@ -2,7 +2,7 @@ use crate::db;
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
 #[derive(Debug, Serialize)]
@@ -128,13 +128,15 @@ pub fn ask(conn: &Connection, query: &str, synthesize: bool, debug: bool) -> Res
         eprintln!("\u{2502}");
     }
 
-    // Build result units
+    // Build result units — only keep links pointing outside the result set
+    let result_ids: HashSet<i64> = filtered.iter().map(|u| u.id).collect();
     let units: Vec<MatchedUnit> = filtered
         .iter()
         .map(|u| {
             let mut links = Vec::new();
             links.extend(u.links_to.iter().cloned());
             links.extend(u.links_from.iter().cloned());
+            links.retain(|l| !result_ids.contains(&l.unit_id));
             MatchedUnit {
                 id: u.id,
                 content: u.content.clone(),
