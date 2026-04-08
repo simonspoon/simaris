@@ -17,6 +17,9 @@ Seed units with varying ages/confidence. Run scan. Verify stale items flagged, c
 ## Result
 Self-maintaining knowledge store. No human in the maintenance loop.
 
+## Outcome
+scan command implemented: simaris scan runs five LLM-free health checks (low confidence, negative marks, contradictions, orphans, stale). Supports --json and --stale-days. 11 unit tests, all 72 tests pass. SQL injection fix applied after review. Integration tests deferred. Commit 4ca7fb8.
+
 ## AcceptanceCriteria
 1. scan on empty store exits 0, prints 'No issues found'
 2. Reports units with confidence < 0.6 (low-confidence section)

@@ -500,11 +500,57 @@
     },
     {
       "id": "uhbu",
-      "name": "Integration hooks — suda feeder and extraction pipeline",
+      "name": "Simaris session extraction hook",
       "parent": null,
-      "status": "captured",
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-08T18:49:59.693739-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-08T19:09:48.803887-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-08T19:09:54.346216-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-08T19:10:24.603505-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-08T19:16:07.880767-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "in-progress",
+          "by": "pm",
+          "at": "2026-04-08T19:18:40.961126-04:00",
+          "reason": "Code review: simaris binary not on PATH — add project build path as fallback"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-08T19:19:24.959158-04:00"
+        }
+      ],
       "created": "2026-04-08T12:06:01.84306-04:00",
-      "updated": "2026-04-08T12:06:01.84306-04:00"
+      "updated": "2026-04-08T19:19:24.959158-04:00"
     },
     {
       "id": "vcbi",
@@ -565,7 +611,7 @@
       "id": "ptbn",
       "name": "Add integration tests for scan command",
       "parent": null,
-      "status": "in-review",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -597,10 +643,16 @@
           "to": "in-review",
           "by": "pm",
           "at": "2026-04-08T15:52:52.52256-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-08T15:55:20.60367-04:00"
         }
       ],
       "created": "2026-04-08T15:46:23.601262-04:00",
-      "updated": "2026-04-08T15:54:16.765463-04:00"
+      "updated": "2026-04-08T15:55:20.60367-04:00"
     }
   ]
 }

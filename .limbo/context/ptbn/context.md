@@ -7,6 +7,9 @@ cargo test --test integration test_scan — all new tests pass, no existing test
 ## Result
 Full CLI-level test coverage for scan command
 
+## Outcome
+6 integration tests added for scan command. 78/78 tests pass. Commit 023fdb9.
+
 ## Notes
 ### 2026-04-08T15:54:14-04:00
 REVIEW FINDINGS:
