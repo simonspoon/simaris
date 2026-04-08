@@ -533,3 +533,107 @@ fn test_ask_debug_json() {
     assert!(parsed["debug"]["filter_kept"].is_number());
     assert!(parsed["debug"]["filter_total"].is_number());
 }
+
+#[test]
+fn test_scan_empty() {
+    let env = TestEnv::new("scanempty");
+    let out = env.run_ok(&["scan"]);
+    assert!(out.contains("No issues found."), "got: {out}");
+}
+
+#[test]
+fn test_scan_low_confidence() {
+    let env = TestEnv::new("scanlowconf");
+    env.run_ok(&["add", "dubious claim", "--type", "fact"]);
+    // Mark wrong 3 times: 1.0 -> 0.8 -> 0.6 -> 0.4
+    env.run_ok(&["mark", "1", "--kind", "wrong"]);
+    env.run_ok(&["mark", "1", "--kind", "wrong"]);
+    env.run_ok(&["mark", "1", "--kind", "wrong"]);
+    let out = env.run_ok(&["scan"]);
+    assert!(out.contains("Low confidence"), "got: {out}");
+    assert!(out.contains("[1]"), "got: {out}");
+}
+
+#[test]
+fn test_scan_contradictions() {
+    let env = TestEnv::new("scancontradictions");
+    env.run_ok(&["add", "the sky is blue", "--type", "fact"]);
+    env.run_ok(&["add", "the sky is green", "--type", "fact"]);
+    env.run_ok(&["link", "1", "2", "--rel", "contradicts"]);
+    let out = env.run_ok(&["scan"]);
+    assert!(out.contains("Contradictions"), "got: {out}");
+    assert!(out.contains("[1]"), "got: {out}");
+    assert!(out.contains("[2]"), "got: {out}");
+}
+
+#[test]
+fn test_scan_orphans() {
+    let env = TestEnv::new("scanorphans");
+    env.run_ok(&["add", "linked unit a", "--type", "fact"]);
+    env.run_ok(&["add", "linked unit b", "--type", "fact"]);
+    env.run_ok(&["add", "lonely unit c", "--type", "fact"]);
+    env.run_ok(&["link", "1", "2", "--rel", "related-to"]);
+    let out = env.run_ok(&["scan"]);
+    assert!(out.contains("Orphans"), "got: {out}");
+    assert!(out.contains("[3]"), "got: {out}");
+    // Units 1 and 2 are linked, should NOT appear in orphans section
+    let orphans_section = out
+        .split("Orphans:")
+        .nth(1)
+        .expect("Orphans section missing");
+    assert!(
+        !orphans_section.contains("[1]"),
+        "unit 1 should not be orphan, got: {out}"
+    );
+    assert!(
+        !orphans_section.contains("[2]"),
+        "unit 2 should not be orphan, got: {out}"
+    );
+}
+
+#[test]
+fn test_scan_json() {
+    let env = TestEnv::new("scanjson");
+    env.run_ok(&["add", "shaky knowledge", "--type", "fact"]);
+    // Mark wrong 3 times: 1.0 -> 0.8 -> 0.6 -> 0.4 (low confidence + negative marks)
+    env.run_ok(&["mark", "1", "--kind", "wrong"]);
+    env.run_ok(&["mark", "1", "--kind", "wrong"]);
+    env.run_ok(&["mark", "1", "--kind", "wrong"]);
+    let out = env.run_ok(&["--json", "scan"]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert!(parsed["low_confidence"].is_array(), "got: {out}");
+    assert!(parsed["negative_marks"].is_array(), "got: {out}");
+    assert!(parsed["contradictions"].is_array(), "got: {out}");
+    assert!(parsed["orphans"].is_array(), "got: {out}");
+    assert!(parsed["stale"].is_array(), "got: {out}");
+    // Unit should appear in low_confidence
+    let low_conf = parsed["low_confidence"].as_array().unwrap();
+    assert!(
+        low_conf.iter().any(|u| u["id"] == 1),
+        "unit 1 should be in low_confidence, got: {out}"
+    );
+    // Unit should appear in negative_marks
+    let neg_marks = parsed["negative_marks"].as_array().unwrap();
+    assert!(
+        neg_marks.iter().any(|u| u["id"] == 1),
+        "unit 1 should be in negative_marks, got: {out}"
+    );
+}
+
+#[test]
+fn test_scan_stale_days() {
+    let env = TestEnv::new("scanstale");
+    env.run_ok(&["add", "ancient knowledge", "--type", "fact"]);
+    // Backdate the unit's created timestamp via SQLite directly
+    let db_path = env.dir.join("sanctuary.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute(
+        "UPDATE units SET created = datetime('now', '-91 days') WHERE id = 1",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    let out = env.run_ok(&["scan"]);
+    assert!(out.contains("Stale"), "got: {out}");
+    assert!(out.contains("[1]"), "got: {out}");
+}

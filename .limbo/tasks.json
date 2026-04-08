@@ -442,7 +442,7 @@
       "id": "riuh",
       "name": "Add scan command — immune system for knowledge health",
       "parent": null,
-      "status": "in-review",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -487,10 +487,16 @@
           "to": "in-review",
           "by": "pm",
           "at": "2026-04-08T15:36:39.158201-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-08T15:39:02.809119-04:00"
         }
       ],
       "created": "2026-04-08T12:06:01.834017-04:00",
-      "updated": "2026-04-08T15:36:39.158202-04:00"
+      "updated": "2026-04-08T15:39:02.80912-04:00"
     },
     {
       "id": "uhbu",
@@ -554,6 +560,47 @@
       "status": "captured",
       "created": "2026-04-08T12:06:01.860363-04:00",
       "updated": "2026-04-08T12:06:01.860363-04:00"
+    },
+    {
+      "id": "ptbn",
+      "name": "Add integration tests for scan command",
+      "parent": null,
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-08T15:46:28.335796-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-08T15:46:28.344579-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-08T15:46:28.353025-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-08T15:46:28.371063-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-08T15:52:52.52256-04:00"
+        }
+      ],
+      "created": "2026-04-08T15:46:23.601262-04:00",
+      "updated": "2026-04-08T15:54:16.765463-04:00"
     }
   ]
 }
