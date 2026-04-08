@@ -55,6 +55,13 @@ struct ContextUnit {
 pub struct LinkInfo {
     pub unit_id: i64,
     pub relationship: String,
+    pub title: String,
+}
+
+/// Extract first 80 chars of the first line as a preview title.
+fn content_preview(content: &str) -> String {
+    let first_line = content.lines().next().unwrap_or(content);
+    first_line.chars().take(80).collect()
 }
 
 /// Main entry point: search the knowledge graph and optionally synthesize a response.
@@ -261,14 +268,19 @@ fn search_and_expand(conn: &Connection, search_queries: &[String]) -> Result<Gat
         let mut links_from = vec![];
 
         for (linked_id, relationship, direction) in &linked {
+            let title = db::get_unit(conn, *linked_id)
+                .map(|u| content_preview(&u.content))
+                .unwrap_or_default();
             match direction.as_str() {
                 "outgoing" => links_to.push(LinkInfo {
                     unit_id: *linked_id,
                     relationship: relationship.clone(),
+                    title,
                 }),
                 "incoming" => links_from.push(LinkInfo {
                     unit_id: *linked_id,
                     relationship: relationship.clone(),
+                    title,
                 }),
                 _ => {}
             }
@@ -298,14 +310,19 @@ fn search_and_expand(conn: &Connection, search_queries: &[String]) -> Result<Gat
                 let mut lt = vec![];
                 let mut lf = vec![];
                 for (lid, rel, dir) in &linked_links {
+                    let title = db::get_unit(conn, *lid)
+                        .map(|u| content_preview(&u.content))
+                        .unwrap_or_default();
                     match dir.as_str() {
                         "outgoing" => lt.push(LinkInfo {
                             unit_id: *lid,
                             relationship: rel.clone(),
+                            title,
                         }),
                         "incoming" => lf.push(LinkInfo {
                             unit_id: *lid,
                             relationship: rel.clone(),
+                            title,
                         }),
                         _ => {}
                     }

@@ -295,11 +295,26 @@ fn main() -> Result<()> {
             } else if result.units.is_empty() {
                 println!("No knowledge found for that query.");
             } else {
-                println!("Found {} relevant unit(s):", result.units.len());
+                println!("Found {} relevant unit(s):\n", result.units.len());
                 for unit in &result.units {
-                    let first_line: &str = unit.content.lines().next().unwrap_or(&unit.content);
-                    let preview: String = first_line.chars().take(60).collect();
-                    println!("  [{}] ({}) {}", unit.id, unit.unit_type, preview);
+                    let tags_str = if unit.tags.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" (tags: {})", unit.tags.join(", "))
+                    };
+                    println!("[{}] {}{}", unit.id, unit.unit_type, tags_str);
+                    for line in unit.content.lines() {
+                        println!("  {}", line);
+                    }
+                    if !unit.links.is_empty() {
+                        let link_strs: Vec<String> = unit
+                            .links
+                            .iter()
+                            .map(|l| format!("{} {} ({})", l.unit_id, l.title, l.relationship))
+                            .collect();
+                        println!("  Links: {}", link_strs.join(", "));
+                    }
+                    println!();
                 }
             }
         }

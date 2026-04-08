@@ -419,7 +419,7 @@
       "id": "vcbi",
       "name": "Refactor ask to hybrid mode: code search + Haiku relevance filter",
       "parent": null,
-      "status": "in-review",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -451,10 +451,16 @@
           "to": "in-review",
           "by": "pm",
           "at": "2026-04-08T12:52:40.076764-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-08T12:55:26.030398-04:00"
         }
       ],
       "created": "2026-04-08T12:06:01.851514-04:00",
-      "updated": "2026-04-08T12:54:30.233521-04:00"
+      "updated": "2026-04-08T12:55:26.030398-04:00"
     },
     {
       "id": "npjy",

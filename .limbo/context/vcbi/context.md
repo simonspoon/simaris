@@ -7,6 +7,9 @@ simaris ask returns JSON with matched units in <2s. No Sonnet calls. Haiku filte
 ## Result
 Fast, cheap, cache-friendly knowledge retrieval for agent workflows.
 
+## Outcome
+Ask refactored to hybrid mode: FTS5 code search + single Haiku relevance filter. Default returns structured JSON with matched units (no Sonnet calls). --synthesize flag preserves synthesis for human CLI. All 51 tests pass.
+
 ## AcceptanceCriteria
 1. Default ask returns JSON with matched units (no prose synthesis) in <2s. 2. Zero Sonnet calls in default path — only one Haiku call for relevance filtering. 3. Haiku filter prunes irrelevant units from FTS5 results before returning. 4. --synthesize flag preserves current Sonnet synthesis behavior for human CLI use. 5. --json flag outputs structured AskResult with query, units array, and metadata. 6. Existing tests pass (cargo test). 7. FTS5 search still uses stop-word removal and OR queries.
 
