@@ -78,9 +78,18 @@ pub fn ask(conn: &Connection, query: &str) -> Result<AskResult> {
     })
 }
 
-/// Sanitize a query string for FTS5 by quoting each word.
+/// Common English stop words that hurt FTS5 AND queries.
+const STOP_WORDS: &[&str] = &[
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "do", "does", "for", "from", "had",
+    "has", "have", "he", "her", "his", "how", "i", "if", "in", "into", "is", "it", "its", "me",
+    "my", "no", "not", "of", "on", "or", "our", "out", "she", "so", "some", "than", "that", "the",
+    "their", "them", "then", "there", "these", "they", "this", "to", "up", "us", "was", "we",
+    "what", "when", "which", "who", "will", "with", "would", "you", "your",
+];
+
+/// Sanitize a query string for FTS5 by quoting each word and removing stop words.
 fn sanitize_fts_query(query: &str) -> String {
-    query
+    let terms: Vec<String> = query
         .split_whitespace()
         .map(|word| {
             // Strip characters that are FTS5 operators/syntax
@@ -88,15 +97,30 @@ fn sanitize_fts_query(query: &str) -> String {
                 .chars()
                 .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
                 .collect();
-            if cleaned.is_empty() {
-                String::new()
-            } else {
-                format!("\"{}\"", cleaned)
-            }
+            cleaned.to_lowercase()
         })
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
+        .filter(|w| !w.is_empty() && !STOP_WORDS.contains(&w.as_str()))
+        .map(|w| format!("\"{}\"", w))
+        .collect();
+
+    if terms.is_empty() {
+        // Fall back to OR of all original words if stop-word removal ate everything
+        return query
+            .split_whitespace()
+            .map(|word| {
+                let cleaned: String = word
+                    .chars()
+                    .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+                    .collect();
+                cleaned.to_lowercase()
+            })
+            .filter(|w| !w.is_empty())
+            .map(|w| format!("\"{}\"", w))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+    }
+
+    terms.join(" OR ")
 }
 
 /// Phase 1: FTS5 search + 1-hop link expansion.
