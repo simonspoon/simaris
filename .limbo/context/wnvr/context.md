@@ -7,6 +7,9 @@ Use rubric of known-answer questions against dev2 store (196 units from 29 skill
 ## Result
 simaris ask returns intelligent, synthesized responses by traversing the knowledge graph.
 
+## Outcome
+Ask command working. Hybrid traversal (code retrieves, LLM steers+synthesizes). Rubric: 28/31 (90%) — 5/6 questions scored perfect, cross-skill synthesis needs improvement (top-N cap). FTS5 stop-word fix applied. 49 tests. 9 commits.
+
 ## AcceptanceCriteria
 1. simaris ask 'query' returns synthesized response. 2. Response uses relevant units from the graph. 3. Graph traversal follows links intelligently. 4. Empty results handled gracefully. 5. --json returns structured output. 6. Pass rubric of 6 known-answer questions. 7. All existing 47 tests pass.
 

@@ -313,7 +313,7 @@
       "id": "wnvr",
       "name": "Add ask command — hybrid context assembly with LLM-steered traversal",
       "parent": null,
-      "status": "in-progress",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -339,10 +339,16 @@
           "to": "in-progress",
           "by": "tl",
           "at": "2026-04-08T10:00:36.701024-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-08T10:14:04.721478-04:00"
         }
       ],
       "created": "2026-04-08T10:00:24.306452-04:00",
-      "updated": "2026-04-08T10:00:36.701025-04:00"
+      "updated": "2026-04-08T10:14:04.721479-04:00"
     }
   ]
 }
