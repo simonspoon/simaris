@@ -108,6 +108,10 @@ enum Command {
     Ask {
         /// Your question or context
         query: String,
+
+        /// Run LLM synthesis on results (default: return matched units only)
+        #[arg(long)]
+        synthesize: bool,
     },
 }
 
@@ -281,13 +285,22 @@ fn main() -> Result<()> {
                 success, total_units, failed
             );
         }
-        Command::Ask { query } => {
+        Command::Ask { query, synthesize } => {
             digest::check_claude()?;
-            let result = ask::ask(&conn, &query, cli.debug)?;
+            let result = ask::ask(&conn, &query, synthesize, cli.debug)?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&result).unwrap());
+            } else if let Some(ref response) = result.response {
+                println!("{}", response);
+            } else if result.units.is_empty() {
+                println!("No knowledge found for that query.");
             } else {
-                println!("{}", result.response);
+                println!("Found {} relevant unit(s):", result.units.len());
+                for unit in &result.units {
+                    let first_line: &str = unit.content.lines().next().unwrap_or(&unit.content);
+                    let preview: String = first_line.chars().take(60).collect();
+                    println!("  [{}] ({}) {}", unit.id, unit.unit_type, preview);
+                }
             }
         }
         Command::Restore { .. } => unreachable!(),

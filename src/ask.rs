@@ -8,20 +8,34 @@ use std::process::Command;
 #[derive(Debug, Serialize)]
 pub struct AskResult {
     pub query: String,
-    pub response: String,
+    pub units: Vec<MatchedUnit>,
     pub units_used: Vec<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debug: Option<DebugTrace>,
 }
 
 #[derive(Debug, Serialize)]
+pub struct MatchedUnit {
+    pub id: i64,
+    pub content: String,
+    pub unit_type: String,
+    pub tags: Vec<String>,
+    pub source: String,
+    pub is_direct_match: bool,
+    pub links: Vec<LinkInfo>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct DebugTrace {
-    pub search_queries: Vec<String>,
+    pub fts_query: String,
     pub matches_per_query: HashMap<String, usize>,
     pub total_gathered: usize,
-    pub steering_sufficient: bool,
-    pub steering_explore: Vec<i64>,
-    pub units_in_synthesis: usize,
+    pub filter_kept: usize,
+    pub filter_total: usize,
+    pub filter_fallback: bool,
+    pub units_in_result: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,46 +51,25 @@ struct ContextUnit {
     is_direct_match: bool,
 }
 
-#[derive(Debug, Serialize)]
-struct LinkInfo {
-    unit_id: i64,
-    relationship: String,
+#[derive(Debug, Clone, Serialize)]
+pub struct LinkInfo {
+    pub unit_id: i64,
+    pub relationship: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct SteeringResponse {
-    explore: Vec<i64>,
-    #[serde(default = "default_true")]
-    sufficient: bool,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn model() -> String {
-    std::env::var("SIMARIS_MODEL").unwrap_or_else(|_| "sonnet".to_string())
-}
-
-/// Main entry point: search the knowledge graph and synthesize a response.
-pub fn ask(conn: &Connection, query: &str, debug: bool) -> Result<AskResult> {
-    // Phase 0: LLM extracts intent + search keywords
-    let intent = extract_intent(query)?;
-
-    if debug {
-        eprintln!("\u{250c}\u{2500} PHASE 0: Intent Extraction (haiku)");
-        eprintln!("\u{2502}  query: {:?}", query);
-        eprintln!("\u{2502}  search_queries: {:?}", intent.search_queries);
-        eprintln!("\u{2502}");
-    }
-
-    // Phase 1: gather initial matches using LLM-chosen keywords
-    let gather = gather_initial_traced(conn, &intent.search_queries)?;
-    let mut gathered = gather.units;
+/// Main entry point: search the knowledge graph and optionally synthesize a response.
+pub fn ask(conn: &Connection, query: &str, synthesize: bool, debug: bool) -> Result<AskResult> {
+    // Phase 1: FTS5 search + 1-hop graph expansion
+    let fts_query = sanitize_fts_query(query);
+    let search_queries = vec![query.to_string()];
+    let gather = search_and_expand(conn, &search_queries)?;
+    let gathered = gather.units;
     let matches_per_query = gather.matches_per_query;
 
     if debug {
-        eprintln!("\u{251c}\u{2500} PHASE 1: Graph Search");
+        eprintln!("\u{250c}\u{2500} PHASE 1: FTS5 Search + Graph Expansion");
+        eprintln!("\u{2502}  query: {:?}", query);
+        eprintln!("\u{2502}  fts_query: {:?}", fts_query);
         for (sq, count) in &matches_per_query {
             let label = if *count == 1 { "match" } else { "matches" };
             eprintln!("\u{2502}  {:?} \u{2192} {} {}", sq, count, label);
@@ -96,16 +89,18 @@ pub fn ask(conn: &Connection, query: &str, debug: bool) -> Result<AskResult> {
     if gathered.is_empty() {
         return Ok(AskResult {
             query: query.to_string(),
-            response: "No knowledge found for that query.".to_string(),
+            units: vec![],
             units_used: vec![],
+            response: None,
             debug: if debug {
                 Some(DebugTrace {
-                    search_queries: intent.search_queries,
+                    fts_query,
                     matches_per_query,
                     total_gathered: 0,
-                    steering_sufficient: true,
-                    steering_explore: vec![],
-                    units_in_synthesis: 0,
+                    filter_kept: 0,
+                    filter_total: 0,
+                    filter_fallback: false,
+                    units_in_result: 0,
                 })
             } else {
                 None
@@ -113,114 +108,70 @@ pub fn ask(conn: &Connection, query: &str, debug: bool) -> Result<AskResult> {
         });
     }
 
-    // Phase 2: LLM steering — ask which units need deeper exploration
-    let steering = steer(query, &gathered)?;
+    // Phase 2: Haiku relevance filter
+    let filter_total = gathered.len();
+    let (filtered, filter_fallback) = filter_relevance(query, &gathered);
+    let filter_kept = filtered.len();
 
     if debug {
-        eprintln!("\u{251c}\u{2500} PHASE 2: Steering (sonnet)");
-        eprintln!("\u{2502}  sufficient: {}", steering.sufficient);
-        eprintln!("\u{2502}  explore: {:?}", steering.explore);
+        eprintln!("\u{251c}\u{2500} PHASE 2: Relevance Filter (haiku)");
+        eprintln!("\u{2502}  input: {} units", filter_total);
+        eprintln!("\u{2502}  kept: {} units", filter_kept);
+        eprintln!("\u{2502}  fallback: {}", filter_fallback);
         eprintln!("\u{2502}");
     }
 
-    // Phase 3: fetch additional units if steering says more is needed
-    if !steering.sufficient && !steering.explore.is_empty() {
-        gather_more(conn, &steering.explore, &mut gathered)?;
-    }
+    // Build result units
+    let units: Vec<MatchedUnit> = filtered
+        .iter()
+        .map(|u| {
+            let mut links = Vec::new();
+            links.extend(u.links_to.iter().cloned());
+            links.extend(u.links_from.iter().cloned());
+            MatchedUnit {
+                id: u.id,
+                content: u.content.clone(),
+                unit_type: u.unit_type.clone(),
+                tags: u.tags.clone(),
+                source: u.source.clone(),
+                is_direct_match: u.is_direct_match,
+                links,
+            }
+        })
+        .collect();
+    let units_used: Vec<i64> = units.iter().map(|u| u.id).collect();
+    let units_in_result = units.len();
 
-    // Phase 4: synthesize a response from all gathered units
-    let units_used: Vec<i64> = gathered.iter().map(|u| u.id).collect();
-
-    if debug {
-        eprintln!("\u{2514}\u{2500} PHASE 3: Synthesis (sonnet)");
-        eprintln!("   units_used: {}", units_used.len());
-    }
-
-    let response = synthesize(query, &gathered)?;
+    // Phase 3: Optional synthesis
+    let response = if synthesize {
+        if debug {
+            eprintln!("\u{2514}\u{2500} PHASE 3: Synthesis (sonnet)");
+            eprintln!("   units_used: {}", units_used.len());
+        }
+        Some(synthesize_response(query, &filtered)?)
+    } else {
+        None
+    };
 
     Ok(AskResult {
         query: query.to_string(),
-        response,
+        units,
         units_used,
+        response,
         debug: if debug {
             Some(DebugTrace {
-                search_queries: intent.search_queries,
+                fts_query,
                 matches_per_query,
-                total_gathered: gathered.len(),
-                steering_sufficient: steering.sufficient,
-                steering_explore: steering.explore,
-                units_in_synthesis: gathered.len(),
+                total_gathered: filter_total,
+                filter_kept,
+                filter_total,
+                filter_fallback,
+                units_in_result,
             })
         } else {
             None
         },
     })
-}
-
-#[derive(Debug, Deserialize)]
-struct IntentResult {
-    search_queries: Vec<String>,
-}
-
-/// Phase 0: Use haiku to extract intent and search keywords from natural language.
-fn extract_intent(query: &str) -> Result<IntentResult> {
-    let prompt = format!(
-        r#"You are a search query optimizer for a knowledge graph. Given a natural language question or context, extract the best search terms.
-
-Return ONLY JSON (no markdown, no code fences):
-{{
-  "search_queries": ["query1", "query2", "query3"]
-}}
-
-Rules:
-- Return 2-5 short search queries (1-3 words each)
-- Include specific tool/concept names if implied (e.g., "web testing" → include "khora")
-- Include both specific and broader terms
-- Think about what words would appear in stored knowledge about this topic
-
-Input: {query}
-
-Return ONLY valid JSON."#
-    );
-
-    let output = Command::new("claude")
-        .args(["-p", "--model", "haiku", &prompt])
-        .output()
-        .context("Failed to run claude CLI for intent extraction")?;
-
-    if !output.status.success() {
-        // Fallback: use raw query words
-        let words: Vec<String> = query
-            .split_whitespace()
-            .map(|w| w.to_lowercase())
-            .filter(|w| w.len() > 2)
-            .collect();
-        return Ok(IntentResult {
-            search_queries: if words.is_empty() {
-                vec![query.to_string()]
-            } else {
-                words
-            },
-        });
-    }
-
-    let response = String::from_utf8_lossy(&output.stdout);
-    let response = response.trim();
-
-    let json_str = response
-        .strip_prefix("```json")
-        .or_else(|| response.strip_prefix("```"))
-        .map(|s| s.strip_suffix("```").unwrap_or(s).trim())
-        .unwrap_or(response);
-
-    let result: IntentResult = serde_json::from_str(json_str).unwrap_or_else(|_| {
-        // Fallback: use raw query
-        IntentResult {
-            search_queries: vec![query.to_string()],
-        }
-    });
-
-    Ok(result)
 }
 
 /// Common English stop words that hurt FTS5 AND queries.
@@ -275,8 +226,8 @@ struct GatherResult {
     expansion_count: usize,
 }
 
-/// Phase 1: FTS5 search using multiple LLM-extracted queries + 1-hop link expansion.
-fn gather_initial_traced(conn: &Connection, search_queries: &[String]) -> Result<GatherResult> {
+/// FTS5 search using query terms + 1-hop link expansion.
+fn search_and_expand(conn: &Connection, search_queries: &[String]) -> Result<GatherResult> {
     // Run each search query and collect unique matches
     let mut seen_ids = std::collections::HashSet::new();
     let mut all_matches = vec![];
@@ -392,54 +343,44 @@ fn gather_initial_traced(conn: &Connection, search_queries: &[String]) -> Result
     })
 }
 
-/// Phase 2: Ask the LLM which units need deeper exploration.
-fn steer(query: &str, gathered: &[ContextUnit]) -> Result<SteeringResponse> {
-    let mut units_summary = String::new();
+/// Single Haiku call to filter gathered units by relevance to the query.
+/// Returns (filtered_units, fallback_used). On any failure, returns all units unfiltered.
+fn filter_relevance<'a>(query: &str, gathered: &'a [ContextUnit]) -> (Vec<&'a ContextUnit>, bool) {
+    let mut summaries = String::new();
     for unit in gathered {
-        let preview: String = unit.content.chars().take(100).collect();
-        let link_ids: Vec<String> = unit
-            .links_to
-            .iter()
-            .map(|l| format!("{} ({})", l.unit_id, l.relationship))
-            .chain(
-                unit.links_from
-                    .iter()
-                    .map(|l| format!("{} ({})", l.unit_id, l.relationship)),
-            )
-            .collect();
-        units_summary.push_str(&format!(
-            "[{}] ({}) {}... links: [{}]\n",
-            unit.id,
-            unit.unit_type,
-            preview,
-            link_ids.join(", ")
+        let preview: String = unit.content.chars().take(150).collect();
+        let tags_str = if unit.tags.is_empty() {
+            String::new()
+        } else {
+            format!(" tags=[{}]", unit.tags.join(", "))
+        };
+        summaries.push_str(&format!(
+            "- id={} type={}{}: {}\n",
+            unit.id, unit.unit_type, tags_str, preview
         ));
     }
 
     let prompt = format!(
-        r#"You are a knowledge graph navigator. Given a query and retrieved knowledge units, decide if more exploration is needed.
+        r#"You are a relevance filter. Given a query and a list of knowledge units, return ONLY the IDs of units relevant to the query.
 
 Query: {query}
 
-Retrieved units:
-{units_summary}
-Return ONLY JSON (no markdown):
-{{
-  "explore": [list of unit IDs that need deeper exploration],
-  "sufficient": true/false
-}}
-
-If the retrieved units contain enough information, set sufficient=true and explore=[]."#
+Units:
+{summaries}
+Return ONLY JSON (no markdown, no code fences):
+{{"relevant_ids": [1, 3, 5]}}"#
     );
 
-    let output = Command::new("claude")
-        .args(["-p", "--model", &model(), &prompt])
+    let output = match Command::new("claude")
+        .args(["-p", "--model", "haiku", &prompt])
         .output()
-        .context("Failed to run claude CLI")?;
+    {
+        Ok(o) => o,
+        Err(_) => return (gathered.iter().collect(), true),
+    };
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("claude CLI failed during steering: {stderr}");
+        return (gathered.iter().collect(), true);
     }
 
     let response = String::from_utf8_lossy(&output.stdout);
@@ -452,98 +393,37 @@ If the retrieved units contain enough information, set sufficient=true and explo
         .map(|s| s.strip_suffix("```").unwrap_or(s).trim())
         .unwrap_or(response);
 
-    let result: SteeringResponse = serde_json::from_str(json_str)
-        .with_context(|| format!("Failed to parse steering response: {json_str}"))?;
-
-    Ok(result)
-}
-
-/// Phase 3: Fetch additional units requested by steering.
-fn gather_more(
-    conn: &Connection,
-    explore_ids: &[i64],
-    gathered: &mut Vec<ContextUnit>,
-) -> Result<()> {
-    let existing_ids: std::collections::HashSet<i64> = gathered.iter().map(|u| u.id).collect();
-
-    for id in explore_ids {
-        if existing_ids.contains(id) {
-            continue;
-        }
-        if let Ok(unit) = db::get_unit(conn, *id) {
-            let linked = db::get_linked_unit_ids(conn, *id)?;
-            let mut links_to = vec![];
-            let mut links_from = vec![];
-
-            for (linked_id, relationship, direction) in &linked {
-                match direction.as_str() {
-                    "outgoing" => links_to.push(LinkInfo {
-                        unit_id: *linked_id,
-                        relationship: relationship.clone(),
-                    }),
-                    "incoming" => links_from.push(LinkInfo {
-                        unit_id: *linked_id,
-                        relationship: relationship.clone(),
-                    }),
-                    _ => {}
-                }
-            }
-
-            gathered.push(ContextUnit {
-                id: unit.id,
-                content: unit.content.clone(),
-                unit_type: unit.unit_type.clone(),
-                tags: unit.tags.clone(),
-                source: unit.source.clone(),
-                links_to,
-                links_from,
-                is_direct_match: false,
-            });
-
-            // Also fetch the linked units of explored units (1 more hop)
-            for (linked_id, _rel, _dir) in &linked {
-                let all_ids: std::collections::HashSet<i64> =
-                    gathered.iter().map(|u| u.id).collect();
-                if all_ids.contains(linked_id) {
-                    continue;
-                }
-                if let Ok(linked_unit) = db::get_unit(conn, *linked_id) {
-                    let ll = db::get_linked_unit_ids(conn, *linked_id)?;
-                    let mut lt = vec![];
-                    let mut lf = vec![];
-                    for (lid, rel, dir) in &ll {
-                        match dir.as_str() {
-                            "outgoing" => lt.push(LinkInfo {
-                                unit_id: *lid,
-                                relationship: rel.clone(),
-                            }),
-                            "incoming" => lf.push(LinkInfo {
-                                unit_id: *lid,
-                                relationship: rel.clone(),
-                            }),
-                            _ => {}
-                        }
-                    }
-                    gathered.push(ContextUnit {
-                        id: linked_unit.id,
-                        content: linked_unit.content.clone(),
-                        unit_type: linked_unit.unit_type.clone(),
-                        tags: linked_unit.tags.clone(),
-                        source: linked_unit.source.clone(),
-                        links_to: lt,
-                        links_from: lf,
-                        is_direct_match: false,
-                    });
-                }
-            }
-        }
+    #[derive(Deserialize)]
+    struct FilterResponse {
+        relevant_ids: Vec<i64>,
     }
 
-    Ok(())
+    let parsed: FilterResponse = match serde_json::from_str(json_str) {
+        Ok(r) => r,
+        Err(_) => return (gathered.iter().collect(), true),
+    };
+
+    let relevant_set: std::collections::HashSet<i64> = parsed.relevant_ids.into_iter().collect();
+
+    let filtered: Vec<&ContextUnit> = gathered
+        .iter()
+        .filter(|u| relevant_set.contains(&u.id))
+        .collect();
+
+    // If filter returned nothing relevant, fall back to all
+    if filtered.is_empty() {
+        return (gathered.iter().collect(), true);
+    }
+
+    (filtered, false)
 }
 
-/// Phase 4: Synthesize a response from all gathered units.
-fn synthesize(query: &str, units: &[ContextUnit]) -> Result<String> {
+fn model() -> String {
+    std::env::var("SIMARIS_MODEL").unwrap_or_else(|_| "sonnet".to_string())
+}
+
+/// Synthesize a response from gathered units using the LLM.
+fn synthesize_response(query: &str, units: &[&ContextUnit]) -> Result<String> {
     let mut units_text = String::new();
     for unit in units {
         units_text.push_str(&format!(

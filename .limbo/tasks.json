@@ -417,11 +417,44 @@
     },
     {
       "id": "vcbi",
-      "name": "Refactor ask to code-only mode (no internal LLM calls)",
+      "name": "Refactor ask to hybrid mode: code search + Haiku relevance filter",
       "parent": null,
-      "status": "captured",
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-08T12:45:00.274965-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-08T12:47:40.960867-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-08T12:47:40.969876-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-08T12:47:46.022335-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-08T12:52:40.076764-04:00"
+        }
+      ],
       "created": "2026-04-08T12:06:01.851514-04:00",
-      "updated": "2026-04-08T12:06:01.851514-04:00"
+      "updated": "2026-04-08T12:54:30.233521-04:00"
     },
     {
       "id": "npjy",

@@ -423,9 +423,18 @@ fn test_ask_empty_store_json() {
     let out = env.run_ok(&["--json", "ask", "what is rust?"]);
     let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
     assert_eq!(parsed["query"], "what is rust?");
-    assert!(parsed["response"].is_string());
+    assert!(
+        parsed["units"].is_array(),
+        "should have units array, got: {out}"
+    );
+    assert_eq!(parsed["units"].as_array().unwrap().len(), 0);
     assert!(parsed["units_used"].is_array());
     assert_eq!(parsed["units_used"].as_array().unwrap().len(), 0);
+    // response should not be present (skip_serializing_if = None)
+    assert!(
+        parsed["response"].is_null(),
+        "response should be absent when not synthesizing, got: {out}"
+    );
 }
 
 #[test]
@@ -434,10 +443,6 @@ fn test_ask_debug_flag() {
     let output = env.run(&["--debug", "ask", "what is rust?"]);
     assert!(output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("PHASE 0"),
-        "debug output should contain PHASE 0, got stderr: {stderr}"
-    );
     assert!(
         stderr.contains("PHASE 1"),
         "debug output should contain PHASE 1, got stderr: {stderr}"
@@ -460,6 +465,12 @@ fn test_ask_debug_json() {
         parsed["debug"].is_object(),
         "JSON should include debug field when --debug is set, got: {out}"
     );
-    assert!(parsed["debug"]["search_queries"].is_array());
+    assert!(
+        parsed["debug"]["fts_query"].is_string(),
+        "should have fts_query field, got: {out}"
+    );
     assert!(parsed["debug"]["matches_per_query"].is_object());
+    assert!(parsed["debug"]["total_gathered"].is_number());
+    assert!(parsed["debug"]["filter_kept"].is_number());
+    assert!(parsed["debug"]["filter_total"].is_number());
 }
