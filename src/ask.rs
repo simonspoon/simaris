@@ -48,8 +48,11 @@ fn model() -> String {
 
 /// Main entry point: search the knowledge graph and synthesize a response.
 pub fn ask(conn: &Connection, query: &str) -> Result<AskResult> {
-    // Phase 1: gather initial matches + 1-hop links
-    let mut gathered = gather_initial(conn, query)?;
+    // Phase 0: LLM extracts intent + search keywords
+    let intent = extract_intent(query)?;
+
+    // Phase 1: gather initial matches using LLM-chosen keywords
+    let mut gathered = gather_initial(conn, &intent.search_queries)?;
 
     if gathered.is_empty() {
         return Ok(AskResult {
@@ -76,6 +79,72 @@ pub fn ask(conn: &Connection, query: &str) -> Result<AskResult> {
         response,
         units_used,
     })
+}
+
+#[derive(Debug, Deserialize)]
+struct IntentResult {
+    search_queries: Vec<String>,
+}
+
+/// Phase 0: Use haiku to extract intent and search keywords from natural language.
+fn extract_intent(query: &str) -> Result<IntentResult> {
+    let prompt = format!(
+        r#"You are a search query optimizer for a knowledge graph. Given a natural language question or context, extract the best search terms.
+
+Return ONLY JSON (no markdown, no code fences):
+{{
+  "search_queries": ["query1", "query2", "query3"]
+}}
+
+Rules:
+- Return 2-5 short search queries (1-3 words each)
+- Include specific tool/concept names if implied (e.g., "web testing" → include "khora")
+- Include both specific and broader terms
+- Think about what words would appear in stored knowledge about this topic
+
+Input: {query}
+
+Return ONLY valid JSON."#
+    );
+
+    let output = Command::new("claude")
+        .args(["-p", "--model", "haiku", &prompt])
+        .output()
+        .context("Failed to run claude CLI for intent extraction")?;
+
+    if !output.status.success() {
+        // Fallback: use raw query words
+        let words: Vec<String> = query
+            .split_whitespace()
+            .map(|w| w.to_lowercase())
+            .filter(|w| w.len() > 2)
+            .collect();
+        return Ok(IntentResult {
+            search_queries: if words.is_empty() {
+                vec![query.to_string()]
+            } else {
+                words
+            },
+        });
+    }
+
+    let response = String::from_utf8_lossy(&output.stdout);
+    let response = response.trim();
+
+    let json_str = response
+        .strip_prefix("```json")
+        .or_else(|| response.strip_prefix("```"))
+        .map(|s| s.strip_suffix("```").unwrap_or(s).trim())
+        .unwrap_or(response);
+
+    let result: IntentResult = serde_json::from_str(json_str).unwrap_or_else(|_| {
+        // Fallback: use raw query
+        IntentResult {
+            search_queries: vec![query.to_string()],
+        }
+    });
+
+    Ok(result)
 }
 
 /// Common English stop words that hurt FTS5 AND queries.
@@ -123,15 +192,26 @@ fn sanitize_fts_query(query: &str) -> String {
     terms.join(" OR ")
 }
 
-/// Phase 1: FTS5 search + 1-hop link expansion.
-fn gather_initial(conn: &Connection, query: &str) -> Result<Vec<ContextUnit>> {
-    let fts_query = sanitize_fts_query(query);
-    let matches = if fts_query.is_empty() {
-        vec![]
-    } else {
-        db::search_units(conn, &fts_query).unwrap_or_default()
-    };
-    let matches: Vec<_> = matches.into_iter().take(10).collect();
+/// Phase 1: FTS5 search using multiple LLM-extracted queries + 1-hop link expansion.
+fn gather_initial(conn: &Connection, search_queries: &[String]) -> Result<Vec<ContextUnit>> {
+    // Run each search query and collect unique matches
+    let mut seen_ids = std::collections::HashSet::new();
+    let mut all_matches = vec![];
+
+    for sq in search_queries {
+        let fts_query = sanitize_fts_query(sq);
+        if fts_query.is_empty() {
+            continue;
+        }
+        let results = db::search_units(conn, &fts_query).unwrap_or_default();
+        for unit in results {
+            if seen_ids.insert(unit.id) {
+                all_matches.push(unit);
+            }
+        }
+    }
+
+    let matches: Vec<_> = all_matches.into_iter().take(15).collect();
 
     let mut units_by_id: HashMap<i64, ContextUnit> = HashMap::new();
 
