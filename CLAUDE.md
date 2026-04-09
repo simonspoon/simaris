@@ -1,0 +1,110 @@
+# simaris
+
+Rust CLI knowledge management system. Stores typed knowledge units in SQLite with FTS5 search, graph-based linking, confidence scoring via marks, and LLM-powered digest/synthesis via Claude CLI.
+
+## Build and Run
+
+| Command | Purpose |
+|---------|---------|
+| `cargo build` | Debug build |
+| `cargo build --release` | Release build |
+| `cargo test` | Run all tests (84 total: 42 integration, 42 unit) |
+| `cargo test test_name` | Run a single test |
+| `cargo install --path .` | Install binary |
+
+Binary: `./target/release/simaris`
+
+## Environment
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SIMARIS_HOME` | Override data directory | `~/.simaris/` |
+| `SIMARIS_ENV=dev` | Isolate to dev database | `~/.simaris/dev/sanctuary.db` |
+| `SIMARIS_MODEL` | Override LLM model for digest/ask | `sonnet` |
+
+Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
+
+## External Dependencies
+
+- `claude` CLI required for `digest` and `ask --synthesize` commands
+- SQLite is bundled via rusqlite (no system SQLite needed)
+
+## Source Layout
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `src/main.rs` | 391 | CLI entry, clap derive command parsing, dispatch |
+| `src/db.rs` | 1477 | SQLite schema, migrations, CRUD, backup/restore, scan |
+| `src/ask.rs` | 499 | FTS5 search, graph expansion, relevance filter, LLM synthesis |
+| `src/digest.rs` | 120 | LLM classification of inbox items into typed units |
+| `src/display.rs` | 275 | Text and JSON output formatting |
+| `tests/integration.rs` | 759 | End-to-end CLI tests via subprocess |
+
+## Architecture
+
+### Knowledge Types
+
+`fact`, `procedure`, `principle`, `preference`, `lesson`, `idea`
+
+### Relationship Types (links)
+
+`related_to`, `part_of`, `depends_on`, `contradicts`, `supersedes`, `sourced_from`
+
+### Mark Kinds (confidence feedback)
+
+| Kind | Delta |
+|------|-------|
+| `used` | +0.05 |
+| `helpful` | +0.10 |
+| `outdated` | -0.10 |
+| `wrong` | -0.20 |
+
+### Schema (4 tables)
+
+- `units` -- TEXT primary key (UUIDv7), content, type, source, confidence, verified, tags (JSON), conditions (JSON), timestamps
+- `links` -- composite PK (from_id, to_id, relationship), foreign keys to units with CASCADE delete
+- `inbox` -- TEXT primary key (UUIDv7), content, source, timestamp
+- `marks` -- TEXT primary key (UUIDv7), unit_id FK, kind, timestamp
+- `units_fts` -- FTS5 virtual table synced via triggers (uuid, content, type, tags, source)
+
+### Data Flow
+
+1. Raw input enters via `drop` -> inbox table
+2. `digest` classifies inbox items via LLM -> typed units (with overview unit first)
+3. `add` creates typed units directly (bypasses inbox)
+4. `promote` converts an inbox item to a typed unit
+5. `link` creates graph edges between units
+6. `mark` records feedback, adjusts unit confidence
+7. `ask` searches FTS5, expands via graph links, optionally synthesizes via LLM
+8. `scan` finds low-confidence, stale, orphaned, or contradicted units
+
+## Conventions
+
+- Rust edition 2024
+- UUIDv7 for all entity IDs (units, inbox items, marks, links use composite key)
+- All commands support `--json` for machine-readable output
+- `--debug` flag traces internal processing (used in `ask`)
+- Error handling via `anyhow::Result` throughout
+- Tests use `TestEnv` struct that creates an isolated `SIMARIS_HOME` in temp dir, cleaned up on drop
+- Integration tests invoke the compiled binary as a subprocess
+
+## Commands
+
+```
+simaris add <content> --type <type> [--source <source>]
+simaris show <id>
+simaris link <from_id> <to_id> --rel <relationship>
+simaris drop <content> [--source <source>]
+simaris promote <id> --type <type>
+simaris inbox
+simaris list [--type <type>]
+simaris search <query> [--type <type>]
+simaris ask <query> [--synthesize] [--type <type>]
+simaris digest
+simaris mark <id> --kind <kind>
+simaris scan [--stale-days <days>]
+simaris backup
+simaris restore [<filename>]
+```
+
+Global flags: `--json`, `--debug`
