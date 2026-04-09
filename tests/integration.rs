@@ -280,6 +280,28 @@ fn test_list_filter() {
 }
 
 #[test]
+fn test_aspect_type() {
+    let env = TestEnv::new("aspect");
+    let out = env.run_ok(&["add", "Code review aspect — skeptical, thorough, read-only", "--type", "aspect", "--tags", "code-review,quality"]);
+    let id = extract_id(&out);
+
+    // show displays correct type
+    let show = env.run_ok(&["show", &id]);
+    assert!(show.contains("aspect"), "got: {show}");
+    assert!(show.contains("skeptical"), "got: {show}");
+
+    // list --type aspect filters correctly
+    env.run_ok(&["add", "some fact", "--type", "fact"]);
+    let list = env.run_ok(&["list", "--type", "aspect"]);
+    assert!(list.contains("skeptical"), "got: {list}");
+    assert!(!list.contains("some fact"), "got: {list}");
+
+    // search --type aspect filters correctly
+    let search = env.run_ok(&["search", "review", "--type", "aspect"]);
+    assert!(search.contains("skeptical"), "got: {search}");
+}
+
+#[test]
 fn test_search_command() {
     let env = TestEnv::new("search");
     env.run_ok(&["add", "caching improves performance", "--type", "fact"]);

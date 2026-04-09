@@ -173,6 +173,7 @@ enum UnitType {
     Preference,
     Lesson,
     Idea,
+    Aspect,
 }
 
 impl UnitType {
@@ -184,6 +185,7 @@ impl UnitType {
             UnitType::Preference => "preference",
             UnitType::Lesson => "lesson",
             UnitType::Idea => "idea",
+            UnitType::Aspect => "aspect",
         }
     }
 }

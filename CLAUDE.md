@@ -44,7 +44,7 @@ Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 
 ### Knowledge Types
 
-`fact`, `procedure`, `principle`, `preference`, `lesson`, `idea`
+`fact`, `procedure`, `principle`, `preference`, `lesson`, `idea`, `aspect`
 
 ### Relationship Types (links)
 

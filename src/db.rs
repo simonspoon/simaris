@@ -82,7 +82,7 @@ pub fn connect() -> Result<Connection> {
     conn.execute_batch("PRAGMA journal_mode=WAL;")?;
     conn.execute_batch("PRAGMA foreign_keys=ON;")?;
 
-    let user_version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let mut user_version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if user_version == 0 {
         // Check if this is an existing database with old INTEGER schema
         let has_units: bool = conn.query_row(
@@ -92,7 +92,11 @@ pub fn connect() -> Result<Connection> {
         )?;
         if has_units {
             migrate_to_uuid(&conn)?;
+            user_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
         }
+    }
+    if user_version == 1 {
+        migrate_add_aspect_type(&conn)?;
     }
 
     initialize(&conn)?;
@@ -371,12 +375,90 @@ fn migrate_to_uuid(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Migration v1→v2: Add 'aspect' to the units type CHECK constraint.
+/// SQLite cannot ALTER CHECK constraints, so we rebuild the table.
+/// Must also rebuild links/marks since their FK references get silently
+/// repointed by ALTER TABLE RENAME.
+fn migrate_add_aspect_type(conn: &Connection) -> Result<()> {
+    create_backup(conn)?;
+
+    // Must disable FK checks outside transaction (PRAGMA is no-op inside transactions)
+    conn.execute_batch("PRAGMA foreign_keys=OFF;")?;
+
+    let tx = conn.unchecked_transaction()?;
+
+    // Drop FTS triggers and table
+    tx.execute_batch(
+        "DROP TRIGGER IF EXISTS units_ai;
+         DROP TRIGGER IF EXISTS units_ad;
+         DROP TRIGGER IF EXISTS units_au;
+         DROP TABLE IF EXISTS units_fts;",
+    )?;
+
+    // Rebuild all tables that reference units
+    tx.execute_batch(
+        "ALTER TABLE links RENAME TO links_v1;
+         ALTER TABLE marks RENAME TO marks_v1;
+         ALTER TABLE units RENAME TO units_v1;
+
+         CREATE TABLE units (
+             id          TEXT PRIMARY KEY,
+             content     TEXT NOT NULL,
+             type        TEXT NOT NULL CHECK(type IN ('fact','procedure','principle','preference','lesson','idea','aspect')),
+             source      TEXT NOT NULL DEFAULT 'inbox',
+             confidence  REAL NOT NULL DEFAULT 1.0,
+             verified    INTEGER NOT NULL DEFAULT 0,
+             tags        TEXT NOT NULL DEFAULT '[]',
+             conditions  TEXT NOT NULL DEFAULT '{}',
+             created     TEXT NOT NULL DEFAULT (datetime('now')),
+             updated     TEXT NOT NULL DEFAULT (datetime('now'))
+         );
+         INSERT INTO units (id, content, type, source, confidence, verified, tags, conditions, created, updated)
+             SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated FROM units_v1;
+
+         CREATE TABLE links (
+             from_id      TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+             to_id        TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+             relationship TEXT NOT NULL CHECK(relationship IN (
+                              'related_to','part_of','depends_on',
+                              'contradicts','supersedes','sourced_from')),
+             PRIMARY KEY (from_id, to_id, relationship)
+         );
+         CREATE INDEX idx_links_to ON links(to_id);
+         INSERT INTO links (from_id, to_id, relationship)
+             SELECT from_id, to_id, relationship FROM links_v1;
+
+         CREATE TABLE marks (
+             id       TEXT PRIMARY KEY,
+             unit_id  TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+             kind     TEXT NOT NULL CHECK(kind IN ('used','wrong','outdated','helpful')),
+             created  TEXT NOT NULL DEFAULT (datetime('now'))
+         );
+         CREATE INDEX idx_marks_unit ON marks(unit_id);
+         INSERT INTO marks (id, unit_id, kind, created)
+             SELECT id, unit_id, kind, created FROM marks_v1;
+
+         DROP TABLE marks_v1;
+         DROP TABLE links_v1;
+         DROP TABLE units_v1;",
+    )?;
+
+    tx.execute_batch("PRAGMA user_version = 2;")?;
+
+    tx.commit()?;
+
+    // Re-enable FK checks after transaction completes
+    conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+
+    Ok(())
+}
+
 fn initialize(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS units (
             id          TEXT PRIMARY KEY,
             content     TEXT NOT NULL,
-            type        TEXT NOT NULL CHECK(type IN ('fact','procedure','principle','preference','lesson','idea')),
+            type        TEXT NOT NULL CHECK(type IN ('fact','procedure','principle','preference','lesson','idea','aspect')),
             source      TEXT NOT NULL DEFAULT 'inbox',
             confidence  REAL NOT NULL DEFAULT 1.0,
             verified    INTEGER NOT NULL DEFAULT 0,
@@ -447,8 +529,8 @@ fn initialize(conn: &Connection) -> Result<()> {
 
     // Ensure user_version is set for fresh installs
     let user_version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if user_version == 0 {
-        conn.execute_batch("PRAGMA user_version = 1;")?;
+    if user_version < 2 {
+        conn.execute_batch("PRAGMA user_version = 2;")?;
     }
 
     Ok(())
@@ -1523,6 +1605,6 @@ mod tests {
         let version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
     }
 }

@@ -43,7 +43,7 @@ Rules:
 - First unit MUST be an overview: 1-3 sentences summarizing the whole thing. Mark it "is_overview": true.
 - Then extract each logical section, rule, principle, or distinct procedure as its own unit.
 - Each unit must be CONCISE — no prose, no filler. Distill to the essential information.
-- Each unit gets its own type: "fact", "procedure", "principle", "preference", "lesson", or "idea".
+- Each unit gets its own type: "fact", "procedure", "principle", "preference", "lesson", "idea", or "aspect".
 - Procedures should be step-by-step, not paragraphs.
 - Principles/rules should be standalone statements that make sense without context.
 - 2-5 tags per unit (lowercase).
@@ -105,6 +105,7 @@ Return ONLY valid JSON. No other text."#
         "preference",
         "lesson",
         "idea",
+        "aspect",
     ];
     for unit in &result.units {
         if !valid_types.contains(&unit.unit_type.as_str()) {
