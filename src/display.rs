@@ -1,6 +1,11 @@
 use crate::db::{InboxItem, Link, ScanResult, Unit};
 use std::path::Path;
 
+/// Short UUID for human-readable display (first 8 chars).
+fn short_id(id: &str) -> &str {
+    if id.len() >= 8 { &id[..8] } else { id }
+}
+
 pub fn print_unit(unit: &Unit, outgoing: &[Link], incoming: &[Link], json: bool) {
     if json {
         let value = serde_json::json!({
@@ -38,7 +43,7 @@ pub fn print_unit(unit: &Unit, outgoing: &[Link], incoming: &[Link], json: bool)
     }
 }
 
-pub fn print_added(id: i64, json: bool) {
+pub fn print_added(id: &str, json: bool) {
     if json {
         println!("{}", serde_json::json!({ "id": id }));
     } else {
@@ -46,7 +51,7 @@ pub fn print_added(id: i64, json: bool) {
     }
 }
 
-pub fn print_linked(from_id: i64, to_id: i64, relationship: &str, json: bool) {
+pub fn print_linked(from_id: &str, to_id: &str, relationship: &str, json: bool) {
     if json {
         println!(
             "{}",
@@ -61,7 +66,7 @@ pub fn print_linked(from_id: i64, to_id: i64, relationship: &str, json: bool) {
     }
 }
 
-pub fn print_dropped(id: i64, json: bool) {
+pub fn print_dropped(id: &str, json: bool) {
     if json {
         println!("{}", serde_json::json!({ "id": id }));
     } else {
@@ -89,7 +94,10 @@ pub fn print_units(units: &[Unit], json: bool) {
             };
             println!(
                 "[{}] {} ({})  {}",
-                unit.id, unit.unit_type, unit.source, content
+                short_id(&unit.id),
+                unit.unit_type,
+                unit.source,
+                content
             );
         }
     }
@@ -115,7 +123,10 @@ pub fn print_inbox(items: &[InboxItem], json: bool) {
             };
             println!(
                 "[{}] {} ({})  {}",
-                item.id, item.created, item.source, content
+                short_id(&item.id),
+                item.created,
+                item.source,
+                content
             );
         }
     }
@@ -152,7 +163,7 @@ pub fn print_restored(filename: &str, json: bool) {
     }
 }
 
-pub fn print_marked(id: i64, kind: &str, confidence: f64, json: bool) {
+pub fn print_marked(id: &str, kind: &str, confidence: f64, json: bool) {
     if json {
         let out = serde_json::json!({
             "id": id,
@@ -195,7 +206,7 @@ pub fn print_scan(result: &ScanResult, json: bool) {
         for unit in &result.low_confidence {
             println!(
                 "  [{}] ({:.2}) {}",
-                unit.id,
+                short_id(&unit.id),
                 unit.confidence,
                 truncate_content(&unit.content)
             );
@@ -207,7 +218,11 @@ pub fn print_scan(result: &ScanResult, json: bool) {
         found_issues = true;
         println!("Negative marks:");
         for unit in &result.negative_marks {
-            println!("  [{}] {}", unit.id, truncate_content(&unit.content));
+            println!(
+                "  [{}] {}",
+                short_id(&unit.id),
+                truncate_content(&unit.content)
+            );
         }
         println!();
     }
@@ -218,9 +233,9 @@ pub fn print_scan(result: &ScanResult, json: bool) {
         for pair in &result.contradictions {
             println!(
                 "  [{}] {} <-> [{}] {}",
-                pair.from_id,
+                short_id(&pair.from_id),
                 truncate_content(&pair.from_content),
-                pair.to_id,
+                short_id(&pair.to_id),
                 truncate_content(&pair.to_content)
             );
         }
@@ -231,7 +246,11 @@ pub fn print_scan(result: &ScanResult, json: bool) {
         found_issues = true;
         println!("Orphans:");
         for unit in &result.orphans {
-            println!("  [{}] {}", unit.id, truncate_content(&unit.content));
+            println!(
+                "  [{}] {}",
+                short_id(&unit.id),
+                truncate_content(&unit.content)
+            );
         }
         println!();
     }
@@ -242,7 +261,7 @@ pub fn print_scan(result: &ScanResult, json: bool) {
         for unit in &result.stale {
             println!(
                 "  [{}] ({}) {}",
-                unit.id,
+                short_id(&unit.id),
                 unit.created,
                 truncate_content(&unit.content)
             );

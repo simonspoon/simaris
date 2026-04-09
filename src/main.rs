@@ -40,16 +40,16 @@ enum Command {
     /// Show a knowledge unit
     Show {
         /// Unit ID
-        id: i64,
+        id: String,
     },
 
     /// Link two knowledge units
     Link {
         /// Source unit ID
-        from_id: i64,
+        from_id: String,
 
         /// Target unit ID
-        to_id: i64,
+        to_id: String,
 
         /// Relationship type
         #[arg(long)]
@@ -69,7 +69,7 @@ enum Command {
     /// Promote an inbox item to a typed knowledge unit
     Promote {
         /// Inbox item ID
-        id: i64,
+        id: String,
 
         /// Type for the new unit
         #[arg(long, rename_all = "snake_case")]
@@ -90,6 +90,10 @@ enum Command {
     Search {
         /// Search query
         query: String,
+
+        /// Filter by type
+        #[arg(long, rename_all = "snake_case")]
+        r#type: Option<UnitType>,
     },
 
     /// Create a backup of the knowledge store
@@ -107,7 +111,7 @@ enum Command {
     /// Record feedback on a knowledge unit
     Mark {
         /// Unit ID to mark
-        id: i64,
+        id: String,
         /// Kind of feedback
         #[arg(long)]
         kind: MarkKind,
@@ -121,6 +125,10 @@ enum Command {
         /// Run LLM synthesis on results (default: return matched units only)
         #[arg(long)]
         synthesize: bool,
+
+        /// Filter by type
+        #[arg(long, rename_all = "snake_case")]
+        r#type: Option<UnitType>,
     },
 
     /// Health-check the knowledge store
@@ -233,12 +241,12 @@ fn main() -> Result<()> {
             source,
         } => {
             let id = db::add_unit(&conn, &content, r#type.as_str(), &source)?;
-            display::print_added(id, cli.json);
+            display::print_added(&id, cli.json);
         }
         Command::Show { id } => {
-            let unit = db::get_unit(&conn, id)?;
-            let outgoing = db::get_links_from(&conn, id)?;
-            let incoming = db::get_links_to(&conn, id)?;
+            let unit = db::get_unit(&conn, &id)?;
+            let outgoing = db::get_links_from(&conn, &id)?;
+            let incoming = db::get_links_to(&conn, &id)?;
             display::print_unit(&unit, &outgoing, &incoming, cli.json);
         }
         Command::Link {
@@ -246,16 +254,16 @@ fn main() -> Result<()> {
             to_id,
             rel,
         } => {
-            db::add_link(&conn, from_id, to_id, rel.as_str())?;
-            display::print_linked(from_id, to_id, rel.as_str(), cli.json);
+            db::add_link(&conn, &from_id, &to_id, rel.as_str())?;
+            display::print_linked(&from_id, &to_id, rel.as_str(), cli.json);
         }
         Command::Drop { content, source } => {
             let id = db::drop_item(&conn, &content, &source)?;
-            display::print_dropped(id, cli.json);
+            display::print_dropped(&id, cli.json);
         }
         Command::Promote { id, r#type } => {
-            let unit_id = db::promote_item(&conn, id, r#type.as_str())?;
-            display::print_added(unit_id, cli.json);
+            let unit_id = db::promote_item(&conn, &id, r#type.as_str())?;
+            display::print_added(&unit_id, cli.json);
         }
         Command::Inbox => {
             let items = db::list_inbox(&conn)?;
@@ -266,8 +274,9 @@ fn main() -> Result<()> {
             let units = db::list_units(&conn, filter)?;
             display::print_units(&units, cli.json);
         }
-        Command::Search { query } => {
-            let units = db::search_units(&conn, &query)?;
+        Command::Search { query, r#type } => {
+            let filter = r#type.as_ref().map(|t| t.as_str());
+            let units = db::search_units(&conn, &query, filter)?;
             display::print_units(&units, cli.json);
         }
         Command::Backup => {
@@ -275,8 +284,8 @@ fn main() -> Result<()> {
             display::print_backup_created(&path, cli.json);
         }
         Command::Mark { id, kind } => {
-            let confidence = db::add_mark(&conn, id, kind.as_str(), kind.delta())?;
-            display::print_marked(id, kind.as_str(), confidence, cli.json);
+            let confidence = db::add_mark(&conn, &id, kind.as_str(), kind.delta())?;
+            display::print_marked(&id, kind.as_str(), confidence, cli.json);
         }
         Command::Digest => {
             let items = db::list_inbox(&conn)?;
@@ -299,7 +308,7 @@ fn main() -> Result<()> {
                     Ok(result) => {
                         match db::digest_inbox_item_multi(
                             &conn,
-                            item.id,
+                            &item.id,
                             &result.units,
                             &item.source,
                         ) {
@@ -333,9 +342,14 @@ fn main() -> Result<()> {
                 success, total_units, failed
             );
         }
-        Command::Ask { query, synthesize } => {
+        Command::Ask {
+            query,
+            synthesize,
+            r#type,
+        } => {
             digest::check_claude()?;
-            let result = ask::ask(&conn, &query, synthesize, cli.debug)?;
+            let filter = r#type.as_ref().map(|t| t.as_str());
+            let result = ask::ask(&conn, &query, synthesize, cli.debug, filter)?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&result).unwrap());
             } else if let Some(ref response) = result.response {

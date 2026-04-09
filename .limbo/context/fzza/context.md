@@ -7,6 +7,9 @@ cargo build succeeds. Fresh simaris init creates TEXT PK tables. Existing sanctu
 ## Result
 Schema uses UUIDv7 TEXT PRIMARY KEY everywhere. Migration function handles existing data. Fresh installs use new schema directly.
 
+## Outcome
+Schema migrated to UUIDv7 TEXT PRIMARY KEY. uuid crate added. In-place migration preserves all existing data with backup, FK remapping, and record count verification. Standalone FTS5 with uuid column. PRAGMA user_version for schema versioning. All db.rs types and functions updated. 24 expected compile errors remain in sibling-task files (ask.rs, main.rs, display.rs).
+
 ## AcceptanceCriteria
 1. Cargo.toml has uuid = { version = 1, features = [v7] } dependency. 2. units/inbox use TEXT PRIMARY KEY, links.from_id/to_id and marks.unit_id are TEXT NOT NULL with ON DELETE CASCADE. 3. Existing integer-ID rows get valid UUIDv7 strings assigned; FK relationships preserved. 4. units_fts rebuilt as standalone FTS5 (no content_rowid coupling) with uuid column; triggers updated. search_units joins on uuid. 5. PRAGMA user_version = 1 set after migration; connect() guards against re-running. 6. All db.rs struct types (Unit, InboxItem, Link, Mark) use String for IDs. 7. All db.rs function signatures use String IDs. 8. cargo build succeeds.
 
@@ -34,3 +37,33 @@ INVESTIGATION: No existing schema versioning. Will introduce PRAGMA user_version
 
 ### 2026-04-08T22:57:29-04:00
 TEST STRATEGY RATIONALE: Three-phase approach validates UUID migration at every level. Phase 1 establishes baseline behavior before migration with existing integer ID system, focusing on schema structure and FTS coupling. Phase 2 tests the actual migration process with concrete SQLite commands to verify schema changes, data preservation, and version guards. Phase 3 ensures all functionality works post-migration with UUID IDs via both unit tests and CLI integration tests. Every test item specifies exact tools (cargo test, sqlite3, simaris CLI) and expected outcomes (schema patterns, row counts, UUID formats). Migration is one-time so strategy emphasizes verification of successful transformation rather than repeatability. Special attention to FTS5 transition from content_rowid coupling to standalone with uuid column, since this is the key technical risk identified in task notes.
+
+### 2026-04-08T23:21:58-04:00
+REVIEW FINDINGS:
+
+### 0001-01-01T00:00:00Z
+- [tests/integration.rs:46] Test hardcoded to expect 'Added unit 1' but UUIDv7 migration means IDs are now long strings. All numeric ID assertions in tests will fail post-migration.
+- [tests/integration.rs:169] Same issue - test expects 'Added unit 1' with numeric ID.
+- [tests/integration.rs:101,159,268,495] JSON tests expecting parsed['id'] == 1 (integer) will fail with UUID strings.
+- [tests/integration.rs:60,71,72,80,81,82,86,168,182,484,485,493,503,571,576,577,584,587,594,600,601,612,634,640,647,655,660] All hardcoded references to numeric IDs ('1', '2', '999') in show/link/mark/scan commands will fail.
+
+The migration from i64→String IDs requires all integration tests to be updated to handle UUID format. This is a blocking issue - tests cannot pass with current hardcoded expectations.
+
+### 0001-01-01T00:00:00Z
+- [src/display.rs:46-52] print_added() displays full UUID string instead of using short_id() helper for human readability. Should be: println!("Added unit {}", short_id(id)).
+- [src/display.rs:54-67] print_linked() displays full UUID strings for both from_id and to_id instead of short IDs. Should use short_id() for console output.
+- [src/display.rs:69-75] print_dropped() displays full UUID string instead of short ID.
+- [src/display.rs:166-180] print_marked() displays full UUID string instead of short ID.
+
+All user-facing display functions should use short_id() for console readability while keeping full UUIDs for JSON output.
+
+### 0001-01-01T00:00:00Z
+- [src/ask.rs:135-157] Borrow handling is correct - using HashSet<&String> to avoid cloning, then .clone() only when building final result. Efficient approach.
+- [src/ask.rs:427] FilterResponse.relevant_ids: Vec<String> correctly matches UUID string format for LLM response parsing.
+- [src/display.rs:5-7] short_id() function correctly handles edge case of IDs shorter than 8 chars by returning the full string.
+- [src/main.rs:352] ask() function call correctly passes type filter by reference.
+
+The core String ID type changes are correctly implemented throughout. LLM integration properly handles string IDs. Borrow patterns avoid unnecessary allocations.
+
+### 2026-04-08T23:22:01-04:00
+VERDICT:review:REQUEST_CHANGES

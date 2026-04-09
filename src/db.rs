@@ -165,6 +165,7 @@ fn migrate_to_uuid(conn: &Connection) -> Result<()> {
             "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
              FROM units_old",
         )?;
+        #[allow(clippy::type_complexity)]
         let rows: Vec<(
             i64,
             String,

@@ -801,7 +801,7 @@
       "id": "fzza",
       "name": "Add uuid crate and migrate schema + data in-place",
       "parent": "yjls",
-      "status": "in-review",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -846,21 +846,57 @@
           "to": "in-review",
           "by": "pm",
           "at": "2026-04-08T23:10:20.046411-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-08T23:12:26.584496-04:00"
         }
       ],
       "created": "2026-04-08T22:50:50.083409-04:00",
-      "updated": "2026-04-08T23:10:20.046411-04:00"
+      "updated": "2026-04-08T23:22:01.689274-04:00"
     },
     {
       "id": "ocyf",
       "name": "Update all Rust code to use String IDs and generate UUIDv7s",
       "parent": "yjls",
-      "status": "captured",
-      "blockedBy": [
-        "fzza"
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-08T23:13:04.596473-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-08T23:13:04.614409-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-08T23:13:08.919509-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-08T23:13:08.939114-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-08T23:20:36.456361-04:00"
+        }
       ],
       "created": "2026-04-08T22:50:56.672722-04:00",
-      "updated": "2026-04-08T22:51:12.036217-04:00"
+      "updated": "2026-04-08T23:20:36.456361-04:00"
     },
     {
       "id": "tbwj",

@@ -9,7 +9,7 @@ use std::process::Command;
 pub struct AskResult {
     pub query: String,
     pub units: Vec<MatchedUnit>,
-    pub units_used: Vec<i64>,
+    pub units_used: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -18,7 +18,7 @@ pub struct AskResult {
 
 #[derive(Debug, Serialize)]
 pub struct MatchedUnit {
-    pub id: i64,
+    pub id: String,
     pub content: String,
     pub unit_type: String,
     pub tags: Vec<String>,
@@ -40,7 +40,7 @@ pub struct DebugTrace {
 
 #[derive(Debug, Serialize)]
 struct ContextUnit {
-    id: i64,
+    id: String,
     content: String,
     unit_type: String,
     tags: Vec<String>,
@@ -53,7 +53,7 @@ struct ContextUnit {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LinkInfo {
-    pub unit_id: i64,
+    pub unit_id: String,
     pub relationship: String,
     pub title: String,
 }
@@ -65,11 +65,17 @@ fn content_preview(content: &str) -> String {
 }
 
 /// Main entry point: search the knowledge graph and optionally synthesize a response.
-pub fn ask(conn: &Connection, query: &str, synthesize: bool, debug: bool) -> Result<AskResult> {
+pub fn ask(
+    conn: &Connection,
+    query: &str,
+    synthesize: bool,
+    debug: bool,
+    type_filter: Option<&str>,
+) -> Result<AskResult> {
     // Phase 1: FTS5 search + 1-hop graph expansion
     let fts_query = sanitize_fts_query(query);
     let search_queries = vec![query.to_string()];
-    let gather = search_and_expand(conn, &search_queries)?;
+    let gather = search_and_expand(conn, &search_queries, type_filter)?;
     let gathered = gather.units;
     let matches_per_query = gather.matches_per_query;
 
@@ -129,7 +135,7 @@ pub fn ask(conn: &Connection, query: &str, synthesize: bool, debug: bool) -> Res
     }
 
     // Build result units — only keep links pointing outside the result set
-    let result_ids: HashSet<i64> = filtered.iter().map(|u| u.id).collect();
+    let result_ids: HashSet<&String> = filtered.iter().map(|u| &u.id).collect();
     let units: Vec<MatchedUnit> = filtered
         .iter()
         .map(|u| {
@@ -138,7 +144,7 @@ pub fn ask(conn: &Connection, query: &str, synthesize: bool, debug: bool) -> Res
             links.extend(u.links_from.iter().cloned());
             links.retain(|l| !result_ids.contains(&l.unit_id));
             MatchedUnit {
-                id: u.id,
+                id: u.id.clone(),
                 content: u.content.clone(),
                 unit_type: u.unit_type.clone(),
                 tags: u.tags.clone(),
@@ -148,7 +154,7 @@ pub fn ask(conn: &Connection, query: &str, synthesize: bool, debug: bool) -> Res
             }
         })
         .collect();
-    let units_used: Vec<i64> = units.iter().map(|u| u.id).collect();
+    let units_used: Vec<String> = units.iter().map(|u| u.id.clone()).collect();
     let units_in_result = units.len();
 
     // Phase 3: Optional synthesis
@@ -236,7 +242,11 @@ struct GatherResult {
 }
 
 /// FTS5 search using query terms + 1-hop link expansion.
-fn search_and_expand(conn: &Connection, search_queries: &[String]) -> Result<GatherResult> {
+fn search_and_expand(
+    conn: &Connection,
+    search_queries: &[String],
+    type_filter: Option<&str>,
+) -> Result<GatherResult> {
     // Run each search query and collect unique matches
     let mut seen_ids = std::collections::HashSet::new();
     let mut all_matches = vec![];
@@ -248,10 +258,10 @@ fn search_and_expand(conn: &Connection, search_queries: &[String]) -> Result<Gat
             matches_per_query.insert(sq.clone(), 0);
             continue;
         }
-        let results = db::search_units(conn, &fts_query).unwrap_or_default();
+        let results = db::search_units(conn, &fts_query, type_filter).unwrap_or_default();
         let mut count = 0;
         for unit in results {
-            if seen_ids.insert(unit.id) {
+            if seen_ids.insert(unit.id.clone()) {
                 all_matches.push(unit);
                 count += 1;
             }
@@ -262,25 +272,25 @@ fn search_and_expand(conn: &Connection, search_queries: &[String]) -> Result<Gat
     let matches: Vec<_> = all_matches.into_iter().take(15).collect();
     let direct_count = matches.len();
 
-    let mut units_by_id: HashMap<i64, ContextUnit> = HashMap::new();
+    let mut units_by_id: HashMap<String, ContextUnit> = HashMap::new();
 
     for unit in &matches {
-        let linked = db::get_linked_unit_ids(conn, unit.id)?;
+        let linked = db::get_linked_unit_ids(conn, &unit.id)?;
         let mut links_to = vec![];
         let mut links_from = vec![];
 
         for (linked_id, relationship, direction) in &linked {
-            let title = db::get_unit(conn, *linked_id)
+            let title = db::get_unit(conn, linked_id)
                 .map(|u| content_preview(&u.content))
                 .unwrap_or_default();
             match direction.as_str() {
                 "outgoing" => links_to.push(LinkInfo {
-                    unit_id: *linked_id,
+                    unit_id: linked_id.clone(),
                     relationship: relationship.clone(),
                     title,
                 }),
                 "incoming" => links_from.push(LinkInfo {
-                    unit_id: *linked_id,
+                    unit_id: linked_id.clone(),
                     relationship: relationship.clone(),
                     title,
                 }),
@@ -289,9 +299,9 @@ fn search_and_expand(conn: &Connection, search_queries: &[String]) -> Result<Gat
         }
 
         units_by_id.insert(
-            unit.id,
+            unit.id.clone(),
             ContextUnit {
-                id: unit.id,
+                id: unit.id.clone(),
                 content: unit.content.clone(),
                 unit_type: unit.unit_type.clone(),
                 tags: unit.tags.clone(),
@@ -307,22 +317,22 @@ fn search_and_expand(conn: &Connection, search_queries: &[String]) -> Result<Gat
             if units_by_id.contains_key(linked_id) {
                 continue;
             }
-            if let Ok(linked_unit) = db::get_unit(conn, *linked_id) {
-                let linked_links = db::get_linked_unit_ids(conn, *linked_id)?;
+            if let Ok(linked_unit) = db::get_unit(conn, linked_id) {
+                let linked_links = db::get_linked_unit_ids(conn, linked_id)?;
                 let mut lt = vec![];
                 let mut lf = vec![];
                 for (lid, rel, dir) in &linked_links {
-                    let title = db::get_unit(conn, *lid)
+                    let title = db::get_unit(conn, lid)
                         .map(|u| content_preview(&u.content))
                         .unwrap_or_default();
                     match dir.as_str() {
                         "outgoing" => lt.push(LinkInfo {
-                            unit_id: *lid,
+                            unit_id: lid.clone(),
                             relationship: rel.clone(),
                             title,
                         }),
                         "incoming" => lf.push(LinkInfo {
-                            unit_id: *lid,
+                            unit_id: lid.clone(),
                             relationship: rel.clone(),
                             title,
                         }),
@@ -330,7 +340,7 @@ fn search_and_expand(conn: &Connection, search_queries: &[String]) -> Result<Gat
                     }
                 }
                 units_by_id.insert(
-                    *linked_id,
+                    linked_id.clone(),
                     ContextUnit {
                         id: linked_unit.id,
                         content: linked_unit.content.clone(),
@@ -414,7 +424,7 @@ Return ONLY JSON (no markdown, no code fences):
 
     #[derive(Deserialize)]
     struct FilterResponse {
-        relevant_ids: Vec<i64>,
+        relevant_ids: Vec<String>,
     }
 
     let parsed: FilterResponse = match serde_json::from_str(json_str) {
@@ -422,7 +432,7 @@ Return ONLY JSON (no markdown, no code fences):
         Err(_) => return (gathered.iter().collect(), true),
     };
 
-    let relevant_set: std::collections::HashSet<i64> = parsed.relevant_ids.into_iter().collect();
+    let relevant_set: std::collections::HashSet<String> = parsed.relevant_ids.into_iter().collect();
 
     let filtered: Vec<&ContextUnit> = gathered
         .iter()
