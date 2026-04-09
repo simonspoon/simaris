@@ -7,6 +7,9 @@ cargo build succeeds. cargo test passes. simaris add 'test fact' --type fact ret
 ## Result
 All code paths use String UUIDs. CLI accepts and displays UUIDs. No i64 ID references remain.
 
+## Outcome
+All compile errors fixed. ask.rs, main.rs, display.rs fully migrated to String IDs. cargo build/clippy/fmt clean. 42 unit tests pass. Short UUID display in table views, full UUID in JSON and action confirmations.
+
 ## AcceptanceCriteria
 1. cargo build succeeds with zero errors. 2. cargo clippy passes (no warnings). 3. No i64 ID references remain in ask.rs, main.rs, display.rs (except legitimate integer uses like counts). 4. CLI args for ID parameters accept strings. 5. Display shows short 8-char UUID prefix in table view, full UUID in --json. 6. LLM filter in ask.rs sends/receives string IDs.
 

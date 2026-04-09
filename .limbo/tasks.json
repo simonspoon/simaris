@@ -861,7 +861,7 @@
       "id": "ocyf",
       "name": "Update all Rust code to use String IDs and generate UUIDv7s",
       "parent": "yjls",
-      "status": "in-review",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -893,21 +893,57 @@
           "to": "in-review",
           "by": "pm",
           "at": "2026-04-08T23:20:36.456361-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-08T23:23:11.160112-04:00"
         }
       ],
       "created": "2026-04-08T22:50:56.672722-04:00",
-      "updated": "2026-04-08T23:20:36.456361-04:00"
+      "updated": "2026-04-08T23:23:11.160112-04:00"
     },
     {
       "id": "tbwj",
       "name": "Update integration tests for UUID IDs",
       "parent": "yjls",
-      "status": "captured",
-      "blockedBy": [
-        "ocyf"
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-08T23:23:21.697928-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-08T23:23:21.722028-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-08T23:23:21.740527-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-08T23:23:21.777976-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-08T23:36:47.090071-04:00"
+        }
       ],
       "created": "2026-04-08T22:51:00.606934-04:00",
-      "updated": "2026-04-08T22:51:12.046538-04:00"
+      "updated": "2026-04-08T23:38:02.451241-04:00"
     }
   ]
 }

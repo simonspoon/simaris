@@ -39,17 +39,56 @@ impl Drop for TestEnv {
     }
 }
 
+/// Extract UUID from output like "Added unit 019375a2-..." or "Dropped item 019375a2-..."
+fn extract_id(output: &str) -> String {
+    output.split_whitespace().last().unwrap().to_string()
+}
+
+/// First 8 chars of a UUID, matching display::short_id
+fn short_id(id: &str) -> &str {
+    if id.len() >= 8 { &id[..8] } else { id }
+}
+
+/// Assert that a string looks like a UUIDv7 (36 chars, hex + hyphens, 8-4-4-4-12)
+fn assert_uuid_format(id: &str) {
+    assert_eq!(
+        id.len(),
+        36,
+        "UUID should be 36 chars, got {}: {id}",
+        id.len()
+    );
+    let parts: Vec<&str> = id.split('-').collect();
+    assert_eq!(
+        parts.len(),
+        5,
+        "UUID should have 5 dash-separated parts: {id}"
+    );
+    assert_eq!(parts[0].len(), 8, "UUID part 1 should be 8 chars: {id}");
+    assert_eq!(parts[1].len(), 4, "UUID part 2 should be 4 chars: {id}");
+    assert_eq!(parts[2].len(), 4, "UUID part 3 should be 4 chars: {id}");
+    assert_eq!(parts[3].len(), 4, "UUID part 4 should be 4 chars: {id}");
+    assert_eq!(parts[4].len(), 12, "UUID part 5 should be 12 chars: {id}");
+    for part in &parts {
+        assert!(
+            part.chars().all(|c| c.is_ascii_hexdigit()),
+            "UUID parts should be hex: {id}"
+        );
+    }
+}
+
 #[test]
 fn test_add_command() {
     let env = TestEnv::new("add");
     let out = env.run_ok(&["add", "hello world", "--type", "fact"]);
-    assert!(out.contains("Added unit 1"), "got: {out}");
+    assert!(out.starts_with("Added unit "), "got: {out}");
+    let id = extract_id(&out);
+    assert_uuid_format(&id);
 }
 
 #[test]
 fn test_show_command() {
     let env = TestEnv::new("show");
-    env.run_ok(&[
+    let out = env.run_ok(&[
         "add",
         "some knowledge",
         "--type",
@@ -57,7 +96,8 @@ fn test_show_command() {
         "--source",
         "test",
     ]);
-    let out = env.run_ok(&["show", "1"]);
+    let id = extract_id(&out);
+    let out = env.run_ok(&["show", &id]);
     assert!(out.contains("some knowledge"), "got: {out}");
     assert!(out.contains("principle"), "got: {out}");
     assert!(out.contains("test"), "got: {out}");
@@ -66,24 +106,37 @@ fn test_show_command() {
 #[test]
 fn test_link_command() {
     let env = TestEnv::new("link");
-    env.run_ok(&["add", "unit a", "--type", "fact"]);
-    env.run_ok(&["add", "unit b", "--type", "idea"]);
-    let out = env.run_ok(&["link", "1", "2", "--rel", "related-to"]);
-    assert!(out.contains("Linked 1 -> 2"), "got: {out}");
+    let out_a = env.run_ok(&["add", "unit a", "--type", "fact"]);
+    let id_a = extract_id(&out_a);
+    let out_b = env.run_ok(&["add", "unit b", "--type", "idea"]);
+    let id_b = extract_id(&out_b);
+    let out = env.run_ok(&["link", &id_a, &id_b, "--rel", "related-to"]);
+    assert!(
+        out.contains(&format!("Linked {id_a} -> {id_b}")),
+        "got: {out}"
+    );
 }
 
 #[test]
 fn test_show_with_links() {
     let env = TestEnv::new("showlinks");
-    env.run_ok(&["add", "unit a", "--type", "fact"]);
-    env.run_ok(&["add", "unit b", "--type", "idea"]);
-    env.run_ok(&["link", "1", "2", "--rel", "depends-on"]);
+    let out_a = env.run_ok(&["add", "unit a", "--type", "fact"]);
+    let id_a = extract_id(&out_a);
+    let out_b = env.run_ok(&["add", "unit b", "--type", "idea"]);
+    let id_b = extract_id(&out_b);
+    env.run_ok(&["link", &id_a, &id_b, "--rel", "depends-on"]);
 
-    let out = env.run_ok(&["show", "1"]);
-    assert!(out.contains("-> 2 (depends_on)"), "got: {out}");
+    let out = env.run_ok(&["show", &id_a]);
+    assert!(
+        out.contains(&format!("-> {id_b} (depends_on)")),
+        "got: {out}"
+    );
 
-    let out = env.run_ok(&["show", "2"]);
-    assert!(out.contains("<- 1 (depends_on)"), "got: {out}");
+    let out = env.run_ok(&["show", &id_b]);
+    assert!(
+        out.contains(&format!("<- {id_a} (depends_on)")),
+        "got: {out}"
+    );
 }
 
 #[test]
@@ -98,9 +151,14 @@ fn test_json_output() {
     let env = TestEnv::new("json");
     let out = env.run_ok(&["--json", "add", "json test", "--type", "fact"]);
     let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
-    assert_eq!(parsed["id"], 1);
+    assert!(
+        parsed["id"].is_string(),
+        "id should be a string, got: {out}"
+    );
+    let id = parsed["id"].as_str().unwrap();
+    assert_uuid_format(id);
 
-    let out = env.run_ok(&["--json", "show", "1"]);
+    let out = env.run_ok(&["--json", "show", id]);
     let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
     assert_eq!(parsed["unit"]["content"], "json test");
     assert_eq!(parsed["unit"]["type"], "fact");
@@ -110,7 +168,9 @@ fn test_json_output() {
 fn test_drop_command() {
     let env = TestEnv::new("drop");
     let out = env.run_ok(&["drop", "raw idea about caching"]);
-    assert!(out.contains("Dropped item 1"), "got: {out}");
+    assert!(out.starts_with("Dropped item "), "got: {out}");
+    let id = extract_id(&out);
+    assert_uuid_format(&id);
 
     let out = env.run_ok(&["inbox"]);
     assert!(out.contains("raw idea about caching"), "got: {out}");
@@ -156,19 +216,25 @@ fn test_inbox_json_output() {
     assert_eq!(parsed[0]["source"], "cli");
     assert_eq!(parsed[1]["content"], "second thought");
     assert_eq!(parsed[1]["source"], "api");
-    assert!(parsed[0]["id"].is_number());
+    assert!(
+        parsed[0]["id"].is_string(),
+        "id should be a string, got: {out}"
+    );
     assert!(parsed[0]["created"].is_string());
 }
 
 #[test]
 fn test_promote_command() {
     let env = TestEnv::new("promote");
-    env.run_ok(&["drop", "caching matters for perf"]);
+    let drop_out = env.run_ok(&["drop", "caching matters for perf"]);
+    let inbox_id = extract_id(&drop_out);
 
-    let out = env.run_ok(&["promote", "1", "--type", "fact"]);
-    assert!(out.contains("Added unit 1"), "got: {out}");
+    let out = env.run_ok(&["promote", &inbox_id, "--type", "fact"]);
+    assert!(out.starts_with("Added unit "), "got: {out}");
+    let unit_id = extract_id(&out);
+    assert_uuid_format(&unit_id);
 
-    let out = env.run_ok(&["show", "1"]);
+    let out = env.run_ok(&["show", &unit_id]);
     assert!(out.contains("caching matters for perf"), "got: {out}");
     assert!(out.contains("fact"), "got: {out}");
 
@@ -179,11 +245,12 @@ fn test_promote_command() {
 #[test]
 fn test_promote_nonexistent_id() {
     let env = TestEnv::new("promotebad");
-    let output = env.run(&["promote", "999", "--type", "fact"]);
+    let fake_uuid = "00000000-0000-0000-0000-000000000000";
+    let output = env.run(&["promote", fake_uuid, "--type", "fact"]);
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Inbox item 999 not found"),
+        stderr.contains(&format!("Inbox item {fake_uuid} not found")),
         "got stderr: {stderr}"
     );
 }
@@ -223,6 +290,28 @@ fn test_search_command() {
 }
 
 #[test]
+fn test_search_type_filter() {
+    let env = TestEnv::new("searchtypefilter");
+    env.run_ok(&["add", "deploy procedure for cargo", "--type", "procedure"]);
+    env.run_ok(&["add", "cargo is a build tool", "--type", "fact"]);
+    let out = env.run_ok(&["search", "cargo", "--type", "procedure"]);
+    assert!(out.contains("deploy procedure"), "got: {out}");
+    assert!(!out.contains("build tool"), "got: {out}");
+}
+
+#[test]
+fn test_search_type_filter_json() {
+    let env = TestEnv::new("searchtypejson");
+    env.run_ok(&["add", "deploy procedure for cargo", "--type", "procedure"]);
+    env.run_ok(&["add", "cargo is a build tool", "--type", "fact"]);
+    let out = env.run_ok(&["--json", "search", "cargo", "--type", "procedure"]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    let arr = parsed.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["type"], "procedure");
+}
+
+#[test]
 fn test_search_empty_result() {
     let env = TestEnv::new("searchempty");
     env.run_ok(&["add", "some content", "--type", "fact"]);
@@ -243,7 +332,10 @@ fn test_list_json_output() {
     assert_eq!(parsed.len(), 2);
     assert!(parsed.iter().any(|u| u["content"] == "fact one"));
     assert!(parsed.iter().any(|u| u["content"] == "idea one"));
-    assert!(parsed[0]["id"].is_number());
+    assert!(
+        parsed[0]["id"].is_string(),
+        "id should be a string, got: {out}"
+    );
     assert!(parsed[0]["type"].is_string());
 }
 
@@ -458,19 +550,24 @@ fn test_ask_debug_flag() {
 #[test]
 fn test_mark_command() {
     let env = TestEnv::new("mark");
-    env.run_ok(&["add", "test unit", "--type", "fact"]);
-    let out = env.run_ok(&["mark", "1", "--kind", "wrong"]);
-    assert!(out.contains("Marked unit 1 as wrong"), "got: {out}");
+    let out = env.run_ok(&["add", "test unit", "--type", "fact"]);
+    let id = extract_id(&out);
+    let out = env.run_ok(&["mark", &id, "--kind", "wrong"]);
+    assert!(
+        out.contains(&format!("Marked unit {id} as wrong")),
+        "got: {out}"
+    );
     assert!(out.contains("confidence: 0.80"), "got: {out}");
 }
 
 #[test]
 fn test_mark_json_output() {
     let env = TestEnv::new("markjson");
-    env.run_ok(&["add", "test unit", "--type", "fact"]);
-    let out = env.run_ok(&["--json", "mark", "1", "--kind", "outdated"]);
+    let out = env.run_ok(&["add", "test unit", "--type", "fact"]);
+    let id = extract_id(&out);
+    let out = env.run_ok(&["--json", "mark", &id, "--kind", "outdated"]);
     let v: serde_json::Value = serde_json::from_str(&out).expect("valid json");
-    assert_eq!(v["id"], 1);
+    assert_eq!(v["id"].as_str().unwrap(), id, "id should match");
     assert_eq!(v["mark"], "outdated");
     assert!(v["confidence"].as_f64().unwrap() < 1.0);
 }
@@ -478,7 +575,8 @@ fn test_mark_json_output() {
 #[test]
 fn test_mark_nonexistent() {
     let env = TestEnv::new("marknonexist");
-    let output = env.run(&["mark", "999", "--kind", "used"]);
+    let fake_uuid = "00000000-0000-0000-0000-000000000000";
+    let output = env.run(&["mark", fake_uuid, "--kind", "used"]);
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -490,27 +588,30 @@ fn test_mark_nonexistent() {
 #[test]
 fn test_mark_confidence_accumulation() {
     let env = TestEnv::new("markaccum");
-    env.run_ok(&["add", "test unit", "--type", "fact"]);
-    env.run_ok(&["mark", "1", "--kind", "wrong"]); // 1.0 -> 0.8
-    let out = env.run_ok(&["mark", "1", "--kind", "helpful"]); // 0.8 -> 0.9
+    let out = env.run_ok(&["add", "test unit", "--type", "fact"]);
+    let id = extract_id(&out);
+    env.run_ok(&["mark", &id, "--kind", "wrong"]); // 1.0 -> 0.8
+    let out = env.run_ok(&["mark", &id, "--kind", "helpful"]); // 0.8 -> 0.9
     assert!(out.contains("0.90"), "got: {out}");
 }
 
 #[test]
 fn test_mark_clamping() {
     let env = TestEnv::new("markclamp");
-    env.run_ok(&["add", "test unit", "--type", "fact"]);
+    let out = env.run_ok(&["add", "test unit", "--type", "fact"]);
+    let id = extract_id(&out);
     for _ in 0..10 {
-        env.run_ok(&["mark", "1", "--kind", "wrong"]);
+        env.run_ok(&["mark", &id, "--kind", "wrong"]);
     }
-    let out = env.run_ok(&["show", "1"]);
+    let out = env.run_ok(&["show", &id]);
     assert!(out.contains("confidence: 0  verified"), "got: {out}");
 }
 
 #[test]
 fn test_mark_no_kind() {
     let env = TestEnv::new("marknokind");
-    let output = env.run(&["mark", "1"]);
+    let fake_uuid = "00000000-0000-0000-0000-000000000000";
+    let output = env.run(&["mark", fake_uuid]);
     assert!(!output.status.success());
 }
 
@@ -544,61 +645,79 @@ fn test_scan_empty() {
 #[test]
 fn test_scan_low_confidence() {
     let env = TestEnv::new("scanlowconf");
-    env.run_ok(&["add", "dubious claim", "--type", "fact"]);
+    let out = env.run_ok(&["add", "dubious claim", "--type", "fact"]);
+    let id = extract_id(&out);
     // Mark wrong 3 times: 1.0 -> 0.8 -> 0.6 -> 0.4
-    env.run_ok(&["mark", "1", "--kind", "wrong"]);
-    env.run_ok(&["mark", "1", "--kind", "wrong"]);
-    env.run_ok(&["mark", "1", "--kind", "wrong"]);
+    env.run_ok(&["mark", &id, "--kind", "wrong"]);
+    env.run_ok(&["mark", &id, "--kind", "wrong"]);
+    env.run_ok(&["mark", &id, "--kind", "wrong"]);
     let out = env.run_ok(&["scan"]);
     assert!(out.contains("Low confidence"), "got: {out}");
-    assert!(out.contains("[1]"), "got: {out}");
+    assert!(out.contains(&format!("[{}]", short_id(&id))), "got: {out}");
 }
 
 #[test]
 fn test_scan_contradictions() {
     let env = TestEnv::new("scancontradictions");
-    env.run_ok(&["add", "the sky is blue", "--type", "fact"]);
-    env.run_ok(&["add", "the sky is green", "--type", "fact"]);
-    env.run_ok(&["link", "1", "2", "--rel", "contradicts"]);
+    let out_a = env.run_ok(&["add", "the sky is blue", "--type", "fact"]);
+    let id_a = extract_id(&out_a);
+    let out_b = env.run_ok(&["add", "the sky is green", "--type", "fact"]);
+    let id_b = extract_id(&out_b);
+    env.run_ok(&["link", &id_a, &id_b, "--rel", "contradicts"]);
     let out = env.run_ok(&["scan"]);
     assert!(out.contains("Contradictions"), "got: {out}");
-    assert!(out.contains("[1]"), "got: {out}");
-    assert!(out.contains("[2]"), "got: {out}");
+    assert!(
+        out.contains(&format!("[{}]", short_id(&id_a))),
+        "got: {out}"
+    );
+    assert!(
+        out.contains(&format!("[{}]", short_id(&id_b))),
+        "got: {out}"
+    );
 }
 
 #[test]
 fn test_scan_orphans() {
     let env = TestEnv::new("scanorphans");
-    env.run_ok(&["add", "linked unit a", "--type", "fact"]);
-    env.run_ok(&["add", "linked unit b", "--type", "fact"]);
-    env.run_ok(&["add", "lonely unit c", "--type", "fact"]);
-    env.run_ok(&["link", "1", "2", "--rel", "related-to"]);
+    let out_a = env.run_ok(&["add", "linked unit a", "--type", "fact"]);
+    let id_a = extract_id(&out_a);
+    let out_b = env.run_ok(&["add", "linked unit b", "--type", "fact"]);
+    let id_b = extract_id(&out_b);
+    let out_c = env.run_ok(&["add", "lonely unit c", "--type", "fact"]);
+    let id_c = extract_id(&out_c);
+    env.run_ok(&["link", &id_a, &id_b, "--rel", "related-to"]);
     let out = env.run_ok(&["scan"]);
     assert!(out.contains("Orphans"), "got: {out}");
-    assert!(out.contains("[3]"), "got: {out}");
-    // Units 1 and 2 are linked, should NOT appear in orphans section
+    assert!(
+        out.contains(&format!("[{}]", short_id(&id_c))),
+        "got: {out}"
+    );
+    // Units a and b are linked, should NOT appear in orphans section
+    // Note: UUIDv7 short_ids may collide for rapidly-created units (same ms prefix),
+    // so we check by content text instead.
     let orphans_section = out
         .split("Orphans:")
         .nth(1)
         .expect("Orphans section missing");
     assert!(
-        !orphans_section.contains("[1]"),
-        "unit 1 should not be orphan, got: {out}"
+        !orphans_section.contains("linked unit a"),
+        "unit a should not be orphan, got: {out}"
     );
     assert!(
-        !orphans_section.contains("[2]"),
-        "unit 2 should not be orphan, got: {out}"
+        !orphans_section.contains("linked unit b"),
+        "unit b should not be orphan, got: {out}"
     );
 }
 
 #[test]
 fn test_scan_json() {
     let env = TestEnv::new("scanjson");
-    env.run_ok(&["add", "shaky knowledge", "--type", "fact"]);
+    let out = env.run_ok(&["add", "shaky knowledge", "--type", "fact"]);
+    let id = extract_id(&out);
     // Mark wrong 3 times: 1.0 -> 0.8 -> 0.6 -> 0.4 (low confidence + negative marks)
-    env.run_ok(&["mark", "1", "--kind", "wrong"]);
-    env.run_ok(&["mark", "1", "--kind", "wrong"]);
-    env.run_ok(&["mark", "1", "--kind", "wrong"]);
+    env.run_ok(&["mark", &id, "--kind", "wrong"]);
+    env.run_ok(&["mark", &id, "--kind", "wrong"]);
+    env.run_ok(&["mark", &id, "--kind", "wrong"]);
     let out = env.run_ok(&["--json", "scan"]);
     let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
     assert!(parsed["low_confidence"].is_array(), "got: {out}");
@@ -609,31 +728,32 @@ fn test_scan_json() {
     // Unit should appear in low_confidence
     let low_conf = parsed["low_confidence"].as_array().unwrap();
     assert!(
-        low_conf.iter().any(|u| u["id"] == 1),
-        "unit 1 should be in low_confidence, got: {out}"
+        low_conf.iter().any(|u| u["id"].as_str() == Some(&*id)),
+        "unit should be in low_confidence, got: {out}"
     );
     // Unit should appear in negative_marks
     let neg_marks = parsed["negative_marks"].as_array().unwrap();
     assert!(
-        neg_marks.iter().any(|u| u["id"] == 1),
-        "unit 1 should be in negative_marks, got: {out}"
+        neg_marks.iter().any(|u| u["id"].as_str() == Some(&*id)),
+        "unit should be in negative_marks, got: {out}"
     );
 }
 
 #[test]
 fn test_scan_stale_days() {
     let env = TestEnv::new("scanstale");
-    env.run_ok(&["add", "ancient knowledge", "--type", "fact"]);
+    let out = env.run_ok(&["add", "ancient knowledge", "--type", "fact"]);
+    let id = extract_id(&out);
     // Backdate the unit's created timestamp via SQLite directly
     let db_path = env.dir.join("sanctuary.db");
     let conn = rusqlite::Connection::open(&db_path).unwrap();
     conn.execute(
-        "UPDATE units SET created = datetime('now', '-91 days') WHERE id = 1",
-        [],
+        "UPDATE units SET created = datetime('now', '-91 days') WHERE id = ?1",
+        rusqlite::params![id],
     )
     .unwrap();
     drop(conn);
     let out = env.run_ok(&["scan"]);
     assert!(out.contains("Stale"), "got: {out}");
-    assert!(out.contains("[1]"), "got: {out}");
+    assert!(out.contains(&format!("[{}]", short_id(&id))), "got: {out}");
 }
