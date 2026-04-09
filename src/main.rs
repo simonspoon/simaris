@@ -35,6 +35,10 @@ enum Command {
         /// Source of the unit
         #[arg(long, default_value = "inbox")]
         source: String,
+
+        /// Tags (comma-separated)
+        #[arg(long)]
+        tags: Option<String>,
     },
 
     /// Show a knowledge unit
@@ -131,6 +135,28 @@ enum Command {
         r#type: Option<UnitType>,
     },
 
+    /// Edit a knowledge unit
+    Edit {
+        /// Unit ID
+        id: String,
+
+        /// New content
+        #[arg(long)]
+        content: Option<String>,
+
+        /// New type
+        #[arg(long, rename_all = "snake_case")]
+        r#type: Option<UnitType>,
+
+        /// New source
+        #[arg(long)]
+        source: Option<String>,
+
+        /// New tags (comma-separated, replaces existing)
+        #[arg(long)]
+        tags: Option<String>,
+    },
+
     /// Health-check the knowledge store
     Scan {
         /// Days without marks before a unit is considered stale
@@ -163,6 +189,7 @@ impl UnitType {
 }
 
 #[derive(Clone, ValueEnum)]
+#[value(rename_all = "snake_case")]
 enum Relationship {
     RelatedTo,
     PartOf,
@@ -239,8 +266,14 @@ fn main() -> Result<()> {
             content,
             r#type,
             source,
+            tags,
         } => {
-            let id = db::add_unit(&conn, &content, r#type.as_str(), &source)?;
+            let id = if let Some(tag_str) = tags {
+                let tag_vec: Vec<String> = tag_str.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+                db::add_unit_full(&conn, &content, r#type.as_str(), &source, &tag_vec)?
+            } else {
+                db::add_unit(&conn, &content, r#type.as_str(), &source)?
+            };
             display::print_added(&id, cli.json);
         }
         Command::Show { id } => {
@@ -379,6 +412,26 @@ fn main() -> Result<()> {
                     println!();
                 }
             }
+        }
+        Command::Edit {
+            id,
+            content,
+            r#type,
+            source,
+            tags,
+        } => {
+            let tag_vec: Option<Vec<String>> = tags.map(|t| t.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
+            let unit = db::update_unit(
+                &conn,
+                &id,
+                content.as_deref(),
+                r#type.as_ref().map(|t| t.as_str()),
+                source.as_deref(),
+                tag_vec.as_deref(),
+            )?;
+            let outgoing = db::get_links_from(&conn, &id)?;
+            let incoming = db::get_links_to(&conn, &id)?;
+            display::print_unit(&unit, &outgoing, &incoming, cli.json);
         }
         Command::Scan { stale_days } => {
             let result = db::scan(&conn, stale_days)?;

@@ -7,5 +7,8 @@ cargo build succeeds, cargo test passes, manual test: simaris add + simaris show
 ## Result
 All simaris IDs are UUIDv7 strings. Existing data preserved via migration. Ready for future export/import work.
 
+## Outcome
+All 3 subtasks complete. simaris IDs migrated from auto-increment integers to UUIDv7. Schema, code, and tests all updated. 84/84 tests pass. In-place migration preserves existing data.
+
 ## Description
 Replace INTEGER PRIMARY KEY AUTOINCREMENT with UUIDv7 TEXT PRIMARY KEY across the entire schema (units, inbox, links, marks, units_fts). In-place migration preserves all existing data by generating UUIDv7s for current rows. Enables future cross-instance export/import without ID collisions.

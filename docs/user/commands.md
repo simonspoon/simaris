@@ -24,7 +24,7 @@ Knowledge unit storage. All commands support `--json` for machine-readable outpu
 Create a typed knowledge unit.
 
 ```
-simaris add <CONTENT> --type <TYPE> [--source <SOURCE>]
+simaris add <CONTENT> --type <TYPE> [--source <SOURCE>] [--tags <TAGS>]
 ```
 
 ### Arguments
@@ -34,6 +34,7 @@ simaris add <CONTENT> --type <TYPE> [--source <SOURCE>]
 | `CONTENT` | string | yes | -- | Content of the unit. |
 | `--type` | UnitType | yes | -- | Type of knowledge unit. |
 | `--source` | string | no | `inbox` | Source attribution for the unit. |
+| `--tags` | string | no | -- | Comma-separated tags (e.g. `"rust,testing,quality"`). |
 
 ### UnitType values
 
@@ -56,6 +57,7 @@ Added unit 019660a3-7b2e-7000-8000-1a2b3c4d5e6f
 ```
 simaris add "Rust edition 2024 uses the new async trait syntax" --type fact --source docs
 simaris add "Always run cargo fmt before committing" --type principle
+simaris add "Run cargo test before pushing" --type procedure --tags "rust,testing,quality"
 ```
 
 ---
@@ -134,7 +136,7 @@ simaris link <FROM_ID> <TO_ID> --rel <RELATIONSHIP>
 
 ### Relationship values
 
-`related-to`, `part-of`, `depends-on`, `contradicts`, `supersedes`, `sourced-from`
+`related_to`, `part_of`, `depends_on`, `contradicts`, `supersedes`, `sourced_from`
 
 ### Output
 
@@ -155,7 +157,38 @@ Linked 019660a3-7b2e-... -> 019660a3-8c3f-... (related_to)
 ### Example
 
 ```
-simaris link 019660a3-7b2e-7000-8000-1a2b3c4d5e6f 019660a3-8c3f-7000-8000-2b3c4d5e6f7a --rel depends-on
+simaris link 019660a3-7b2e-7000-8000-1a2b3c4d5e6f 019660a3-8c3f-7000-8000-2b3c4d5e6f7a --rel depends_on
+```
+
+---
+
+## edit
+
+Update one or more fields on an existing knowledge unit. At least one of `--content`, `--type`, `--source`, or `--tags` must be provided. Shows the updated unit after applying changes.
+
+```
+simaris edit <ID> [--content <CONTENT>] [--type <TYPE>] [--source <SOURCE>] [--tags <TAGS>]
+```
+
+### Arguments
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `ID` | string | yes | Unit ID (full UUIDv7). |
+| `--content` | string | no | New content for the unit. |
+| `--type` | UnitType | no | New type for the unit. |
+| `--source` | string | no | New source attribution. |
+| `--tags` | string | no | Comma-separated tags (replaces existing tags). |
+
+### Output
+
+Displays the updated unit in the same format as `show`.
+
+### Example
+
+```
+simaris edit 019660a3-7b2e-7000-8000-1a2b3c4d5e6f --tags "rust,async,updated"
+simaris edit 019660a3-7b2e-7000-8000-1a2b3c4d5e6f --content "Updated content here" --type lesson
 ```
 
 ---

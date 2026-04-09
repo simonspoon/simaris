@@ -200,13 +200,14 @@ const STOP_WORDS: &[&str] = &[
 
 /// Sanitize a query string for FTS5 by quoting each word and removing stop words.
 fn sanitize_fts_query(query: &str) -> String {
+    let query = query.replace('-', " ");
     let terms: Vec<String> = query
         .split_whitespace()
         .map(|word| {
             // Strip characters that are FTS5 operators/syntax
             let cleaned: String = word
                 .chars()
-                .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+                .filter(|c| c.is_alphanumeric() || *c == '_')
                 .collect();
             cleaned.to_lowercase()
         })
@@ -221,7 +222,7 @@ fn sanitize_fts_query(query: &str) -> String {
             .map(|word| {
                 let cleaned: String = word
                     .chars()
-                    .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+                    .filter(|c| c.is_alphanumeric() || *c == '_')
                     .collect();
                 cleaned.to_lowercase()
             })

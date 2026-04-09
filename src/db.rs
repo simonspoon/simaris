@@ -516,11 +516,37 @@ pub fn list_units(conn: &Connection, type_filter: Option<&str>) -> Result<Vec<Un
     Ok(units)
 }
 
+/// Sanitize a query string for FTS5 by quoting each word and joining with OR.
+/// Strips hyphens (FTS5 interprets them as NOT) and other operator characters.
+fn sanitize_fts_query(query: &str) -> String {
+    // Replace hyphens with spaces so "pre-push" becomes "pre push" (two terms),
+    // matching how FTS5's tokenizer splits hyphenated words.
+    let query = query.replace('-', " ");
+    let terms: Vec<String> = query
+        .split_whitespace()
+        .map(|word| {
+            let cleaned: String = word
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            cleaned.to_lowercase()
+        })
+        .filter(|w| !w.is_empty())
+        .map(|w| format!("\"{}\"", w))
+        .collect();
+
+    if terms.is_empty() {
+        return query.to_string();
+    }
+    terms.join(" OR ")
+}
+
 pub fn search_units(
     conn: &Connection,
     query: &str,
     type_filter: Option<&str>,
 ) -> Result<Vec<Unit>> {
+    let sanitized = sanitize_fts_query(query);
     let units = match type_filter {
         Some(t) => {
             let mut stmt = conn.prepare(
@@ -530,7 +556,7 @@ pub fn search_units(
                  WHERE units_fts MATCH ?1 AND u.type = ?2
                  ORDER BY rank",
             )?;
-            stmt.query_map(params![query, t], row_to_unit)?
+            stmt.query_map(params![sanitized, t], row_to_unit)?
                 .collect::<Result<Vec<_>, _>>()?
         }
         None => {
@@ -541,7 +567,7 @@ pub fn search_units(
                  WHERE units_fts MATCH ?1
                  ORDER BY rank",
             )?;
-            stmt.query_map(params![query], row_to_unit)?
+            stmt.query_map(params![sanitized], row_to_unit)?
                 .collect::<Result<Vec<_>, _>>()?
         }
     };
@@ -604,7 +630,6 @@ pub fn add_link(conn: &Connection, from_id: &str, to_id: &str, relationship: &st
     Ok(())
 }
 
-#[allow(dead_code)]
 pub fn add_unit_full(
     conn: &Connection,
     content: &str,
@@ -619,6 +644,32 @@ pub fn add_unit_full(
         params![id, content, unit_type, source, tags_json],
     )?;
     Ok(id)
+}
+
+pub fn update_unit(
+    conn: &Connection,
+    id: &str,
+    content: Option<&str>,
+    unit_type: Option<&str>,
+    source: Option<&str>,
+    tags: Option<&[String]>,
+) -> Result<Unit> {
+    let unit = get_unit(conn, id)?;
+
+    let new_content = content.unwrap_or(&unit.content);
+    let new_type = unit_type.unwrap_or(&unit.unit_type);
+    let new_source = source.unwrap_or(&unit.source);
+    let new_tags = match tags {
+        Some(t) => serde_json::to_string(t)?,
+        None => serde_json::to_string(&unit.tags)?,
+    };
+
+    conn.execute(
+        "UPDATE units SET content = ?1, type = ?2, source = ?3, tags = ?4, updated = datetime('now') WHERE id = ?5",
+        params![new_content, new_type, new_source, new_tags, id],
+    )?;
+
+    get_unit(conn, id)
 }
 
 #[allow(dead_code)]

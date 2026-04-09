@@ -7,6 +7,9 @@ cargo test -- --test-threads=1 passes with all tests green. No i64 ID assumption
 ## Result
 Integration tests validate UUID-based ID system end-to-end.
 
+## Outcome
+All 42 integration tests updated and passing. UUID extraction helpers, format validation, short_id display matching. No hardcoded integer IDs remain.
+
 ## AcceptanceCriteria
 1. cargo test passes with ALL integration tests green. 2. No hardcoded integer IDs remain in test code. 3. Tests capture UUID from add/drop output and use it in subsequent commands. 4. UUID format validated (regex pattern). 5. JSON assertions check for string IDs, not numeric.
 

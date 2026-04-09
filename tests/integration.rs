@@ -110,7 +110,7 @@ fn test_link_command() {
     let id_a = extract_id(&out_a);
     let out_b = env.run_ok(&["add", "unit b", "--type", "idea"]);
     let id_b = extract_id(&out_b);
-    let out = env.run_ok(&["link", &id_a, &id_b, "--rel", "related-to"]);
+    let out = env.run_ok(&["link", &id_a, &id_b, "--rel", "related_to"]);
     assert!(
         out.contains(&format!("Linked {id_a} -> {id_b}")),
         "got: {out}"
@@ -124,7 +124,7 @@ fn test_show_with_links() {
     let id_a = extract_id(&out_a);
     let out_b = env.run_ok(&["add", "unit b", "--type", "idea"]);
     let id_b = extract_id(&out_b);
-    env.run_ok(&["link", &id_a, &id_b, "--rel", "depends-on"]);
+    env.run_ok(&["link", &id_a, &id_b, "--rel", "depends_on"]);
 
     let out = env.run_ok(&["show", &id_a]);
     assert!(
@@ -685,7 +685,7 @@ fn test_scan_orphans() {
     let id_b = extract_id(&out_b);
     let out_c = env.run_ok(&["add", "lonely unit c", "--type", "fact"]);
     let id_c = extract_id(&out_c);
-    env.run_ok(&["link", &id_a, &id_b, "--rel", "related-to"]);
+    env.run_ok(&["link", &id_a, &id_b, "--rel", "related_to"]);
     let out = env.run_ok(&["scan"]);
     assert!(out.contains("Orphans"), "got: {out}");
     assert!(

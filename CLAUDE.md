@@ -33,9 +33,9 @@ Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/main.rs` | 391 | CLI entry, clap derive command parsing, dispatch |
-| `src/db.rs` | 1477 | SQLite schema, migrations, CRUD, backup/restore, scan |
-| `src/ask.rs` | 499 | FTS5 search, graph expansion, relevance filter, LLM synthesis |
+| `src/main.rs` | 444 | CLI entry, clap derive command parsing, dispatch |
+| `src/db.rs` | 1528 | SQLite schema, migrations, CRUD, backup/restore, scan |
+| `src/ask.rs` | 500 | FTS5 search, graph expansion, relevance filter, LLM synthesis |
 | `src/digest.rs` | 120 | LLM classification of inbox items into typed units |
 | `src/display.rs` | 275 | Text and JSON output formatting |
 | `tests/integration.rs` | 759 | End-to-end CLI tests via subprocess |
@@ -75,8 +75,9 @@ Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 4. `promote` converts an inbox item to a typed unit
 5. `link` creates graph edges between units
 6. `mark` records feedback, adjusts unit confidence
-7. `ask` searches FTS5, expands via graph links, optionally synthesizes via LLM
-8. `scan` finds low-confidence, stale, orphaned, or contradicted units
+7. `edit` updates content, type, source, or tags on existing units
+8. `ask` searches FTS5, expands via graph links, optionally synthesizes via LLM
+9. `scan` finds low-confidence, stale, orphaned, or contradicted units
 
 ## Conventions
 
@@ -91,8 +92,9 @@ Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 ## Commands
 
 ```
-simaris add <content> --type <type> [--source <source>]
+simaris add <content> --type <type> [--source <source>] [--tags <comma-separated>]
 simaris show <id>
+simaris edit <id> [--content <content>] [--type <type>] [--source <source>] [--tags <comma-separated>]
 simaris link <from_id> <to_id> --rel <relationship>
 simaris drop <content> [--source <source>]
 simaris promote <id> --type <type>

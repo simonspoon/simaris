@@ -6,7 +6,7 @@ Knowledge unit storage and retrieval system backed by SQLite with FTS5 full-text
 
 ### `main.rs`
 
-CLI entry point. Defines the `Cli` struct (clap `Parser`) with global `--json` and `--debug` flags, and the `Command` enum covering all subcommands: `Add`, `Show`, `Link`, `Drop`, `Promote`, `Inbox`, `List`, `Search`, `Backup`, `Restore`, `Digest`, `Mark`, `Ask`, `Scan`. Also defines the `UnitType` enum (fact, procedure, principle, preference, lesson, idea), the `Relationship` enum (related_to, part_of, depends_on, contradicts, supersedes, sourced_from), and the `MarkKind` enum (used, wrong, outdated, helpful) with associated confidence deltas. The `main` function handles `Restore` without a database connection, then opens a connection for all other commands and dispatches to `db::*` and `display::*` functions.
+CLI entry point. Defines the `Cli` struct (clap `Parser`) with global `--json` and `--debug` flags, and the `Command` enum covering all subcommands: `Add`, `Show`, `Edit`, `Link`, `Drop`, `Promote`, `Inbox`, `List`, `Search`, `Backup`, `Restore`, `Digest`, `Mark`, `Ask`, `Scan`. Also defines the `UnitType` enum (fact, procedure, principle, preference, lesson, idea), the `Relationship` enum (related_to, part_of, depends_on, contradicts, supersedes, sourced_from), and the `MarkKind` enum (used, wrong, outdated, helpful) with associated confidence deltas. The `main` function handles `Restore` without a database connection, then opens a connection for all other commands and dispatches to `db::*` and `display::*` functions.
 
 `main.rs:142-163` -- `UnitType` variants and `as_str()` mapping.
 `main.rs:165-186` -- `Relationship` variants and `as_str()` mapping.
@@ -272,6 +272,7 @@ pub fn connect() -> Result<Connection>                                    // :78
 // Unit CRUD
 pub fn add_unit(conn: &Connection, content: &str, unit_type: &str, source: &str) -> Result<String>    // :476
 pub fn add_unit_full(conn: &Connection, content: &str, unit_type: &str, source: &str, tags: &[String]) -> Result<String>  // :608
+pub fn update_unit(conn: &Connection, id: &str, content: Option<&str>, unit_type: Option<&str>, source: Option<&str>, tags: Option<&[String]>) -> Result<Unit>  // :623
 pub fn get_unit(conn: &Connection, id: &str) -> Result<Unit>              // :485
 pub fn list_units(conn: &Connection, type_filter: Option<&str>) -> Result<Vec<Unit>>   // :497
 pub fn search_units(conn: &Connection, query: &str, type_filter: Option<&str>) -> Result<Vec<Unit>>   // :519

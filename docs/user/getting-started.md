@@ -100,6 +100,12 @@ The `--source` flag defaults to `inbox` but accepts any string:
 simaris add "Premature optimization is the root of all evil" --type principle --source "knuth"
 ```
 
+Add tags at creation time with `--tags` (comma-separated):
+
+```
+simaris add "Run cargo test before pushing" --type procedure --tags "rust,testing"
+```
+
 ### 5. Link related units
 
 Create typed relationships between units:
@@ -152,6 +158,15 @@ confidence: 1.0  verified: false
 created: 2026-04-09 14:32:01  updated: 2026-04-09 14:35:00
 
   -> 019682c1-a2b3-7cde-8f00-3a4b5c6d7e8f (related_to)
+```
+
+### 8. Edit existing units
+
+Update content, type, source, or tags on any unit:
+
+```
+simaris edit 019682c1-a2b3-7cde-8f00-3a4b5c6d7e8f --tags "rust,formatting,commit"
+simaris edit 019682c1-a2b3-7cde-8f00-3a4b5c6d7e8f --content "Run cargo fmt && cargo test before committing"
 ```
 
 ## LLM-Powered Features
