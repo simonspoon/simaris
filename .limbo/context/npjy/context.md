@@ -7,6 +7,9 @@ Production store has skill knowledge + suda memories. simaris search finds conte
 ## Result
 Simaris is populated and ready for real use.
 
+## Outcome
+Production store populated: 270 units (196 from dev2 skill knowledge + 74 from 20 suda memories via digest), 221 links, 0 inbox items. FTS search works, scan clean, backup preserved. Simaris is ready for real use as canonical knowledge source.
+
 ## AcceptanceCriteria
 1. simaris list returns >= 196 units (all dev2 units migrated). 2. simaris list --json shows sources starting with skill: (from dev2) and suda: (from suda memories). 3. simaris search "xaku" returns results (FTS index works). 4. simaris scan shows no orphaned links. 5. All 20 suda memories dropped and digested (inbox empty after digest). 6. Production DB is ~/.simaris/sanctuary.db. 7. Backup exists before migration.
 

@@ -609,7 +609,7 @@
       "id": "npjy",
       "name": "Populate production store from dev2 and suda memories",
       "parent": null,
-      "status": "in-review",
+      "status": "done",
       "owner": "tl",
       "history": [
         {
@@ -641,10 +641,16 @@
           "to": "in-review",
           "by": "pm",
           "at": "2026-04-08T19:41:25.33945-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "done",
+          "by": "pm",
+          "at": "2026-04-08T19:44:00.533365-04:00"
         }
       ],
       "created": "2026-04-08T12:06:01.860363-04:00",
-      "updated": "2026-04-08T19:43:24.349499-04:00"
+      "updated": "2026-04-08T19:44:00.533366-04:00"
     },
     {
       "id": "ptbn",
@@ -692,6 +698,180 @@
       ],
       "created": "2026-04-08T15:46:23.601262-04:00",
       "updated": "2026-04-08T15:55:20.60367-04:00"
+    },
+    {
+      "id": "aeqh",
+      "name": "simaris-procedure-migration",
+      "parent": null,
+      "status": "done",
+      "history": [
+        {
+          "from": "captured",
+          "to": "done",
+          "at": "2026-04-08T21:11:27.329439-04:00"
+        }
+      ],
+      "created": "2026-04-08T21:01:40.229396-04:00",
+      "updated": "2026-04-08T21:11:27.32944-04:00"
+    },
+    {
+      "id": "xpvf",
+      "name": "update-procedure-creator",
+      "parent": "aeqh",
+      "status": "done",
+      "history": [
+        {
+          "from": "captured",
+          "to": "done",
+          "at": "2026-04-08T21:11:27.281439-04:00"
+        }
+      ],
+      "created": "2026-04-08T21:01:46.62821-04:00",
+      "updated": "2026-04-08T21:11:27.281439-04:00"
+    },
+    {
+      "id": "wgaz",
+      "name": "update-procedure-reflection",
+      "parent": "aeqh",
+      "status": "done",
+      "history": [
+        {
+          "from": "captured",
+          "to": "done",
+          "at": "2026-04-08T21:11:27.291073-04:00"
+        }
+      ],
+      "created": "2026-04-08T21:01:50.91687-04:00",
+      "updated": "2026-04-08T21:11:27.291074-04:00"
+    },
+    {
+      "id": "icos",
+      "name": "update-procedure-trainer",
+      "parent": "aeqh",
+      "status": "done",
+      "history": [
+        {
+          "from": "captured",
+          "to": "done",
+          "at": "2026-04-08T21:11:27.300648-04:00"
+        }
+      ],
+      "created": "2026-04-08T21:01:59.071032-04:00",
+      "updated": "2026-04-08T21:11:27.300648-04:00"
+    },
+    {
+      "id": "nsph",
+      "name": "update-session-wrap-refs",
+      "parent": "aeqh",
+      "status": "done",
+      "history": [
+        {
+          "from": "captured",
+          "to": "done",
+          "at": "2026-04-08T21:11:27.310326-04:00"
+        }
+      ],
+      "created": "2026-04-08T21:02:04.095955-04:00",
+      "updated": "2026-04-08T21:11:27.310326-04:00"
+    },
+    {
+      "id": "kitt",
+      "name": "update-cross-references",
+      "parent": "aeqh",
+      "status": "done",
+      "history": [
+        {
+          "from": "captured",
+          "to": "done",
+          "at": "2026-04-08T21:11:27.319732-04:00"
+        }
+      ],
+      "created": "2026-04-08T21:02:09.374478-04:00",
+      "updated": "2026-04-08T21:11:27.319732-04:00"
+    },
+    {
+      "id": "yjls",
+      "name": "Migrate simaris IDs from auto-increment integers to UUIDv7",
+      "parent": null,
+      "status": "captured",
+      "created": "2026-04-08T22:50:40.392462-04:00",
+      "updated": "2026-04-08T22:50:40.392462-04:00"
+    },
+    {
+      "id": "fzza",
+      "name": "Add uuid crate and migrate schema + data in-place",
+      "parent": "yjls",
+      "status": "in-review",
+      "owner": "tl",
+      "history": [
+        {
+          "from": "captured",
+          "to": "refined",
+          "by": "pm",
+          "at": "2026-04-08T22:55:39.864014-04:00"
+        },
+        {
+          "from": "refined",
+          "to": "planned",
+          "by": "pm",
+          "at": "2026-04-08T22:58:07.954557-04:00"
+        },
+        {
+          "from": "planned",
+          "to": "ready",
+          "by": "pm",
+          "at": "2026-04-08T22:58:13.600243-04:00"
+        },
+        {
+          "from": "ready",
+          "to": "in-progress",
+          "by": "tl",
+          "at": "2026-04-08T22:58:17.010798-04:00"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-08T23:05:53.363507-04:00"
+        },
+        {
+          "from": "in-review",
+          "to": "in-progress",
+          "by": "pm",
+          "at": "2026-04-08T23:07:39.629777-04:00",
+          "reason": "Code review found: 1) migration needs post-migration record count verification, 2) orphaned links/marks silently dropped during migration — needs warnings"
+        },
+        {
+          "from": "in-progress",
+          "to": "in-review",
+          "by": "pm",
+          "at": "2026-04-08T23:10:20.046411-04:00"
+        }
+      ],
+      "created": "2026-04-08T22:50:50.083409-04:00",
+      "updated": "2026-04-08T23:10:20.046411-04:00"
+    },
+    {
+      "id": "ocyf",
+      "name": "Update all Rust code to use String IDs and generate UUIDv7s",
+      "parent": "yjls",
+      "status": "captured",
+      "blockedBy": [
+        "fzza"
+      ],
+      "created": "2026-04-08T22:50:56.672722-04:00",
+      "updated": "2026-04-08T22:51:12.036217-04:00"
+    },
+    {
+      "id": "tbwj",
+      "name": "Update integration tests for UUID IDs",
+      "parent": "yjls",
+      "status": "captured",
+      "blockedBy": [
+        "ocyf"
+      ],
+      "created": "2026-04-08T22:51:00.606934-04:00",
+      "updated": "2026-04-08T22:51:12.046538-04:00"
     }
   ]
 }
