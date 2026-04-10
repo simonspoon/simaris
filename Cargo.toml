@@ -2,6 +2,12 @@
 name = "simaris"
 version = "0.1.0"
 edition = "2024"
+description = "Knowledge management CLI with SQLite, FTS5, and graph-based linking"
+license = "MIT"
+repository = "https://github.com/simonspoon/simaris"
+authors = ["Simon Spoon"]
+keywords = ["knowledge-management", "cli", "sqlite", "search", "graph"]
+categories = ["command-line-utilities", "database"]
 
 [dependencies]
 anyhow = "1"

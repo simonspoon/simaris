@@ -1,1 +1,22 @@
 /target
+
+# Local data
+sanctuary.db
+*.db-wal
+*.db-shm
+
+# Dev scratch directories
+/dev/
+/dev2/
+
+# Local scripts
+/scripts/
+
+# Tool indexes
+.helios/
+
+# Task manager state
+.limbo/
+
+# macOS
+.DS_Store
