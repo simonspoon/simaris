@@ -8,7 +8,7 @@ Rust CLI knowledge management system. Stores typed knowledge units in SQLite wit
 |---------|---------|
 | `cargo build` | Debug build |
 | `cargo build --release` | Release build |
-| `cargo test` | Run all tests (84 total: 42 integration, 42 unit) |
+| `cargo test` | Run all tests (95 total: 45 integration, 50 unit) |
 | `cargo test test_name` | Run a single test |
 | `cargo install --path .` | Install binary |
 
@@ -74,6 +74,7 @@ Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 3. `add` creates typed units directly (bypasses inbox)
 4. `promote` converts an inbox item to a typed unit
 5. `link` creates graph edges between units
+5b. `add` and `digest` auto-link new units to existing units sharing 2+ tags via `related_to`
 6. `mark` records feedback, adjusts unit confidence
 7. `edit` updates content, type, source, or tags on existing units
 8. `ask` searches FTS5, expands via graph links, optionally synthesizes via LLM
@@ -103,6 +104,7 @@ simaris list [--type <type>]
 simaris search <query> [--type <type>]
 simaris ask <query> [--synthesize] [--type <type>]
 simaris digest
+simaris delete <id>
 simaris mark <id> --kind <kind>
 simaris scan [--stale-days <days>]
 simaris backup

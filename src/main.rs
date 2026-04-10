@@ -157,6 +157,12 @@ enum Command {
         tags: Option<String>,
     },
 
+    /// Delete a knowledge unit (requires interactive confirmation)
+    Delete {
+        /// Unit ID to delete
+        id: String,
+    },
+
     /// Health-check the knowledge store
     Scan {
         /// Days without marks before a unit is considered stale
@@ -271,12 +277,20 @@ fn main() -> Result<()> {
             tags,
         } => {
             let id = if let Some(tag_str) = tags {
-                let tag_vec: Vec<String> = tag_str.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+                let tag_vec: Vec<String> = tag_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
                 db::add_unit_full(&conn, &content, r#type.as_str(), &source, &tag_vec)?
             } else {
                 db::add_unit(&conn, &content, r#type.as_str(), &source)?
             };
             display::print_added(&id, cli.json);
+            let linked = db::auto_link(&conn, &id)?;
+            if linked > 0 && !cli.json {
+                println!("  auto-linked to {linked} existing unit(s)");
+            }
         }
         Command::Show { id } => {
             let unit = db::get_unit(&conn, &id)?;
@@ -422,7 +436,12 @@ fn main() -> Result<()> {
             source,
             tags,
         } => {
-            let tag_vec: Option<Vec<String>> = tags.map(|t| t.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
+            let tag_vec: Option<Vec<String>> = tags.map(|t| {
+                t.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            });
             let unit = db::update_unit(
                 &conn,
                 &id,
@@ -434,6 +453,10 @@ fn main() -> Result<()> {
             let outgoing = db::get_links_from(&conn, &id)?;
             let incoming = db::get_links_to(&conn, &id)?;
             display::print_unit(&unit, &outgoing, &incoming, cli.json);
+        }
+        Command::Delete { id } => {
+            db::delete_unit(&conn, &id)?;
+            display::print_deleted(&id, cli.json);
         }
         Command::Scan { stale_days } => {
             let result = db::scan(&conn, stale_days)?;

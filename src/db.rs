@@ -712,6 +712,56 @@ pub fn add_link(conn: &Connection, from_id: &str, to_id: &str, relationship: &st
     Ok(())
 }
 
+/// Create `related_to` links between a unit and existing units sharing 2+ tags.
+/// Skips self-links and pairs with any existing link. Returns count of links created.
+pub fn auto_link(conn: &Connection, unit_id: &str) -> Result<usize> {
+    let unit = get_unit(conn, unit_id)?;
+    if unit.tags.len() < 2 {
+        return Ok(0);
+    }
+
+    let unit_tags: Vec<String> = unit.tags.iter().map(|t| t.to_lowercase()).collect();
+
+    let mut stmt = conn.prepare("SELECT id, tags FROM units WHERE id != ?1 AND tags != '[]'")?;
+    let candidates: Vec<(String, Vec<String>)> = stmt
+        .query_map(params![unit_id], |row| {
+            let id: String = row.get(0)?;
+            let tags_str: String = row.get(1)?;
+            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+            Ok((id, tags))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut created = 0;
+    for (cand_id, cand_tags) in &candidates {
+        let shared = cand_tags
+            .iter()
+            .filter(|t| unit_tags.contains(&t.to_lowercase()))
+            .count();
+        if shared < 2 {
+            continue;
+        }
+
+        // Skip if any link already exists between the pair
+        let exists: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM links WHERE (from_id = ?1 AND to_id = ?2) OR (from_id = ?2 AND to_id = ?1))",
+            params![unit_id, cand_id],
+            |row| row.get(0),
+        )?;
+        if exists {
+            continue;
+        }
+
+        conn.execute(
+            "INSERT INTO links (from_id, to_id, relationship) VALUES (?1, ?2, 'related_to')",
+            params![unit_id, cand_id],
+        )?;
+        created += 1;
+    }
+
+    Ok(created)
+}
+
 pub fn add_unit_full(
     conn: &Connection,
     content: &str,
@@ -752,6 +802,14 @@ pub fn update_unit(
     )?;
 
     get_unit(conn, id)
+}
+
+pub fn delete_unit(conn: &Connection, id: &str) -> Result<()> {
+    let changes = conn.execute("DELETE FROM units WHERE id = ?1", params![id])?;
+    if changes == 0 {
+        anyhow::bail!("Unit not found: {id}");
+    }
+    Ok(())
 }
 
 #[allow(dead_code)]
@@ -821,6 +879,11 @@ pub fn digest_inbox_item_multi(
                 )?;
             }
         }
+    }
+
+    // Auto-link each new unit to existing units sharing 2+ tags
+    for id in &ids {
+        auto_link(&tx, id)?;
     }
 
     tx.execute("DELETE FROM inbox WHERE id = ?1", params![inbox_id])?;
@@ -1606,5 +1669,179 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, 2);
+    }
+
+    #[test]
+    fn test_auto_link_two_shared_tags() {
+        let conn = memory_db();
+        let a = add_unit_full(
+            &conn,
+            "unit A",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into(), "perf".into()],
+        )
+        .unwrap();
+        let b = add_unit_full(
+            &conn,
+            "unit B",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into(), "gui".into()],
+        )
+        .unwrap();
+        let count = auto_link(&conn, &b).unwrap();
+        assert_eq!(count, 1);
+        let links = get_links_from(&conn, &b).unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].to_id, a);
+        assert_eq!(links[0].relationship, "related_to");
+    }
+
+    #[test]
+    fn test_auto_link_one_shared_tag_no_link() {
+        let conn = memory_db();
+        add_unit_full(
+            &conn,
+            "unit A",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+        let b = add_unit_full(
+            &conn,
+            "unit B",
+            "fact",
+            "test",
+            &["rust".into(), "gui".into()],
+        )
+        .unwrap();
+        let count = auto_link(&conn, &b).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_auto_link_no_tags() {
+        let conn = memory_db();
+        let a = add_unit(&conn, "unit A", "fact", "test").unwrap();
+        let count = auto_link(&conn, &a).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_auto_link_skips_existing_link() {
+        let conn = memory_db();
+        let a = add_unit_full(
+            &conn,
+            "unit A",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+        let b = add_unit_full(
+            &conn,
+            "unit B",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+        add_link(&conn, &b, &a, "part_of").unwrap();
+        let count = auto_link(&conn, &b).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_auto_link_skips_self() {
+        let conn = memory_db();
+        let a = add_unit_full(
+            &conn,
+            "unit A",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+        let count = auto_link(&conn, &a).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_auto_link_multiple_matches() {
+        let conn = memory_db();
+        add_unit_full(
+            &conn,
+            "unit A",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+        add_unit_full(
+            &conn,
+            "unit B",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+        let c = add_unit_full(
+            &conn,
+            "unit C",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+        let count = auto_link(&conn, &c).unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_auto_link_case_insensitive() {
+        let conn = memory_db();
+        add_unit_full(
+            &conn,
+            "unit A",
+            "fact",
+            "test",
+            &["Rust".into(), "CLI".into()],
+        )
+        .unwrap();
+        let b = add_unit_full(
+            &conn,
+            "unit B",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+        let count = auto_link(&conn, &b).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_auto_link_idempotent() {
+        let conn = memory_db();
+        add_unit_full(
+            &conn,
+            "unit A",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+        let b = add_unit_full(
+            &conn,
+            "unit B",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+        assert_eq!(auto_link(&conn, &b).unwrap(), 1);
+        assert_eq!(auto_link(&conn, &b).unwrap(), 0);
     }
 }

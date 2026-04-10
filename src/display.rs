@@ -51,6 +51,14 @@ pub fn print_added(id: &str, json: bool) {
     }
 }
 
+pub fn print_deleted(id: &str, json: bool) {
+    if json {
+        println!("{}", serde_json::json!({ "deleted": id }));
+    } else {
+        println!("Deleted unit {id}");
+    }
+}
+
 pub fn print_linked(from_id: &str, to_id: &str, relationship: &str, json: bool) {
     if json {
         println!(

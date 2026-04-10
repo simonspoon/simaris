@@ -282,7 +282,14 @@ fn test_list_filter() {
 #[test]
 fn test_aspect_type() {
     let env = TestEnv::new("aspect");
-    let out = env.run_ok(&["add", "Code review aspect — skeptical, thorough, read-only", "--type", "aspect", "--tags", "code-review,quality"]);
+    let out = env.run_ok(&[
+        "add",
+        "Code review aspect — skeptical, thorough, read-only",
+        "--type",
+        "aspect",
+        "--tags",
+        "code-review,quality",
+    ]);
     let id = extract_id(&out);
 
     // show displays correct type
@@ -778,4 +785,58 @@ fn test_scan_stale_days() {
     let out = env.run_ok(&["scan"]);
     assert!(out.contains("Stale"), "got: {out}");
     assert!(out.contains(&format!("[{}]", short_id(&id))), "got: {out}");
+}
+
+#[test]
+fn test_add_auto_links() {
+    let env = TestEnv::new("autolink");
+    let out_a = env.run_ok(&[
+        "add",
+        "rust cli tool",
+        "--type",
+        "fact",
+        "--tags",
+        "rust,cli,tools",
+    ]);
+    let id_a = extract_id(&out_a);
+    // First unit has no peers to link to
+    assert!(!out_a.contains("auto-linked"), "got: {out_a}");
+
+    let out_b = env.run_ok(&[
+        "add",
+        "rust cli testing",
+        "--type",
+        "procedure",
+        "--tags",
+        "rust,cli,testing",
+    ]);
+    assert!(
+        out_b.contains("auto-linked to 1 existing unit"),
+        "got: {out_b}"
+    );
+
+    // extract_id from first line only (second line is the auto-link message)
+    let id_b = extract_id(out_b.lines().next().unwrap());
+
+    // Verify the link exists via show
+    let show = env.run_ok(&["--json", "show", &id_b]);
+    assert!(
+        show.contains(&id_a),
+        "show should reference unit A, got: {show}"
+    );
+    assert!(
+        show.contains("related_to"),
+        "should have related_to link, got: {show}"
+    );
+}
+
+#[test]
+fn test_add_no_auto_link_one_shared_tag() {
+    let env = TestEnv::new("noautolink");
+    env.run_ok(&["add", "python script", "--type", "fact", "--tags", "python"]);
+    let out = env.run_ok(&["add", "python lib", "--type", "fact", "--tags", "python"]);
+    assert!(
+        !out.contains("auto-linked"),
+        "should not auto-link with only 1 shared tag, got: {out}"
+    );
 }
