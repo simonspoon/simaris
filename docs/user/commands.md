@@ -38,7 +38,7 @@ simaris add <CONTENT> --type <TYPE> [--source <SOURCE>] [--tags <TAGS>]
 
 ### UnitType values
 
-`fact`, `procedure`, `principle`, `preference`, `lesson`, `idea`
+`fact`, `procedure`, `principle`, `preference`, `lesson`, `idea`, `aspect`
 
 ### Output
 
@@ -189,6 +189,42 @@ Displays the updated unit in the same format as `show`.
 ```
 simaris edit 019660a3-7b2e-7000-8000-1a2b3c4d5e6f --tags "rust,async,updated"
 simaris edit 019660a3-7b2e-7000-8000-1a2b3c4d5e6f --content "Updated content here" --type lesson
+```
+
+---
+
+## delete
+
+Delete a knowledge unit by ID. Cascades to linked edges (via `ON DELETE CASCADE`).
+
+```
+simaris delete <ID>
+```
+
+### Arguments
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `ID` | string | yes | Unit ID to delete. |
+
+### Output
+
+```
+Deleted unit 019660a3-7b2e-7000-8000-1a2b3c4d5e6f
+```
+
+### JSON output
+
+```json
+{"deleted": "019660a3-7b2e-7000-8000-1a2b3c4d5e6f"}
+```
+
+Errors if the unit does not exist.
+
+### Example
+
+```
+simaris delete 019660a3-7b2e-7000-8000-1a2b3c4d5e6f
 ```
 
 ---
@@ -496,6 +532,86 @@ simaris ask "deployment steps" --synthesize --debug
 
 ---
 
+## prime
+
+Assemble a task-focused "mindset" from the knowledge graph. Searches for units relevant to the task, filters them via the chosen strategy, and groups results by type into ordered sections (`Aspects`, `Procedures`, `Principles`, `Preferences`, `Context`).
+
+Intended for LLM agents that need to load relevant context at the start of a task.
+
+```
+simaris prime <TASK> [--filter <FILTER>]
+```
+
+### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `TASK` | string | yes | -- | Task description used as the retrieval query. |
+| `--filter` | FilterStrategy | no | `standard` | Strategy for narrowing the gathered units. |
+
+### FilterStrategy values
+
+| Strategy | Description | Requires `claude` CLI |
+|----------|-------------|-----------------------|
+| `none` | Return all gathered units without filtering. | no |
+| `standard` | LLM-backed relevance filter via Haiku. Falls back to unfiltered on error. | yes |
+| `tag-vote` | Rank units by tag overlap with task keywords; keep the top-scoring set. | no |
+
+### Output
+
+Sections are printed in order, each prefixed with `# <Section>`. Units in a section are separated by blank lines. If no relevant knowledge is found:
+
+```
+No relevant knowledge found for: <task>
+```
+
+Example:
+
+```
+# Aspects
+
+Code review is a rigorous, multi-phase process...
+
+# Procedures
+
+Always run cargo fmt before committing.
+
+# Context
+
+Simaris stores typed knowledge units in SQLite.
+```
+
+### JSON output
+
+```json
+{
+  "task": "review this PR",
+  "sections": [
+    {
+      "label": "Aspects",
+      "units": [
+        {
+          "id": "019660a3-7b2e-7000-8000-1a2b3c4d5e6f",
+          "content": "Code review is a rigorous...",
+          "tags": ["code-review", "aspect"]
+        }
+      ]
+    }
+  ],
+  "unit_count": 1
+}
+```
+
+### Example
+
+```
+simaris prime "implement a new CLI command"
+simaris prime "debug a flaky test" --filter tag-vote
+simaris prime "review this PR" --filter none --json
+```
+
+---
+
 ## digest
 
 Process all pending inbox items through LLM classification. Each inbox item is broken into discrete typed knowledge units (3-8 per item) and promoted into the store. The first unit extracted from each item is an overview summary.
@@ -739,7 +855,7 @@ simaris restore sanctuary-20260409-120000.db
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | string | UUIDv7 identifier. |
-| `type` | string | One of: `fact`, `procedure`, `principle`, `preference`, `lesson`, `idea`. |
+| `type` | string | One of: `fact`, `procedure`, `principle`, `preference`, `lesson`, `idea`, `aspect`. |
 | `content` | string | Unit content. |
 | `source` | string | Source attribution. |
 | `confidence` | float | Confidence score, starts at 1.0. Adjusted by `mark`. |

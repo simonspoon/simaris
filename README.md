@@ -66,6 +66,7 @@ simaris ask "What do I know about Rust editions?" --synthesize
 | `list [--type <type>]` | List knowledge units |
 | `search <query> [--type <type>]` | Full-text search across units |
 | `ask <query> [--synthesize] [--type <type>]` | Query with optional LLM synthesis |
+| `prime <task> [--filter <strategy>]` | Assemble a task-focused mindset grouped by unit type |
 | `digest` | Classify inbox items via LLM into typed units |
 | `mark <id> --kind <kind>` | Record feedback on a unit |
 | `delete <id>` | Delete a knowledge unit |
