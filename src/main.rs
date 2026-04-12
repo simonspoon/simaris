@@ -125,6 +125,10 @@ enum Command {
     Prime {
         /// Task description
         task: String,
+
+        /// Filter strategy for narrowing gathered units
+        #[arg(long, default_value = "standard")]
+        filter: PrimeFilter,
     },
 
     /// Ask the knowledge store a question
@@ -223,6 +227,28 @@ impl Relationship {
             Relationship::Supersedes => "supersedes",
             Relationship::SourcedFrom => "sourced_from",
         }
+    }
+}
+
+#[derive(Clone, ValueEnum)]
+#[value(rename_all = "kebab-case")]
+enum PrimeFilter {
+    None,
+    Standard,
+    TagVote,
+}
+
+impl PrimeFilter {
+    fn to_strategy(&self) -> ask::FilterStrategy {
+        match self {
+            PrimeFilter::None => ask::FilterStrategy::None,
+            PrimeFilter::Standard => ask::FilterStrategy::Standard,
+            PrimeFilter::TagVote => ask::FilterStrategy::TagVote,
+        }
+    }
+
+    fn needs_claude(&self) -> bool {
+        matches!(self, PrimeFilter::Standard)
     }
 }
 
@@ -397,9 +423,11 @@ fn main() -> Result<()> {
                 success, total_units, failed
             );
         }
-        Command::Prime { task } => {
-            digest::check_claude()?;
-            let result = ask::prime(&conn, &task, cli.debug)?;
+        Command::Prime { task, filter } => {
+            if filter.needs_claude() {
+                digest::check_claude()?;
+            }
+            let result = ask::prime(&conn, &task, filter.to_strategy(), cli.debug)?;
             display::print_prime(&result, cli.json);
         }
         Command::Ask {

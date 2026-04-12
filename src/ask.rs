@@ -5,6 +5,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
+#[derive(Debug, Clone, Copy)]
+pub enum FilterStrategy {
+    None,
+    Standard,
+    TagVote,
+}
+
 #[derive(Debug, Serialize)]
 pub struct PrimeResult {
     pub task: String,
@@ -69,6 +76,8 @@ struct ContextUnit {
     links_from: Vec<LinkInfo>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     is_direct_match: bool,
+    #[serde(skip)]
+    rank: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -95,7 +104,7 @@ pub fn ask(
     // Phase 1: FTS5 search + 1-hop graph expansion
     let fts_query = sanitize_fts_query(query);
     let search_queries = vec![query.to_string()];
-    let gather = search_and_expand(conn, &search_queries, type_filter)?;
+    let gather = search_and_expand(conn, &search_queries, type_filter, 15)?;
     let gathered = gather.units;
     let matches_per_query = gather.matches_per_query;
 
@@ -267,6 +276,7 @@ fn search_and_expand(
     conn: &Connection,
     search_queries: &[String],
     type_filter: Option<&str>,
+    cap: usize,
 ) -> Result<GatherResult> {
     // Run each search query and collect unique matches
     let mut seen_ids = std::collections::HashSet::new();
@@ -290,12 +300,12 @@ fn search_and_expand(
         matches_per_query.insert(sq.clone(), count);
     }
 
-    let matches: Vec<_> = all_matches.into_iter().take(15).collect();
+    let matches: Vec<_> = all_matches.into_iter().take(cap).collect();
     let direct_count = matches.len();
 
     let mut units_by_id: HashMap<String, ContextUnit> = HashMap::new();
 
-    for unit in &matches {
+    for (rank, unit) in matches.iter().enumerate() {
         let linked = db::get_linked_unit_ids(conn, &unit.id)?;
         let mut links_to = vec![];
         let mut links_from = vec![];
@@ -330,6 +340,7 @@ fn search_and_expand(
                 links_to,
                 links_from,
                 is_direct_match: true,
+                rank,
             },
         );
 
@@ -371,6 +382,7 @@ fn search_and_expand(
                         links_to: lt,
                         links_from: lf,
                         is_direct_match: false,
+                        rank: usize::MAX,
                     },
                 );
             }
@@ -396,6 +408,68 @@ fn search_and_expand(
 /// Single Haiku call to filter gathered units by relevance to the query.
 /// Returns (filtered_units, fallback_used). On any failure, returns all units unfiltered.
 fn filter_relevance<'a>(query: &str, gathered: &'a [ContextUnit]) -> (Vec<&'a ContextUnit>, bool) {
+    filter_with_strategy(query, gathered, FilterStrategy::Standard)
+}
+
+/// Deterministic filter: identify "theme tags" from the top FTS matches by rank,
+/// then keep only units containing at least one theme tag. No LLM call.
+fn filter_tag_vote(gathered: &[ContextUnit]) -> (Vec<&ContextUnit>, bool) {
+    const TOP_K: usize = 5;
+
+    let mut direct: Vec<&ContextUnit> = gathered.iter().filter(|u| u.is_direct_match).collect();
+    if direct.is_empty() {
+        return (gathered.iter().collect(), false);
+    }
+    direct.sort_by_key(|u| u.rank);
+
+    let anchor: Vec<&&ContextUnit> = direct.iter().take(TOP_K).collect();
+
+    // Count tag frequency across the top-K anchor units
+    let mut tag_counts: HashMap<String, usize> = HashMap::new();
+    for u in &anchor {
+        for tag in &u.tags {
+            *tag_counts.entry(tag.clone()).or_insert(0) += 1;
+        }
+    }
+
+    // Theme tags: the single highest frequency among the anchors.
+    // Ties are broken by including all top-frequency tags.
+    let max_count = tag_counts.values().copied().max().unwrap_or(0);
+    if max_count < 2 {
+        // Too little signal — keep all direct matches
+        return (direct, true);
+    }
+    let theme_tags: HashSet<String> = tag_counts
+        .into_iter()
+        .filter(|(_, count)| *count == max_count)
+        .map(|(tag, _)| tag)
+        .collect();
+
+    let filtered: Vec<&ContextUnit> = gathered
+        .iter()
+        .filter(|u| u.tags.iter().any(|t| theme_tags.contains(t)))
+        .collect();
+
+    if filtered.is_empty() {
+        return (direct, true);
+    }
+
+    (filtered, false)
+}
+
+fn filter_with_strategy<'a>(
+    query: &str,
+    gathered: &'a [ContextUnit],
+    strategy: FilterStrategy,
+) -> (Vec<&'a ContextUnit>, bool) {
+    if matches!(strategy, FilterStrategy::None) {
+        return (gathered.iter().collect(), false);
+    }
+
+    if matches!(strategy, FilterStrategy::TagVote) {
+        return filter_tag_vote(gathered);
+    }
+
     let mut summaries = String::new();
     for unit in gathered {
         let preview: String = unit.content.chars().take(150).collect();
@@ -410,16 +484,19 @@ fn filter_relevance<'a>(query: &str, gathered: &'a [ContextUnit]) -> (Vec<&'a Co
         ));
     }
 
-    let prompt = format!(
-        r#"You are a relevance filter. Given a query and a list of knowledge units, return ONLY the IDs of units relevant to the query.
+    let prompt = match strategy {
+        FilterStrategy::None | FilterStrategy::TagVote => unreachable!(),
+        FilterStrategy::Standard => format!(
+            r#"You are a relevance filter. Given a query and a list of knowledge units, return ONLY the IDs of units relevant to the query.
 
 Query: {query}
 
 Units:
 {summaries}
 Return ONLY JSON (no markdown, no code fences):
-{{"relevant_ids": [1, 3, 5]}}"#
-    );
+{{"relevant_ids": ["id1", "id2"]}}"#
+        ),
+    };
 
     let output = match Command::new("claude")
         .args(["-p", "--model", "haiku", &prompt])
@@ -520,12 +597,20 @@ Knowledge units:
 }
 
 /// Assemble a mindset from the knowledge graph for a given task.
-/// Searches for relevant units, filters by relevance, and groups by type.
-pub fn prime(conn: &Connection, task: &str, debug: bool) -> Result<PrimeResult> {
-    let gather = search_and_expand(conn, &[task.to_string()], None)?;
+/// Searches for relevant units, filters via the given strategy, and groups by type.
+pub fn prime(
+    conn: &Connection,
+    task: &str,
+    strategy: FilterStrategy,
+    debug: bool,
+) -> Result<PrimeResult> {
+    let gather = search_and_expand(conn, &[task.to_string()], None, 40)?;
 
     if debug {
-        eprintln!("prime: {} direct, {} expanded", gather.direct_count, gather.expansion_count);
+        eprintln!(
+            "prime: {} direct, {} expanded, strategy={:?}",
+            gather.direct_count, gather.expansion_count, strategy
+        );
     }
 
     if gather.units.is_empty() {
@@ -536,7 +621,7 @@ pub fn prime(conn: &Connection, task: &str, debug: bool) -> Result<PrimeResult> 
         });
     }
 
-    let (filtered, fallback) = filter_relevance(task, &gather.units);
+    let (filtered, fallback) = filter_with_strategy(task, &gather.units, strategy);
 
     if debug {
         eprintln!("prime: {} kept (fallback={})", filtered.len(), fallback);

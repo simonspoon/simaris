@@ -12,6 +12,9 @@ sanctuary.db
 # Local scripts
 /scripts/
 
+# Experiment run outputs (keep scripts, drop captured results)
+/experiments/*/results/
+
 # Tool indexes
 .helios/
 

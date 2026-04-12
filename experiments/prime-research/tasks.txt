@@ -1,0 +1,5 @@
+review a pull request
+cut a new release of a Rust CLI
+debug a SolidJS freeze
+add unit tests to a Rust function
+run a database schema migration
