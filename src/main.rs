@@ -435,7 +435,9 @@ fn main() -> Result<()> {
             synthesize,
             r#type,
         } => {
-            digest::check_claude()?;
+            if synthesize {
+                digest::check_claude()?;
+            }
             let filter = r#type.as_ref().map(|t| t.as_str());
             let result = ask::ask(&conn, &query, synthesize, cli.debug, filter)?;
             if cli.json {
