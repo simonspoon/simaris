@@ -121,6 +121,12 @@ enum Command {
         kind: MarkKind,
     },
 
+    /// Assemble a mindset from the knowledge graph for a task
+    Prime {
+        /// Task description
+        task: String,
+    },
+
     /// Ask the knowledge store a question
     Ask {
         /// Your question or context
@@ -390,6 +396,11 @@ fn main() -> Result<()> {
                 "\nDigested: {} items -> {} units, Skipped: {}",
                 success, total_units, failed
             );
+        }
+        Command::Prime { task } => {
+            digest::check_claude()?;
+            let result = ask::prime(&conn, &task, cli.debug)?;
+            display::print_prime(&result, cli.json);
         }
         Command::Ask {
             query,

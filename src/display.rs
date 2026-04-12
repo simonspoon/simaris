@@ -1,3 +1,4 @@
+use crate::ask::PrimeResult;
 use crate::db::{InboxItem, Link, ScanResult, Unit};
 use std::path::Path;
 
@@ -184,6 +185,29 @@ pub fn print_marked(id: &str, kind: &str, confidence: f64, json: bool) {
             "Marked unit {} as {} (confidence: {:.2})",
             id, kind, confidence
         );
+    }
+}
+
+pub fn print_prime(result: &PrimeResult, json: bool) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(result).unwrap());
+        return;
+    }
+
+    if result.sections.is_empty() {
+        println!("No relevant knowledge found for: {}", result.task);
+        return;
+    }
+
+    for (i, section) in result.sections.iter().enumerate() {
+        if i > 0 {
+            println!();
+        }
+        println!("# {}", section.label);
+        for unit in &section.units {
+            println!();
+            println!("{}", unit.content);
+        }
     }
 }
 

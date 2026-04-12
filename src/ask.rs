@@ -6,6 +6,26 @@ use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
 #[derive(Debug, Serialize)]
+pub struct PrimeResult {
+    pub task: String,
+    pub sections: Vec<PrimeSection>,
+    pub unit_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PrimeSection {
+    pub label: String,
+    pub units: Vec<PrimeUnit>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PrimeUnit {
+    pub id: String,
+    pub content: String,
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct AskResult {
     pub query: String,
     pub units: Vec<MatchedUnit>,
@@ -497,4 +517,64 @@ Knowledge units:
 
     let response = String::from_utf8_lossy(&output.stdout);
     Ok(response.trim().to_string())
+}
+
+/// Assemble a mindset from the knowledge graph for a given task.
+/// Searches for relevant units, filters by relevance, and groups by type.
+pub fn prime(conn: &Connection, task: &str, debug: bool) -> Result<PrimeResult> {
+    let gather = search_and_expand(conn, &[task.to_string()], None)?;
+
+    if debug {
+        eprintln!("prime: {} direct, {} expanded", gather.direct_count, gather.expansion_count);
+    }
+
+    if gather.units.is_empty() {
+        return Ok(PrimeResult {
+            task: task.to_string(),
+            sections: vec![],
+            unit_count: 0,
+        });
+    }
+
+    let (filtered, fallback) = filter_relevance(task, &gather.units);
+
+    if debug {
+        eprintln!("prime: {} kept (fallback={})", filtered.len(), fallback);
+    }
+
+    // Group by type into ordered sections
+    let section_order: &[(&str, &[&str])] = &[
+        ("Aspects", &["aspect"]),
+        ("Procedures", &["procedure"]),
+        ("Principles", &["principle"]),
+        ("Preferences", &["preference"]),
+        ("Context", &["fact", "lesson", "idea"]),
+    ];
+
+    let mut sections = Vec::new();
+    for (label, types) in section_order {
+        let units: Vec<PrimeUnit> = filtered
+            .iter()
+            .filter(|u| types.contains(&u.unit_type.as_str()))
+            .map(|u| PrimeUnit {
+                id: u.id.clone(),
+                content: u.content.clone(),
+                tags: u.tags.clone(),
+            })
+            .collect();
+        if !units.is_empty() {
+            sections.push(PrimeSection {
+                label: label.to_string(),
+                units,
+            });
+        }
+    }
+
+    let unit_count = sections.iter().map(|s| s.units.len()).sum();
+
+    Ok(PrimeResult {
+        task: task.to_string(),
+        sections,
+        unit_count,
+    })
 }
