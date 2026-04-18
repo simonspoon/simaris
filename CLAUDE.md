@@ -107,6 +107,9 @@ simaris ask <query> [--synthesize] [--type <type>]
 simaris digest
 simaris delete <id>
 simaris mark <id> --kind <kind>
+simaris slug set <slug> <id>
+simaris slug unset <slug>
+simaris slug list
 simaris scan [--stale-days <days>]
 simaris backup
 simaris restore [<filename>]

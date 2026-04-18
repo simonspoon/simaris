@@ -7,14 +7,15 @@ fn short_id(id: &str) -> &str {
     if id.len() >= 8 { &id[..8] } else { id }
 }
 
-pub fn print_unit(unit: &Unit, outgoing: &[Link], incoming: &[Link], json: bool) {
+pub fn print_unit(unit: &Unit, outgoing: &[Link], incoming: &[Link], slugs: &[String], json: bool) {
     if json {
         let value = serde_json::json!({
             "unit": unit,
             "links": {
                 "outgoing": outgoing,
                 "incoming": incoming,
-            }
+            },
+            "slugs": slugs,
         });
         println!("{}", serde_json::to_string_pretty(&value).unwrap());
     } else {
@@ -26,6 +27,9 @@ pub fn print_unit(unit: &Unit, outgoing: &[Link], incoming: &[Link], json: bool)
         );
         if !unit.tags.is_empty() {
             println!("tags: {}", unit.tags.join(", "));
+        }
+        if !slugs.is_empty() {
+            println!("Slugs: {}", slugs.join(", "));
         }
         if unit.conditions != serde_json::json!({}) {
             println!("conditions: {}", unit.conditions);

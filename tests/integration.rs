@@ -1320,3 +1320,70 @@ fn test_slug_missing_args() {
         );
     }
 }
+
+#[test]
+fn test_show_text_includes_slugs_when_set() {
+    let env = TestEnv::new("show-slugs-text");
+    let add_out = env.run_ok(&["add", "slugged content", "--type", "fact"]);
+    let id = extract_id(&add_out);
+    env.run_ok(&["slug", "set", "beta", &id]);
+    env.run_ok(&["slug", "set", "alpha", &id]);
+    let out = env.run_ok(&["show", &id]);
+    assert!(
+        out.contains("Slugs: alpha, beta"),
+        "expected alphabetical comma-space slugs line: {out}"
+    );
+}
+
+#[test]
+fn test_show_text_omits_slugs_line_when_none() {
+    let env = TestEnv::new("show-slugs-text-none");
+    let add_out = env.run_ok(&["add", "no slugs here", "--type", "fact"]);
+    let id = extract_id(&add_out);
+    let out = env.run_ok(&["show", &id]);
+    assert!(
+        !out.contains("Slugs:"),
+        "should omit Slugs line when none set: {out}"
+    );
+}
+
+#[test]
+fn test_show_json_includes_slugs_array() {
+    let env = TestEnv::new("show-slugs-json");
+    let add_out = env.run_ok(&["add", "json slug content", "--type", "fact"]);
+    let id = extract_id(&add_out);
+    env.run_ok(&["slug", "set", "foo", &id]);
+    let out = env.run_ok(&["--json", "show", &id]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let slugs = parsed["slugs"].as_array().expect("top-level slugs array");
+    assert_eq!(slugs.len(), 1, "expected single slug: {out}");
+    assert_eq!(slugs[0], "foo", "got: {out}");
+}
+
+#[test]
+fn test_show_json_slugs_empty_array_when_none() {
+    let env = TestEnv::new("show-slugs-json-empty");
+    let add_out = env.run_ok(&["add", "no slugs", "--type", "fact"]);
+    let id = extract_id(&add_out);
+    let out = env.run_ok(&["--json", "show", &id]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert!(
+        parsed.get("slugs").is_some(),
+        "slugs key must be present: {out}"
+    );
+    let slugs = parsed["slugs"].as_array().expect("slugs must be array");
+    assert!(slugs.is_empty(), "slugs should be empty array: {out}");
+}
+
+#[test]
+fn test_show_by_slug_renders_slugs_section() {
+    let env = TestEnv::new("show-by-slug-renders");
+    let add_out = env.run_ok(&["add", "slug resolver content", "--type", "fact"]);
+    let id = extract_id(&add_out);
+    env.run_ok(&["slug", "set", "myslug", &id]);
+    let out = env.run_ok(&["show", "myslug"]);
+    assert!(
+        out.contains("Slugs: myslug"),
+        "expected Slugs line when resolving via slug: {out}"
+    );
+}

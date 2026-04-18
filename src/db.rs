@@ -1229,7 +1229,6 @@ pub fn list_slugs(conn: &Connection) -> Result<Vec<SlugRow>> {
 
 /// All slugs pointing at a given unit, ordered by slug ASC.
 /// Unknown unit returns `Ok(vec![])`, not an error.
-#[allow(dead_code)]
 pub fn get_slugs_for_unit(conn: &Connection, unit_id: &str) -> Result<Vec<String>> {
     let mut stmt = conn.prepare("SELECT slug FROM slugs WHERE unit_id = ?1 ORDER BY slug ASC")?;
     let rows = stmt

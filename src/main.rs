@@ -355,7 +355,8 @@ fn main() -> Result<()> {
             let unit = db::get_unit(&conn, &id)?;
             let outgoing = db::get_links_from(&conn, &id)?;
             let incoming = db::get_links_to(&conn, &id)?;
-            display::print_unit(&unit, &outgoing, &incoming, cli.json);
+            let slugs = db::get_slugs_for_unit(&conn, &id)?;
+            display::print_unit(&unit, &outgoing, &incoming, &slugs, cli.json);
         }
         Command::Link {
             from_id,
@@ -524,7 +525,8 @@ fn main() -> Result<()> {
             )?;
             let outgoing = db::get_links_from(&conn, &id)?;
             let incoming = db::get_links_to(&conn, &id)?;
-            display::print_unit(&unit, &outgoing, &incoming, cli.json);
+            let slugs = db::get_slugs_for_unit(&conn, &id)?;
+            display::print_unit(&unit, &outgoing, &incoming, &slugs, cli.json);
         }
         Command::Delete { id } => {
             let id = db::resolve_id(&conn, &id)?;
