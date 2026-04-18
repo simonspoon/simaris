@@ -1153,6 +1153,129 @@ pub fn restore_backup(filename: &str) -> Result<()> {
     Ok(())
 }
 
+/// Row shape for `slugs` table reads.
+// Wiring lands in sibling tasks (bhhj CLI, nlmm display); silence dead-code
+// until then so release build stays warning-clean.
+#[allow(dead_code)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlugRow {
+    pub slug: String,
+    pub unit_id: String,
+    pub created: String,
+}
+
+/// Validate a slug per the slug grammar:
+/// - non-empty, max 64 chars
+/// - first char in `[a-z_]`
+/// - every char in `[a-z0-9_-]`
+/// - reject canonical-form UUID (length 36 + parses as UUID) to avoid
+///   collision with unit ids in the resolver path
+#[allow(dead_code)]
+pub fn validate_slug(slug: &str) -> Result<()> {
+    if slug.is_empty() {
+        anyhow::bail!("Slug must not be empty");
+    }
+    if slug.len() > 64 {
+        anyhow::bail!("Slug exceeds 64-char cap (got {})", slug.len());
+    }
+    if slug.len() == 36 && Uuid::parse_str(slug).is_ok() {
+        anyhow::bail!("Slug must not be UUID-shaped: '{slug}'");
+    }
+    let mut chars = slug.chars();
+    let first = chars.next().unwrap();
+    if !(first.is_ascii_lowercase() || first == '_') {
+        anyhow::bail!("Slug first char must be [a-z_], got '{first}' in '{slug}'");
+    }
+    for c in slug.chars() {
+        let ok = c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-';
+        if !ok {
+            anyhow::bail!("Slug char '{c}' not in [a-z0-9_-] (slug '{slug}')");
+        }
+    }
+    Ok(())
+}
+
+/// Set (create or move) a slug to point at `unit_id`.
+/// Same slug + new unit_id reassigns ownership while preserving `created`.
+/// Unknown unit_id surfaces as an FK error mapped with the offending id.
+#[allow(dead_code)]
+pub fn set_slug(conn: &Connection, slug: &str, unit_id: &str) -> Result<()> {
+    validate_slug(slug)?;
+    conn.execute(
+        "INSERT INTO slugs (slug, unit_id) VALUES (?1, ?2)
+         ON CONFLICT(slug) DO UPDATE SET unit_id = excluded.unit_id",
+        params![slug, unit_id],
+    )
+    .with_context(|| format!("unit_id '{unit_id}' not found"))?;
+    Ok(())
+}
+
+/// Delete a slug. Returns true if a row was removed, false if no match.
+/// Tolerates any input — does not run validate_slug.
+#[allow(dead_code)]
+pub fn unset_slug(conn: &Connection, slug: &str) -> Result<bool> {
+    let n = conn.execute("DELETE FROM slugs WHERE slug = ?1", params![slug])?;
+    Ok(n > 0)
+}
+
+/// List every slug in the DB, ordered by slug ASC.
+#[allow(dead_code)]
+pub fn list_slugs(conn: &Connection) -> Result<Vec<SlugRow>> {
+    let mut stmt = conn.prepare("SELECT slug, unit_id, created FROM slugs ORDER BY slug ASC")?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(SlugRow {
+                slug: row.get(0)?,
+                unit_id: row.get(1)?,
+                created: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// All slugs pointing at a given unit, ordered by slug ASC.
+/// Unknown unit returns `Ok(vec![])`, not an error.
+#[allow(dead_code)]
+pub fn get_slugs_for_unit(conn: &Connection, unit_id: &str) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT slug FROM slugs WHERE unit_id = ?1 ORDER BY slug ASC")?;
+    let rows = stmt
+        .query_map(params![unit_id], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Resolve a CLI-supplied identifier to a unit id.
+/// Order: existing unit id wins (collision invariant), then slug lookup, else bail.
+/// Empty input short-circuits without a DB hit.
+#[allow(dead_code)]
+pub fn resolve_id(conn: &Connection, id_or_slug: &str) -> Result<String> {
+    if id_or_slug.is_empty() {
+        anyhow::bail!("No unit or slug matches ''");
+    }
+    let unit_hit: Option<String> = conn
+        .query_row(
+            "SELECT id FROM units WHERE id = ?1",
+            params![id_or_slug],
+            |row| row.get(0),
+        )
+        .ok();
+    if let Some(id) = unit_hit {
+        return Ok(id);
+    }
+    let slug_hit: Option<String> = conn
+        .query_row(
+            "SELECT unit_id FROM slugs WHERE slug = ?1",
+            params![id_or_slug],
+            |row| row.get(0),
+        )
+        .ok();
+    if let Some(id) = slug_hit {
+        return Ok(id);
+    }
+    anyhow::bail!("No unit or slug matches '{id_or_slug}'");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2150,5 +2273,310 @@ mod tests {
             .query_row("SELECT count(*) FROM marks", [], |row| row.get(0))
             .unwrap();
         assert_eq!(marks_count, 1);
+    }
+
+    mod slug {
+        use super::*;
+
+        // ---- validate_slug ----
+
+        #[test]
+        fn validate_accepts_valid_shapes() {
+            assert!(validate_slug("abc").is_ok());
+            assert!(validate_slug("feat-1").is_ok());
+            assert!(validate_slug("user_name").is_ok());
+            assert!(validate_slug("_internal").is_ok());
+            assert!(validate_slug("a").is_ok());
+            // 64-char string at the cap
+            let s64: String = "a".repeat(64);
+            assert!(validate_slug(&s64).is_ok());
+        }
+
+        #[test]
+        fn validate_rejects_empty() {
+            assert!(validate_slug("").is_err());
+        }
+
+        #[test]
+        fn validate_rejects_uppercase() {
+            assert!(validate_slug("Abc").is_err());
+            assert!(validate_slug("FOO").is_err());
+        }
+
+        #[test]
+        fn validate_rejects_bad_first_char() {
+            assert!(validate_slug("1foo").is_err());
+            assert!(validate_slug("-foo").is_err());
+        }
+
+        #[test]
+        fn validate_rejects_disallowed_chars() {
+            assert!(validate_slug("a b").is_err());
+            assert!(validate_slug("foo!").is_err());
+            assert!(validate_slug("foo.bar").is_err());
+            assert!(validate_slug("foo/bar").is_err());
+            assert!(validate_slug("café").is_err());
+            assert!(validate_slug("foo🙂").is_err());
+        }
+
+        #[test]
+        fn validate_rejects_uuid_shaped() {
+            // canonical v7
+            let v7 = Uuid::now_v7().to_string();
+            assert_eq!(v7.len(), 36);
+            assert!(validate_slug(&v7).is_err());
+            // nil UUID
+            assert!(validate_slug("00000000-0000-0000-0000-000000000000").is_err());
+        }
+
+        #[test]
+        fn validate_rejects_over_cap() {
+            let s65: String = "a".repeat(65);
+            assert!(validate_slug(&s65).is_err());
+        }
+
+        // ---- set_slug ----
+
+        #[test]
+        fn set_inserts_row_with_created_datetime() {
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            set_slug(&conn, "alpha", &id).unwrap();
+            let rows = list_slugs(&conn).unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].slug, "alpha");
+            assert_eq!(rows[0].unit_id, id);
+            assert!(!rows[0].created.is_empty());
+        }
+
+        #[test]
+        fn set_rejects_unknown_unit_id() {
+            let conn = memory_db();
+            let err = set_slug(&conn, "alpha", "no-such-unit").unwrap_err();
+            let msg = format!("{err:?}");
+            assert!(
+                msg.contains("no-such-unit"),
+                "error must surface the unit_id, got: {msg}"
+            );
+            assert!(
+                msg.contains("not found"),
+                "error must say 'not found', got: {msg}"
+            );
+        }
+
+        #[test]
+        fn set_rejects_invalid_slug() {
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            assert!(set_slug(&conn, "Bad!", &id).is_err());
+            assert!(set_slug(&conn, "", &id).is_err());
+        }
+
+        #[test]
+        fn set_move_preserves_created_timestamp() {
+            let conn = memory_db();
+            let a = add_unit(&conn, "a", "fact", "test").unwrap();
+            let b = add_unit(&conn, "b", "fact", "test").unwrap();
+            set_slug(&conn, "ptr", &a).unwrap();
+            let before: String = conn
+                .query_row("SELECT created FROM slugs WHERE slug = 'ptr'", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+
+            // Move slug to a different unit. Same slug -> single row, created preserved.
+            set_slug(&conn, "ptr", &b).unwrap();
+
+            let after: String = conn
+                .query_row("SELECT created FROM slugs WHERE slug = 'ptr'", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            let count: i64 = conn
+                .query_row("SELECT count(*) FROM slugs", [], |row| row.get(0))
+                .unwrap();
+            let owner: String = conn
+                .query_row("SELECT unit_id FROM slugs WHERE slug = 'ptr'", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 1);
+            assert_eq!(owner, b);
+            assert_eq!(before, after, "created must be preserved across move");
+        }
+
+        #[test]
+        fn set_allows_multiple_slugs_per_unit() {
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            set_slug(&conn, "one", &id).unwrap();
+            set_slug(&conn, "two", &id).unwrap();
+            let rows = list_slugs(&conn).unwrap();
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[0].slug, "one");
+            assert_eq!(rows[1].slug, "two");
+        }
+
+        // ---- unset_slug ----
+
+        #[test]
+        fn unset_returns_true_on_hit() {
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            set_slug(&conn, "alpha", &id).unwrap();
+            assert!(unset_slug(&conn, "alpha").unwrap());
+            assert!(list_slugs(&conn).unwrap().is_empty());
+        }
+
+        #[test]
+        fn unset_returns_false_on_miss() {
+            let conn = memory_db();
+            assert!(!unset_slug(&conn, "nope").unwrap());
+        }
+
+        #[test]
+        fn unset_tolerates_invalid_input() {
+            let conn = memory_db();
+            assert!(!unset_slug(&conn, "Bad!!!").unwrap());
+        }
+
+        // ---- list_slugs ----
+
+        #[test]
+        fn list_empty_db() {
+            let conn = memory_db();
+            assert_eq!(list_slugs(&conn).unwrap(), Vec::<SlugRow>::new());
+        }
+
+        #[test]
+        fn list_orders_ascending() {
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            set_slug(&conn, "z", &id).unwrap();
+            set_slug(&conn, "a", &id).unwrap();
+            set_slug(&conn, "m", &id).unwrap();
+            let rows = list_slugs(&conn).unwrap();
+            let slugs: Vec<&str> = rows.iter().map(|r| r.slug.as_str()).collect();
+            assert_eq!(slugs, vec!["a", "m", "z"]);
+        }
+
+        // ---- get_slugs_for_unit ----
+
+        #[test]
+        fn get_for_unit_zero() {
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            assert_eq!(
+                get_slugs_for_unit(&conn, &id).unwrap(),
+                Vec::<String>::new()
+            );
+        }
+
+        #[test]
+        fn get_for_unit_one() {
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            set_slug(&conn, "alpha", &id).unwrap();
+            assert_eq!(get_slugs_for_unit(&conn, &id).unwrap(), vec!["alpha"]);
+        }
+
+        #[test]
+        fn get_for_unit_many_sorted() {
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            set_slug(&conn, "z", &id).unwrap();
+            set_slug(&conn, "a", &id).unwrap();
+            set_slug(&conn, "m", &id).unwrap();
+            assert_eq!(get_slugs_for_unit(&conn, &id).unwrap(), vec!["a", "m", "z"]);
+        }
+
+        #[test]
+        fn get_for_unknown_unit_empty() {
+            let conn = memory_db();
+            assert_eq!(
+                get_slugs_for_unit(&conn, "no-such-unit").unwrap(),
+                Vec::<String>::new()
+            );
+        }
+
+        // ---- FK cascade ----
+
+        #[test]
+        fn fk_cascade_deletes_slugs_with_unit() {
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            set_slug(&conn, "alpha", &id).unwrap();
+            set_slug(&conn, "beta", &id).unwrap();
+            conn.execute("DELETE FROM units WHERE id = ?1", params![id])
+                .unwrap();
+            assert!(list_slugs(&conn).unwrap().is_empty());
+        }
+
+        // ---- resolve_id ----
+
+        #[test]
+        fn resolve_returns_existing_unit_id() {
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            assert_eq!(resolve_id(&conn, &id).unwrap(), id);
+        }
+
+        #[test]
+        fn resolve_returns_unit_id_for_slug() {
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            set_slug(&conn, "foo", &id).unwrap();
+            assert_eq!(resolve_id(&conn, "foo").unwrap(), id);
+        }
+
+        #[test]
+        fn resolve_unknown_bails_with_input() {
+            let conn = memory_db();
+            let err = resolve_id(&conn, "ghost").unwrap_err();
+            let msg = format!("{err:?}");
+            assert!(
+                msg.contains("ghost"),
+                "error must include the input verbatim, got: {msg}"
+            );
+        }
+
+        #[test]
+        fn resolve_empty_string_bails() {
+            let conn = memory_db();
+            assert!(resolve_id(&conn, "").is_err());
+        }
+
+        #[test]
+        fn resolve_is_case_sensitive() {
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            set_slug(&conn, "foo", &id).unwrap();
+            assert!(resolve_id(&conn, "FOO").is_err());
+        }
+
+        #[test]
+        fn resolve_unit_id_wins_collision() {
+            // Force a slug whose name equals an existing unit UUID, bypassing
+            // validate_slug via raw INSERT, then verify resolve returns the unit id.
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            let other = add_unit(&conn, "other", "fact", "test").unwrap();
+            conn.execute(
+                "INSERT INTO slugs (slug, unit_id) VALUES (?1, ?2)",
+                params![id, other],
+            )
+            .unwrap();
+            // resolve(id) must hit units first and return id (not other)
+            assert_eq!(resolve_id(&conn, &id).unwrap(), id);
+        }
+
+        #[test]
+        fn resolve_after_unset_bails() {
+            let conn = memory_db();
+            let id = add_unit(&conn, "u", "fact", "test").unwrap();
+            set_slug(&conn, "foo", &id).unwrap();
+            assert!(unset_slug(&conn, "foo").unwrap());
+            assert!(resolve_id(&conn, "foo").is_err());
+        }
     }
 }
