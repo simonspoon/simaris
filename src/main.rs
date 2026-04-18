@@ -179,6 +179,32 @@ enum Command {
         #[arg(long, default_value = "90")]
         stale_days: u32,
     },
+
+    /// Manage human-readable slugs pointing at units
+    Slug {
+        #[command(subcommand)]
+        action: SlugAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum SlugAction {
+    /// Bind a slug to a unit id (creates or moves the slug)
+    Set {
+        /// Slug name
+        slug: String,
+        /// Target unit id
+        id: String,
+    },
+
+    /// Remove a slug (no-op if absent)
+    Unset {
+        /// Slug name
+        slug: String,
+    },
+
+    /// List every slug
+    List,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -503,6 +529,20 @@ fn main() -> Result<()> {
             let result = db::scan(&conn, stale_days)?;
             display::print_scan(&result, cli.json);
         }
+        Command::Slug { action } => match action {
+            SlugAction::Set { slug, id } => {
+                db::set_slug(&conn, &slug, &id)?;
+                display::print_slug_set(&slug, &id, cli.json);
+            }
+            SlugAction::Unset { slug } => {
+                let removed = db::unset_slug(&conn, &slug)?;
+                display::print_slug_unset(&slug, removed, cli.json);
+            }
+            SlugAction::List => {
+                let rows = db::list_slugs(&conn)?;
+                display::print_slug_list(&rows, cli.json);
+            }
+        },
         Command::Restore { .. } => unreachable!(),
     }
 

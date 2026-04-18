@@ -1154,9 +1154,6 @@ pub fn restore_backup(filename: &str) -> Result<()> {
 }
 
 /// Row shape for `slugs` table reads.
-// Wiring lands in sibling tasks (bhhj CLI, nlmm display); silence dead-code
-// until then so release build stays warning-clean.
-#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SlugRow {
     pub slug: String,
@@ -1170,7 +1167,6 @@ pub struct SlugRow {
 /// - every char in `[a-z0-9_-]`
 /// - reject canonical-form UUID (length 36 + parses as UUID) to avoid
 ///   collision with unit ids in the resolver path
-#[allow(dead_code)]
 pub fn validate_slug(slug: &str) -> Result<()> {
     if slug.is_empty() {
         anyhow::bail!("Slug must not be empty");
@@ -1198,7 +1194,6 @@ pub fn validate_slug(slug: &str) -> Result<()> {
 /// Set (create or move) a slug to point at `unit_id`.
 /// Same slug + new unit_id reassigns ownership while preserving `created`.
 /// Unknown unit_id surfaces as an FK error mapped with the offending id.
-#[allow(dead_code)]
 pub fn set_slug(conn: &Connection, slug: &str, unit_id: &str) -> Result<()> {
     validate_slug(slug)?;
     conn.execute(
@@ -1212,14 +1207,12 @@ pub fn set_slug(conn: &Connection, slug: &str, unit_id: &str) -> Result<()> {
 
 /// Delete a slug. Returns true if a row was removed, false if no match.
 /// Tolerates any input — does not run validate_slug.
-#[allow(dead_code)]
 pub fn unset_slug(conn: &Connection, slug: &str) -> Result<bool> {
     let n = conn.execute("DELETE FROM slugs WHERE slug = ?1", params![slug])?;
     Ok(n > 0)
 }
 
 /// List every slug in the DB, ordered by slug ASC.
-#[allow(dead_code)]
 pub fn list_slugs(conn: &Connection) -> Result<Vec<SlugRow>> {
     let mut stmt = conn.prepare("SELECT slug, unit_id, created FROM slugs ORDER BY slug ASC")?;
     let rows = stmt

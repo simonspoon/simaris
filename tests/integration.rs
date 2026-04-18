@@ -986,3 +986,166 @@ fn test_existing_v2_db_upgrades_on_launch() {
         "expected at least one backup file in {backup_dir:?}"
     );
 }
+
+#[test]
+fn test_slug_set_and_list_roundtrip() {
+    let env = TestEnv::new("slug-roundtrip");
+    let out = env.run_ok(&["add", "alpha unit", "--type", "fact"]);
+    let id = extract_id(&out);
+    let set_out = env.run_ok(&["slug", "set", "alpha", &id]);
+    assert!(
+        set_out.contains("alpha") && set_out.contains(&id),
+        "set stdout missing slug/id: {set_out}"
+    );
+    let list_out = env.run_ok(&["slug", "list"]);
+    assert!(list_out.contains("alpha"), "list missing slug: {list_out}");
+    assert!(list_out.contains(&id), "list missing id: {list_out}");
+}
+
+#[test]
+fn test_slug_list_empty() {
+    let env = TestEnv::new("slug-list-empty");
+    let out = env.run_ok(&["slug", "list"]);
+    assert!(out.contains("No slugs."), "got: {out}");
+}
+
+#[test]
+fn test_slug_set_rebinds_same_slug_to_new_unit() {
+    let env = TestEnv::new("slug-rebind");
+    let out_a = env.run_ok(&["add", "unit a", "--type", "fact"]);
+    let id_a = extract_id(&out_a);
+    let out_b = env.run_ok(&["add", "unit b", "--type", "fact"]);
+    let id_b = extract_id(&out_b);
+
+    env.run_ok(&["slug", "set", "ptr", &id_a]);
+    env.run_ok(&["slug", "set", "ptr", &id_b]);
+
+    let out = env.run_ok(&["--json", "slug", "list"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+    assert_eq!(parsed.len(), 1, "expected one slug row: {out}");
+    assert_eq!(parsed[0]["slug"], "ptr");
+    assert_eq!(parsed[0]["unit_id"], id_b);
+}
+
+#[test]
+fn test_slug_unset_existing_returns_success() {
+    let env = TestEnv::new("slug-unset-hit");
+    let out = env.run_ok(&["add", "gone unit", "--type", "fact"]);
+    let id = extract_id(&out);
+    env.run_ok(&["slug", "set", "gone", &id]);
+    let unset_out = env.run_ok(&["slug", "unset", "gone"]);
+    assert!(unset_out.contains("Unset slug 'gone'"), "got: {unset_out}");
+    let list_out = env.run_ok(&["slug", "list"]);
+    assert!(list_out.contains("No slugs."), "got: {list_out}");
+}
+
+#[test]
+fn test_slug_unset_nonexistent_is_noop() {
+    let env = TestEnv::new("slug-unset-miss");
+    let text_out = env.run(&["slug", "unset", "nope"]);
+    assert!(
+        text_out.status.success(),
+        "unset miss should exit 0: stderr={}",
+        String::from_utf8_lossy(&text_out.stderr)
+    );
+    let json_out = env.run_ok(&["--json", "slug", "unset", "nope"]);
+    let parsed: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
+    assert_eq!(parsed["removed"], false, "got: {json_out}");
+    assert_eq!(parsed["unset"], "nope", "got: {json_out}");
+}
+
+#[test]
+fn test_slug_set_invalid_slug_rejected() {
+    let env = TestEnv::new("slug-invalid");
+    let out = env.run_ok(&["add", "host unit", "--type", "fact"]);
+    let id = extract_id(&out);
+
+    for bad in ["", "Bad!", "1foo", "UPPER"] {
+        let result = env.run(&["slug", "set", bad, &id]);
+        assert!(
+            !result.status.success(),
+            "slug '{bad}' should have been rejected"
+        );
+        let stderr = String::from_utf8_lossy(&result.stderr).to_lowercase();
+        assert!(
+            stderr.contains("slug"),
+            "stderr should mention slug for '{bad}': {stderr}"
+        );
+    }
+}
+
+#[test]
+fn test_slug_set_unknown_unit_id_rejected() {
+    let env = TestEnv::new("slug-unknown-id");
+    let result = env.run(&["slug", "set", "foo", "00000000-0000-0000-0000-000000000000"]);
+    assert!(
+        !result.status.success(),
+        "unknown unit id should fail; stdout={}",
+        String::from_utf8_lossy(&result.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr).to_lowercase();
+    assert!(
+        stderr.contains("not found"),
+        "stderr should say not found: {stderr}"
+    );
+}
+
+#[test]
+fn test_slug_set_json_output() {
+    let env = TestEnv::new("slug-set-json");
+    let out = env.run_ok(&["add", "jset unit", "--type", "fact"]);
+    let id = extract_id(&out);
+    let json_out = env.run_ok(&["--json", "slug", "set", "alpha", &id]);
+    let parsed: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
+    assert_eq!(parsed["slug"], "alpha", "got: {json_out}");
+    assert_eq!(parsed["unit_id"], id, "got: {json_out}");
+}
+
+#[test]
+fn test_slug_list_json_output() {
+    let env = TestEnv::new("slug-list-json");
+    let out = env.run_ok(&["add", "multi unit", "--type", "fact"]);
+    let id = extract_id(&out);
+    env.run_ok(&["slug", "set", "a", &id]);
+    env.run_ok(&["slug", "set", "z", &id]);
+    let json_out = env.run_ok(&["--json", "slug", "list"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&json_out).expect("valid JSON array");
+    assert_eq!(parsed.len(), 2, "got: {json_out}");
+    assert_eq!(parsed[0]["slug"], "a");
+    assert_eq!(parsed[1]["slug"], "z");
+}
+
+#[test]
+fn test_slug_unset_json_output() {
+    let env = TestEnv::new("slug-unset-json");
+    let out = env.run_ok(&["add", "jtarget", "--type", "fact"]);
+    let id = extract_id(&out);
+    env.run_ok(&["slug", "set", "hit", &id]);
+
+    let hit_out = env.run_ok(&["--json", "slug", "unset", "hit"]);
+    let parsed_hit: serde_json::Value = serde_json::from_str(&hit_out).expect("valid JSON");
+    assert_eq!(parsed_hit["removed"], true, "got: {hit_out}");
+    assert_eq!(parsed_hit["unset"], "hit", "got: {hit_out}");
+
+    let miss_out = env.run_ok(&["--json", "slug", "unset", "miss"]);
+    let parsed_miss: serde_json::Value = serde_json::from_str(&miss_out).expect("valid JSON");
+    assert_eq!(parsed_miss["removed"], false, "got: {miss_out}");
+    assert_eq!(parsed_miss["unset"], "miss", "got: {miss_out}");
+}
+
+#[test]
+fn test_slug_missing_args() {
+    let env = TestEnv::new("slug-missing-args");
+    for args in [
+        vec!["slug", "set", "foo"],
+        vec!["slug", "set"],
+        vec!["slug"],
+    ] {
+        let result = env.run(&args);
+        assert!(
+            !result.status.success(),
+            "missing-args call should fail: {:?}",
+            args
+        );
+    }
+}

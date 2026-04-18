@@ -1,5 +1,5 @@
 use crate::ask::PrimeResult;
-use crate::db::{InboxItem, Link, ScanResult, Unit};
+use crate::db::{InboxItem, Link, ScanResult, SlugRow, Unit};
 use std::path::Path;
 
 /// Short UUID for human-readable display (first 8 chars).
@@ -303,5 +303,37 @@ pub fn print_scan(result: &ScanResult, json: bool) {
 
     if !found_issues {
         println!("No issues found.");
+    }
+}
+
+pub fn print_slug_set(slug: &str, id: &str, json: bool) {
+    if json {
+        let value = serde_json::json!({ "slug": slug, "unit_id": id });
+        println!("{}", serde_json::to_string_pretty(&value).unwrap());
+    } else {
+        println!("Set slug '{slug}' -> {id}");
+    }
+}
+
+pub fn print_slug_unset(slug: &str, removed: bool, json: bool) {
+    if json {
+        let value = serde_json::json!({ "unset": slug, "removed": removed });
+        println!("{}", serde_json::to_string_pretty(&value).unwrap());
+    } else if removed {
+        println!("Unset slug '{slug}'.");
+    } else {
+        println!("No slug '{slug}' set.");
+    }
+}
+
+pub fn print_slug_list(rows: &[SlugRow], json: bool) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(rows).unwrap());
+    } else if rows.is_empty() {
+        println!("No slugs.");
+    } else {
+        for row in rows {
+            println!("{} -> {}", row.slug, row.unit_id);
+        }
     }
 }
