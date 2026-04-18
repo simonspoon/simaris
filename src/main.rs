@@ -351,6 +351,7 @@ fn main() -> Result<()> {
             }
         }
         Command::Show { id } => {
+            let id = db::resolve_id(&conn, &id)?;
             let unit = db::get_unit(&conn, &id)?;
             let outgoing = db::get_links_from(&conn, &id)?;
             let incoming = db::get_links_to(&conn, &id)?;
@@ -361,6 +362,8 @@ fn main() -> Result<()> {
             to_id,
             rel,
         } => {
+            let from_id = db::resolve_id(&conn, &from_id)?;
+            let to_id = db::resolve_id(&conn, &to_id)?;
             db::add_link(&conn, &from_id, &to_id, rel.as_str())?;
             display::print_linked(&from_id, &to_id, rel.as_str(), cli.json);
         }
@@ -391,6 +394,7 @@ fn main() -> Result<()> {
             display::print_backup_created(&path, cli.json);
         }
         Command::Mark { id, kind } => {
+            let id = db::resolve_id(&conn, &id)?;
             let confidence = db::add_mark(&conn, &id, kind.as_str(), kind.delta())?;
             display::print_marked(&id, kind.as_str(), confidence, cli.json);
         }
@@ -503,6 +507,7 @@ fn main() -> Result<()> {
             source,
             tags,
         } => {
+            let id = db::resolve_id(&conn, &id)?;
             let tag_vec: Option<Vec<String>> = tags.map(|t| {
                 t.split(',')
                     .map(|s| s.trim().to_string())
@@ -522,6 +527,7 @@ fn main() -> Result<()> {
             display::print_unit(&unit, &outgoing, &incoming, cli.json);
         }
         Command::Delete { id } => {
+            let id = db::resolve_id(&conn, &id)?;
             db::delete_unit(&conn, &id)?;
             display::print_deleted(&id, cli.json);
         }

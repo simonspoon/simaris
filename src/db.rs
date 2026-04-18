@@ -1241,7 +1241,6 @@ pub fn get_slugs_for_unit(conn: &Connection, unit_id: &str) -> Result<Vec<String
 /// Resolve a CLI-supplied identifier to a unit id.
 /// Order: existing unit id wins (collision invariant), then slug lookup, else bail.
 /// Empty input short-circuits without a DB hit.
-#[allow(dead_code)]
 pub fn resolve_id(conn: &Connection, id_or_slug: &str) -> Result<String> {
     if id_or_slug.is_empty() {
         anyhow::bail!("No unit or slug matches ''");

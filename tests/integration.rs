@@ -609,7 +609,7 @@ fn test_mark_nonexistent() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.to_lowercase().contains("not found"),
+        stderr.contains("No unit or slug matches") && stderr.contains(fake_uuid),
         "got stderr: {stderr}"
     );
 }
@@ -1131,6 +1131,177 @@ fn test_slug_unset_json_output() {
     let parsed_miss: serde_json::Value = serde_json::from_str(&miss_out).expect("valid JSON");
     assert_eq!(parsed_miss["removed"], false, "got: {miss_out}");
     assert_eq!(parsed_miss["unset"], "miss", "got: {miss_out}");
+}
+
+#[test]
+fn test_show_resolves_slug() {
+    let env = TestEnv::new("slug-wire-show");
+    let add_out = env.run_ok(&["add", "showable knowledge", "--type", "principle"]);
+    let id = extract_id(&add_out);
+    env.run_ok(&["slug", "set", "shoe", &id]);
+    let out = env.run_ok(&["show", "shoe"]);
+    assert!(out.contains("showable knowledge"), "got: {out}");
+    assert!(out.contains("principle"), "got: {out}");
+}
+
+#[test]
+fn test_edit_resolves_slug() {
+    let env = TestEnv::new("slug-wire-edit");
+    let add_out = env.run_ok(&["add", "old text", "--type", "fact"]);
+    let id = extract_id(&add_out);
+    env.run_ok(&["slug", "set", "editme", &id]);
+    let out = env.run_ok(&["edit", "editme", "--content", "new text"]);
+    assert!(out.contains("new text"), "got: {out}");
+    let show = env.run_ok(&["show", &id]);
+    assert!(show.contains("new text"), "got: {show}");
+}
+
+#[test]
+fn test_link_resolves_from_slug() {
+    let env = TestEnv::new("slug-wire-link-from");
+    let out_a = env.run_ok(&["add", "unit a", "--type", "fact"]);
+    let id_a = extract_id(&out_a);
+    let out_b = env.run_ok(&["add", "unit b", "--type", "idea"]);
+    let id_b = extract_id(&out_b);
+    env.run_ok(&["slug", "set", "alpha", &id_a]);
+    let out = env.run_ok(&["link", "alpha", &id_b, "--rel", "related_to"]);
+    assert!(
+        out.contains(&format!("Linked {id_a} -> {id_b}")),
+        "got: {out}"
+    );
+}
+
+#[test]
+fn test_link_resolves_to_slug() {
+    let env = TestEnv::new("slug-wire-link-to");
+    let out_a = env.run_ok(&["add", "unit a", "--type", "fact"]);
+    let id_a = extract_id(&out_a);
+    let out_b = env.run_ok(&["add", "unit b", "--type", "idea"]);
+    let id_b = extract_id(&out_b);
+    env.run_ok(&["slug", "set", "beta", &id_b]);
+    let out = env.run_ok(&["link", &id_a, "beta", "--rel", "depends_on"]);
+    assert!(
+        out.contains(&format!("Linked {id_a} -> {id_b}")),
+        "got: {out}"
+    );
+}
+
+#[test]
+fn test_link_resolves_both_slugs() {
+    let env = TestEnv::new("slug-wire-link-both");
+    let out_a = env.run_ok(&["add", "unit a", "--type", "fact"]);
+    let id_a = extract_id(&out_a);
+    let out_b = env.run_ok(&["add", "unit b", "--type", "idea"]);
+    let id_b = extract_id(&out_b);
+    env.run_ok(&["slug", "set", "aa", &id_a]);
+    env.run_ok(&["slug", "set", "bb", &id_b]);
+    let out = env.run_ok(&["link", "aa", "bb", "--rel", "part_of"]);
+    assert!(
+        out.contains(&format!("Linked {id_a} -> {id_b}")),
+        "got: {out}"
+    );
+}
+
+#[test]
+fn test_delete_resolves_slug() {
+    let env = TestEnv::new("slug-wire-delete");
+    let add_out = env.run_ok(&["add", "doomed unit", "--type", "fact"]);
+    let id = extract_id(&add_out);
+    env.run_ok(&["slug", "set", "bye", &id]);
+    let out = env.run_ok(&["delete", "bye"]);
+    assert!(out.contains(&id), "delete should echo resolved id: {out}");
+    // Verify unit really gone
+    let result = env.run(&["show", &id]);
+    assert!(!result.status.success(), "unit should be gone after delete");
+}
+
+#[test]
+fn test_mark_resolves_slug() {
+    let env = TestEnv::new("slug-wire-mark");
+    let add_out = env.run_ok(&["add", "mark me", "--type", "fact"]);
+    let id = extract_id(&add_out);
+    env.run_ok(&["slug", "set", "mk", &id]);
+    let out = env.run_ok(&["--json", "mark", "mk", "--kind", "used"]);
+    let v: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(v["id"].as_str().unwrap(), id, "id should be resolved UUID");
+    assert_eq!(v["mark"], "used");
+    // used delta = +0.05, but confidence already clamped at 1.0, so stays 1.0
+    assert_eq!(v["confidence"].as_f64().unwrap(), 1.0);
+
+    // Knock confidence down first, then verify +0.05 delta applies through slug
+    env.run_ok(&["mark", &id, "--kind", "wrong"]); // 1.0 -> 0.8
+    let out = env.run_ok(&["--json", "mark", "mk", "--kind", "used"]);
+    let v: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    let conf = v["confidence"].as_f64().unwrap();
+    assert!(
+        (conf - 0.85).abs() < 1e-9,
+        "expected 0.85 after +0.05 delta from slug, got {conf}"
+    );
+}
+
+#[test]
+fn test_unknown_slug_rejected_per_command() {
+    let env = TestEnv::new("slug-wire-unknown");
+    // Seed one unit so Link has an existing id to pair against (still fails on
+    // the unknown side), but this is defensive — both ids should fail first.
+    let out = env.run_ok(&["add", "seed", "--type", "fact"]);
+    let real_id = extract_id(&out);
+
+    let invocations: Vec<Vec<&str>> = vec![
+        vec!["show", "ghost"],
+        vec!["edit", "ghost", "--content", "nope"],
+        vec!["link", "ghost", &real_id, "--rel", "related_to"],
+        vec!["delete", "ghost"],
+        vec!["mark", "ghost", "--kind", "used"],
+    ];
+    for args in invocations {
+        let result = env.run(&args);
+        assert!(
+            !result.status.success(),
+            "cmd should fail for unknown slug: {args:?}"
+        );
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(
+            stderr.contains("No unit or slug matches"),
+            "stderr should mention resolver msg for {args:?}: {stderr}"
+        );
+        assert!(
+            stderr.contains("ghost"),
+            "stderr should include input verbatim for {args:?}: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn test_raw_uuid_still_works_after_slug_wiring() {
+    let env = TestEnv::new("slug-wire-raw-uuid");
+    let out_a = env.run_ok(&["add", "raw a", "--type", "fact"]);
+    let id_a = extract_id(&out_a);
+    let out_b = env.run_ok(&["add", "raw b", "--type", "idea"]);
+    let id_b = extract_id(&out_b);
+
+    // show by raw UUID
+    let show = env.run_ok(&["show", &id_a]);
+    assert!(show.contains("raw a"), "show raw uuid: {show}");
+
+    // edit by raw UUID
+    let edit = env.run_ok(&["edit", &id_a, "--content", "edited raw a"]);
+    assert!(edit.contains("edited raw a"), "edit raw uuid: {edit}");
+
+    // link by raw UUIDs
+    let link = env.run_ok(&["link", &id_a, &id_b, "--rel", "related_to"]);
+    assert!(
+        link.contains(&format!("Linked {id_a} -> {id_b}")),
+        "link raw uuids: {link}"
+    );
+
+    // mark by raw UUID
+    let mark = env.run_ok(&["mark", &id_a, "--kind", "wrong"]);
+    assert!(mark.contains(&id_a), "mark raw uuid: {mark}");
+
+    // delete by raw UUID
+    let del = env.run_ok(&["delete", &id_b]);
+    assert!(del.contains(&id_b), "delete raw uuid: {del}");
 }
 
 #[test]
