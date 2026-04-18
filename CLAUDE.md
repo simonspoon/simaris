@@ -59,12 +59,13 @@ Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 | `outdated` | -0.10 |
 | `wrong` | -0.20 |
 
-### Schema (4 tables)
+### Schema (5 tables)
 
 - `units` -- TEXT primary key (UUIDv7), content, type, source, confidence, verified, tags (JSON), conditions (JSON), timestamps
 - `links` -- composite PK (from_id, to_id, relationship), foreign keys to units with CASCADE delete
 - `inbox` -- TEXT primary key (UUIDv7), content, source, timestamp
 - `marks` -- TEXT primary key (UUIDv7), unit_id FK, kind, timestamp
+- `slugs` -- TEXT primary key (slug), unit_id FK to units with CASCADE delete, created timestamp; indexed on unit_id for reverse lookup
 - `units_fts` -- FTS5 virtual table synced via triggers (uuid, content, type, tags, source)
 
 ### Data Flow

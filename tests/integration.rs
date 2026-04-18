@@ -840,3 +840,149 @@ fn test_add_no_auto_link_one_shared_tag() {
         "should not auto-link with only 1 shared tag, got: {out}"
     );
 }
+
+#[test]
+fn test_migration_runs_on_first_command() {
+    let env = TestEnv::new("migratefirst");
+    env.run_ok(&["add", "x", "--type", "fact"]);
+
+    let db_path = env.dir.join("sanctuary.db");
+    let conn = rusqlite::Connection::open(&db_path).expect("open sanctuary.db");
+
+    let version: i32 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 3, "expected user_version=3, got {version}");
+
+    let slugs_present: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='slugs'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(slugs_present, 1, "expected slugs table to exist");
+
+    let slugs_index: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='index' AND name='idx_slugs_unit'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(slugs_index, 1, "expected idx_slugs_unit to exist");
+}
+
+#[test]
+fn test_existing_v2_db_upgrades_on_launch() {
+    let env = TestEnv::new("v2upgrade");
+    let db_path = env.dir.join("sanctuary.db");
+
+    // Hand-roll a v2 DB on disk, pre-seeded with a row in each table.
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        conn.execute_batch(
+            "CREATE TABLE units (
+                id          TEXT PRIMARY KEY,
+                content     TEXT NOT NULL,
+                type        TEXT NOT NULL CHECK(type IN ('fact','procedure','principle','preference','lesson','idea','aspect')),
+                source      TEXT NOT NULL DEFAULT 'inbox',
+                confidence  REAL NOT NULL DEFAULT 1.0,
+                verified    INTEGER NOT NULL DEFAULT 0,
+                tags        TEXT NOT NULL DEFAULT '[]',
+                conditions  TEXT NOT NULL DEFAULT '{}',
+                created     TEXT NOT NULL DEFAULT (datetime('now')),
+                updated     TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE links (
+                from_id      TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+                to_id        TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+                relationship TEXT NOT NULL CHECK(relationship IN (
+                                 'related_to','part_of','depends_on',
+                                 'contradicts','supersedes','sourced_from')),
+                PRIMARY KEY (from_id, to_id, relationship)
+            );
+            CREATE INDEX idx_links_to ON links(to_id);
+            CREATE TABLE inbox (
+                id      TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                source  TEXT NOT NULL DEFAULT 'cli',
+                created TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE marks (
+                id       TEXT PRIMARY KEY,
+                unit_id  TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+                kind     TEXT NOT NULL CHECK(kind IN ('used','wrong','outdated','helpful')),
+                created  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_marks_unit ON marks(unit_id);
+            CREATE VIRTUAL TABLE units_fts USING fts5(uuid, content, type, tags, source);
+            CREATE TRIGGER units_ai AFTER INSERT ON units BEGIN
+                INSERT INTO units_fts(uuid, content, type, tags, source)
+                VALUES (new.id, new.content, new.type, new.tags, new.source);
+            END;
+            CREATE TRIGGER units_ad AFTER DELETE ON units BEGIN
+                DELETE FROM units_fts WHERE uuid = old.id;
+            END;
+            CREATE TRIGGER units_au AFTER UPDATE ON units BEGIN
+                DELETE FROM units_fts WHERE uuid = old.id;
+                INSERT INTO units_fts(uuid, content, type, tags, source)
+                VALUES (new.id, new.content, new.type, new.tags, new.source);
+            END;
+            INSERT INTO units (id, content, type) VALUES
+                ('0193-seed-unit-aaaa-aaaaaaaaaaaa', 'pre-existing fact', 'fact');
+            PRAGMA user_version = 2;",
+        )
+        .unwrap();
+    }
+
+    // Launch simaris — `list` is pure read, triggers connect() migration ladder.
+    let out = env.run_ok(&["list"]);
+    assert!(
+        out.contains("pre-existing fact"),
+        "seeded unit should be intact: {out}"
+    );
+
+    // Re-open the upgraded DB directly and verify state.
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let version: i32 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 3);
+
+    let slugs_present: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='slugs'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(slugs_present, 1);
+
+    let seeded: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM units WHERE id='0193-seed-unit-aaaa-aaaaaaaaaaaa'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(seeded, 1, "pre-existing unit should survive migration");
+
+    // Backup file should have been written by create_backup.
+    let backup_dir = env.dir.join("backups");
+    let backups: Vec<_> = std::fs::read_dir(&backup_dir)
+        .expect("backups dir should exist")
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .map(|n| n.starts_with("sanctuary-") && n.ends_with(".db"))
+                .unwrap_or(false)
+        })
+        .collect();
+    assert!(
+        !backups.is_empty(),
+        "expected at least one backup file in {backup_dir:?}"
+    );
+}

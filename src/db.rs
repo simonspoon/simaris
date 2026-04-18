@@ -97,6 +97,10 @@ pub fn connect() -> Result<Connection> {
     }
     if user_version == 1 {
         migrate_add_aspect_type(&conn)?;
+        user_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    }
+    if user_version == 2 {
+        migrate_add_slugs(&conn)?;
     }
 
     initialize(&conn)?;
@@ -453,6 +457,29 @@ fn migrate_add_aspect_type(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Migration v2→v3: Add slugs table for human-readable unit aliases.
+/// Pure additive — no rebuild of existing tables, so foreign_keys stay ON.
+fn migrate_add_slugs(conn: &Connection) -> Result<()> {
+    create_backup(conn)?;
+
+    let tx = conn.unchecked_transaction()?;
+
+    tx.execute_batch(
+        "CREATE TABLE slugs (
+             slug     TEXT PRIMARY KEY,
+             unit_id  TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+             created  TEXT NOT NULL DEFAULT (datetime('now'))
+         );
+         CREATE INDEX idx_slugs_unit ON slugs(unit_id);",
+    )?;
+
+    tx.execute_batch("PRAGMA user_version = 3;")?;
+
+    tx.commit()?;
+
+    Ok(())
+}
+
 fn initialize(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS units (
@@ -493,7 +520,15 @@ fn initialize(conn: &Connection) -> Result<()> {
             created  TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
-        CREATE INDEX IF NOT EXISTS idx_marks_unit ON marks(unit_id);",
+        CREATE INDEX IF NOT EXISTS idx_marks_unit ON marks(unit_id);
+
+        CREATE TABLE IF NOT EXISTS slugs (
+            slug     TEXT PRIMARY KEY,
+            unit_id  TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+            created  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_slugs_unit ON slugs(unit_id);",
     )?;
 
     let fts_exists: bool = conn.query_row(
@@ -529,8 +564,8 @@ fn initialize(conn: &Connection) -> Result<()> {
 
     // Ensure user_version is set for fresh installs
     let user_version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if user_version < 2 {
-        conn.execute_batch("PRAGMA user_version = 2;")?;
+    if user_version < 3 {
+        conn.execute_batch("PRAGMA user_version = 3;")?;
     }
 
     Ok(())
@@ -1134,12 +1169,12 @@ mod tests {
         let conn = memory_db();
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('units','links','inbox')",
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('units','links','inbox','slugs')",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 3);
+        assert_eq!(count, 4);
     }
 
     #[test]
@@ -1668,7 +1703,7 @@ mod tests {
         let version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
     }
 
     #[test]
@@ -1843,5 +1878,277 @@ mod tests {
         .unwrap();
         assert_eq!(auto_link(&conn, &b).unwrap(), 1);
         assert_eq!(auto_link(&conn, &b).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_slugs_table_exists_fresh_install() {
+        let conn = memory_db();
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='slugs'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_slugs_table_columns() {
+        let conn = memory_db();
+        let mut stmt = conn.prepare("PRAGMA table_info(slugs)").unwrap();
+        let cols: Vec<(String, String, i32, i32)> = stmt
+            .query_map([], |row| {
+                // (name, type, notnull, pk)
+                Ok((row.get(1)?, row.get(2)?, row.get(3)?, row.get(5)?))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(cols.len(), 3, "slugs should have 3 columns: {cols:?}");
+        // SQLite quirk: PRAGMA table_info.notnull is 0 for TEXT PRIMARY KEY columns
+        // (historic allow-NULL behavior), so slug's notnull flag is 0 even though
+        // the PK constraint prevents NULLs in practice.
+        assert_eq!(cols[0], ("slug".to_string(), "TEXT".to_string(), 0, 1));
+        assert_eq!(cols[1], ("unit_id".to_string(), "TEXT".to_string(), 1, 0));
+        assert_eq!(cols[2], ("created".to_string(), "TEXT".to_string(), 1, 0));
+    }
+
+    #[test]
+    fn test_slugs_index_on_unit_id() {
+        let conn = memory_db();
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='index' AND name='idx_slugs_unit' AND tbl_name='slugs'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_slugs_fk_cascade_delete() {
+        let conn = memory_db();
+        let fk_on: i32 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(fk_on, 1, "foreign_keys pragma must be ON");
+        let id = add_unit(&conn, "parent", "fact", "test").unwrap();
+        conn.execute(
+            "INSERT INTO slugs (slug, unit_id) VALUES (?1, ?2)",
+            params!["hello", id],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM units WHERE id = ?1", params![id])
+            .unwrap();
+        let remaining: i64 = conn
+            .query_row("SELECT count(*) FROM slugs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn test_slugs_fk_rejects_unknown_unit_id() {
+        let conn = memory_db();
+        let result = conn.execute(
+            "INSERT INTO slugs (slug, unit_id) VALUES (?1, ?2)",
+            params!["orphan", "no-such-unit"],
+        );
+        assert!(result.is_err());
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.to_uppercase().contains("FOREIGN KEY"),
+            "expected FOREIGN KEY error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_slugs_slug_pk_rejects_duplicate() {
+        let conn = memory_db();
+        let id = add_unit(&conn, "unit", "fact", "test").unwrap();
+        conn.execute(
+            "INSERT INTO slugs (slug, unit_id) VALUES (?1, ?2)",
+            params!["dup", id],
+        )
+        .unwrap();
+        let result = conn.execute(
+            "INSERT INTO slugs (slug, unit_id) VALUES (?1, ?2)",
+            params!["dup", id],
+        );
+        assert!(result.is_err());
+        let msg = format!("{:?}", result.unwrap_err()).to_uppercase();
+        assert!(
+            msg.contains("UNIQUE") || msg.contains("PRIMARY KEY"),
+            "expected UNIQUE / PRIMARY KEY error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_slugs_unit_id_not_null() {
+        let conn = memory_db();
+        let result = conn.execute(
+            "INSERT INTO slugs (slug, unit_id) VALUES (?1, NULL)",
+            params!["nullish"],
+        );
+        assert!(result.is_err());
+        let msg = format!("{:?}", result.unwrap_err()).to_uppercase();
+        assert!(
+            msg.contains("NOT NULL"),
+            "expected NOT NULL error, got: {msg}"
+        );
+    }
+
+    /// Build an in-memory DB pinned at user_version=2 (the pre-slugs state).
+    /// Mirrors the schema that `initialize()` produced prior to the v2→v3 migration.
+    fn v2_memory_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        conn.execute_batch(
+            "CREATE TABLE units (
+                id          TEXT PRIMARY KEY,
+                content     TEXT NOT NULL,
+                type        TEXT NOT NULL CHECK(type IN ('fact','procedure','principle','preference','lesson','idea','aspect')),
+                source      TEXT NOT NULL DEFAULT 'inbox',
+                confidence  REAL NOT NULL DEFAULT 1.0,
+                verified    INTEGER NOT NULL DEFAULT 0,
+                tags        TEXT NOT NULL DEFAULT '[]',
+                conditions  TEXT NOT NULL DEFAULT '{}',
+                created     TEXT NOT NULL DEFAULT (datetime('now')),
+                updated     TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE links (
+                from_id      TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+                to_id        TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+                relationship TEXT NOT NULL CHECK(relationship IN (
+                                 'related_to','part_of','depends_on',
+                                 'contradicts','supersedes','sourced_from')),
+                PRIMARY KEY (from_id, to_id, relationship)
+            );
+            CREATE INDEX idx_links_to ON links(to_id);
+            CREATE TABLE inbox (
+                id      TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                source  TEXT NOT NULL DEFAULT 'cli',
+                created TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE marks (
+                id       TEXT PRIMARY KEY,
+                unit_id  TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+                kind     TEXT NOT NULL CHECK(kind IN ('used','wrong','outdated','helpful')),
+                created  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_marks_unit ON marks(unit_id);
+            CREATE VIRTUAL TABLE units_fts USING fts5(uuid, content, type, tags, source);
+            CREATE TRIGGER units_ai AFTER INSERT ON units BEGIN
+                INSERT INTO units_fts(uuid, content, type, tags, source)
+                VALUES (new.id, new.content, new.type, new.tags, new.source);
+            END;
+            CREATE TRIGGER units_ad AFTER DELETE ON units BEGIN
+                DELETE FROM units_fts WHERE uuid = old.id;
+            END;
+            CREATE TRIGGER units_au AFTER UPDATE ON units BEGIN
+                DELETE FROM units_fts WHERE uuid = old.id;
+                INSERT INTO units_fts(uuid, content, type, tags, source)
+                VALUES (new.id, new.content, new.type, new.tags, new.source);
+            END;
+            PRAGMA user_version = 2;",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_migrate_add_slugs_from_v2() {
+        // Isolate the backup write that migrate_add_slugs performs via create_backup.
+        let temp = std::env::temp_dir().join(format!(
+            "simaris-migrate-v2-{}-{}",
+            std::process::id(),
+            uuid::Uuid::now_v7()
+        ));
+        std::fs::create_dir_all(&temp).unwrap();
+        // SAFETY: no other unit test sets SIMARIS_HOME, and no other unit test
+        // exercises create_backup / data_dir during its run.
+        unsafe {
+            std::env::set_var("SIMARIS_HOME", &temp);
+        }
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                unsafe {
+                    std::env::remove_var("SIMARIS_HOME");
+                }
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(temp);
+
+        let conn = v2_memory_db();
+
+        // Sanity: no slugs yet, user_version=2
+        let pre_version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(pre_version, 2);
+        let pre_slugs: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='slugs'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(pre_slugs, 0);
+
+        // Seed representative rows across every table.
+        let u1 = add_unit(&conn, "seed one", "fact", "test").unwrap();
+        let u2 = add_unit(&conn, "seed two", "idea", "test").unwrap();
+        add_link(&conn, &u1, &u2, "related_to").unwrap();
+        drop_item(&conn, "seed inbox", "cli").unwrap();
+        add_mark(&conn, &u1, "used", 0.05).unwrap();
+
+        // Run the migration.
+        migrate_add_slugs(&conn).unwrap();
+
+        // user_version advanced.
+        let post_version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(post_version, 3);
+
+        // slugs table + index present.
+        let slugs_table: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='slugs'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(slugs_table, 1);
+        let slugs_index: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='index' AND name='idx_slugs_unit'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(slugs_index, 1);
+
+        // Seeded rows survived untouched.
+        let units_count: i64 = conn
+            .query_row("SELECT count(*) FROM units", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(units_count, 2);
+        let links_count: i64 = conn
+            .query_row("SELECT count(*) FROM links", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(links_count, 1);
+        let inbox_count: i64 = conn
+            .query_row("SELECT count(*) FROM inbox", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(inbox_count, 1);
+        let marks_count: i64 = conn
+            .query_row("SELECT count(*) FROM marks", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(marks_count, 1);
     }
 }
