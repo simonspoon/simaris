@@ -16,8 +16,13 @@ impl TestEnv {
         Command::new(bin)
             .args(args)
             .env("SIMARIS_HOME", &self.dir)
+            .env("SIMARIS_CLAUDE_AGENTS_DIR", self.agents_dir())
             .output()
             .expect("Failed to execute simaris")
+    }
+
+    fn agents_dir(&self) -> std::path::PathBuf {
+        self.dir.join("claude-agents")
     }
 
     fn run_ok(&self, args: &[&str]) -> String {
@@ -1386,4 +1391,123 @@ fn test_show_by_slug_renders_slugs_section() {
         out.contains("Slugs: myslug"),
         "expected Slugs line when resolving via slug: {out}"
     );
+}
+
+#[test]
+fn test_emit_writes_agent_file_for_slugged_aspect() {
+    let env = TestEnv::new("emit-writes-slugged");
+    let add_out = env.run_ok(&[
+        "add",
+        "# Worker\n\nHelper agent used for routine tasks.",
+        "--type",
+        "aspect",
+    ]);
+    let id = extract_id(&add_out);
+    env.run_ok(&["slug", "set", "worker", &id]);
+
+    let stdout = env.run_ok(&["emit", "--target", "claude-code", "--type", "aspect"]);
+    assert!(stdout.contains("Written: 1"), "summary: {stdout}");
+    assert!(stdout.contains("worker"), "summary lists slug: {stdout}");
+
+    let file = env.agents_dir().join("worker.md");
+    let body = std::fs::read_to_string(&file).expect("agent file must exist");
+    assert!(body.starts_with("---\n"), "frontmatter starts: {body}");
+    assert!(body.contains("\nname: worker\n"), "name line: {body}");
+    assert!(
+        body.contains("\ndescription: '# Worker'\n"),
+        "description line: {body}"
+    );
+    assert!(
+        body.contains("\nsimaris-managed: true\n"),
+        "managed marker: {body}"
+    );
+    assert!(
+        body.contains("\n---\n# Worker\n\nHelper agent used for routine tasks."),
+        "body verbatim: {body}"
+    );
+}
+
+#[test]
+fn test_emit_skips_aspects_without_slug() {
+    let env = TestEnv::new("emit-skips-slugless");
+    let add_out = env.run_ok(&["add", "no slug content", "--type", "aspect"]);
+    let id = extract_id(&add_out);
+
+    let stdout = env.run_ok(&["emit", "--target", "claude-code", "--type", "aspect"]);
+    assert!(stdout.contains("Written: 0"), "summary: {stdout}");
+    assert!(stdout.contains("Skipped: 1"), "summary: {stdout}");
+    assert!(
+        stdout.contains(&id),
+        "summary should list skipped UUID: {stdout}"
+    );
+}
+
+#[test]
+fn test_emit_rerun_overwrites_managed_file() {
+    let env = TestEnv::new("emit-rerun-overwrite");
+    let add_out = env.run_ok(&["add", "first body", "--type", "aspect"]);
+    let id = extract_id(&add_out);
+    env.run_ok(&["slug", "set", "agent_one", &id]);
+
+    env.run_ok(&["emit", "--target", "claude-code", "--type", "aspect"]);
+    env.run_ok(&["edit", &id, "--content", "second body"]);
+    env.run_ok(&["emit", "--target", "claude-code", "--type", "aspect"]);
+
+    let file = env.agents_dir().join("agent_one.md");
+    let body = std::fs::read_to_string(&file).unwrap();
+    assert!(body.contains("second body"), "rewrite body: {body}");
+    assert!(!body.contains("first body"), "old body gone: {body}");
+}
+
+#[test]
+fn test_emit_sweeps_managed_file_when_aspect_removed() {
+    let env = TestEnv::new("emit-sweep");
+    let add_out = env.run_ok(&["add", "going away", "--type", "aspect"]);
+    let id = extract_id(&add_out);
+    env.run_ok(&["slug", "set", "ghost", &id]);
+
+    env.run_ok(&["emit", "--target", "claude-code", "--type", "aspect"]);
+    let file = env.agents_dir().join("ghost.md");
+    assert!(file.exists(), "initial emit writes file");
+
+    env.run_ok(&["slug", "unset", "ghost"]);
+    let stdout = env.run_ok(&["emit", "--target", "claude-code", "--type", "aspect"]);
+    assert!(stdout.contains("Swept: 1"), "summary: {stdout}");
+    assert!(!file.exists(), "sweep deletes orphaned managed file");
+}
+
+#[test]
+fn test_emit_preserves_hand_authored_file() {
+    let env = TestEnv::new("emit-preserves-hand");
+    let add_out = env.run_ok(&["add", "managed body", "--type", "aspect"]);
+    let id = extract_id(&add_out);
+    env.run_ok(&["slug", "set", "managed_slug", &id]);
+
+    std::fs::create_dir_all(env.agents_dir()).unwrap();
+    let hand = env.agents_dir().join("hand.md");
+    std::fs::write(&hand, "---\nname: hand\n---\nhuman wrote this\n").unwrap();
+
+    env.run_ok(&["emit", "--target", "claude-code", "--type", "aspect"]);
+
+    assert!(hand.exists(), "hand-authored file must survive emit");
+    let body = std::fs::read_to_string(&hand).unwrap();
+    assert!(
+        body.contains("human wrote this"),
+        "hand body intact: {body}"
+    );
+}
+
+#[test]
+fn test_emit_json_shape() {
+    let env = TestEnv::new("emit-json");
+    let add_out = env.run_ok(&["add", "json body", "--type", "aspect"]);
+    let id = extract_id(&add_out);
+    env.run_ok(&["slug", "set", "jsonner", &id]);
+
+    let out = env.run_ok(&["--json", "emit", "--target", "claude-code", "--type", "aspect"]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(parsed["written"], serde_json::json!(["jsonner"]));
+    assert_eq!(parsed["swept"], serde_json::json!([]));
+    assert_eq!(parsed["skipped_uuids"], serde_json::json!([]));
+    assert!(parsed["target_dir"].is_string(), "target_dir string");
 }

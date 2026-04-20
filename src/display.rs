@@ -1,5 +1,6 @@
 use crate::ask::PrimeResult;
 use crate::db::{InboxItem, Link, ScanResult, SlugRow, Unit};
+use crate::emit::EmitResult;
 use std::path::Path;
 
 /// Short UUID for human-readable display (first 8 chars).
@@ -327,6 +328,44 @@ pub fn print_slug_unset(slug: &str, removed: bool, json: bool) {
         println!("Unset slug '{slug}'.");
     } else {
         println!("No slug '{slug}' set.");
+    }
+}
+
+pub fn print_emit_result(result: &EmitResult, target_dir: &Path, json: bool) {
+    if json {
+        let value = serde_json::json!({
+            "target_dir": target_dir.to_string_lossy(),
+            "written": result.written,
+            "swept": result.swept,
+            "skipped_uuids": result.skipped_uuids,
+        });
+        println!("{}", serde_json::to_string_pretty(&value).unwrap());
+        return;
+    }
+    println!("Emit target: {}", target_dir.display());
+    println!(
+        "Written: {}  Swept: {}  Skipped: {}",
+        result.written.len(),
+        result.swept.len(),
+        result.skipped_uuids.len()
+    );
+    if !result.written.is_empty() {
+        println!("Written slugs:");
+        for slug in &result.written {
+            println!("  {slug}");
+        }
+    }
+    if !result.swept.is_empty() {
+        println!("Swept slugs:");
+        for slug in &result.swept {
+            println!("  {slug}");
+        }
+    }
+    if !result.skipped_uuids.is_empty() {
+        println!("Skipped (no slug):");
+        for id in &result.skipped_uuids {
+            println!("  {id}");
+        }
     }
 }
 

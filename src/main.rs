@@ -2,6 +2,7 @@ mod ask;
 mod db;
 mod digest;
 mod display;
+mod emit;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -185,6 +186,28 @@ enum Command {
         #[command(subcommand)]
         action: SlugAction,
     },
+
+    /// Emit typed knowledge units as build artifacts for external tools
+    Emit {
+        /// Target tool format
+        #[arg(long)]
+        target: EmitTarget,
+
+        /// Type of knowledge unit to emit
+        #[arg(long, rename_all = "snake_case")]
+        r#type: EmitType,
+    },
+}
+
+#[derive(Clone, ValueEnum)]
+#[value(rename_all = "kebab-case")]
+enum EmitTarget {
+    ClaudeCode,
+}
+
+#[derive(Clone, ValueEnum)]
+enum EmitType {
+    Aspect,
 }
 
 #[derive(Subcommand)]
@@ -551,6 +574,13 @@ fn main() -> Result<()> {
                 display::print_slug_list(&rows, cli.json);
             }
         },
+        Command::Emit { target, r#type } => {
+            let EmitTarget::ClaudeCode = target;
+            let EmitType::Aspect = r#type;
+            let target_dir = emit::claude_agents_dir()?;
+            let result = emit::emit_claude_code_aspects(&conn, &target_dir)?;
+            display::print_emit_result(&result, &target_dir, cli.json);
+        }
         Command::Restore { .. } => unreachable!(),
     }
 

@@ -110,6 +110,7 @@ simaris mark <id> --kind <kind>
 simaris slug set <slug> <id>
 simaris slug unset <slug>
 simaris slug list
+simaris emit --target <target> --type <type>
 simaris scan [--stale-days <days>]
 simaris backup
 simaris restore [<filename>]
