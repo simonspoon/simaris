@@ -21,6 +21,18 @@ impl TestEnv {
             .expect("Failed to execute simaris")
     }
 
+    fn run_with_env(&self, args: &[&str], envs: &[(&str, &str)]) -> std::process::Output {
+        let bin = env!("CARGO_BIN_EXE_simaris");
+        let mut cmd = Command::new(bin);
+        cmd.args(args)
+            .env("SIMARIS_HOME", &self.dir)
+            .env("SIMARIS_CLAUDE_AGENTS_DIR", self.agents_dir());
+        for (k, v) in envs {
+            cmd.env(k, v);
+        }
+        cmd.output().expect("Failed to execute simaris")
+    }
+
     fn agents_dir(&self) -> std::path::PathBuf {
         self.dir.join("claude-agents")
     }
@@ -1646,4 +1658,232 @@ fn test_emit_json_shape() {
     assert_eq!(parsed["swept"], serde_json::json!([]));
     assert_eq!(parsed["skipped_uuids"], serde_json::json!([]));
     assert!(parsed["target_dir"].is_string(), "target_dir string");
+}
+
+// ---------------------------------------------------------------------------
+// size_guard (Story 3 — write-time size signal)
+// ---------------------------------------------------------------------------
+
+// Thresholds for tests are passed via SIMARIS_WARN_BYTES / SIMARIS_HARD_BYTES
+// so bodies stay small while still crossing limits.
+
+#[test]
+fn test_add_size_warn_stderr_cites_slug() {
+    let env = TestEnv::new("size-warn");
+    let body = "x".repeat(80);
+    let output = env.run_with_env(
+        &["add", &body, "--type", "fact"],
+        &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "200")],
+    );
+    assert!(output.status.success(), "warn must not reject: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("split-ruleset"), "stderr lacks citation: {stderr}");
+    assert!(stderr.contains("80"), "stderr lacks actual bytes: {stderr}");
+    assert!(stderr.contains("50"), "stderr lacks warn bytes: {stderr}");
+    assert!(
+        stderr.contains("warn threshold"),
+        "stderr lacks warn label: {stderr}"
+    );
+}
+
+#[test]
+fn test_add_size_hard_rejects_without_force() {
+    let env = TestEnv::new("size-hard");
+    let body = "x".repeat(150);
+    let output = env.run_with_env(
+        &["add", &body, "--type", "fact"],
+        &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "100")],
+    );
+    assert!(!output.status.success(), "hard must reject: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("split-ruleset"), "stderr lacks citation: {stderr}");
+    assert!(stderr.contains("150"), "stderr lacks actual bytes: {stderr}");
+    assert!(stderr.contains("100"), "stderr lacks hard bytes: {stderr}");
+    assert!(stderr.contains("hard threshold"), "stderr lacks hard label: {stderr}");
+
+    // DB should be empty — reject happened before insert.
+    let list = env.run_ok(&["list"]);
+    assert!(!list.contains(" fact "), "unit must not land: {list}");
+}
+
+#[test]
+fn test_add_size_force_overrides_hard() {
+    let env = TestEnv::new("size-force");
+    let body = "x".repeat(150);
+    let output = env.run_with_env(
+        &["add", &body, "--type", "fact", "--force"],
+        &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "100")],
+    );
+    assert!(output.status.success(), "--force must succeed: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("split-ruleset"), "force still warns: {stderr}");
+    assert!(stderr.contains("hard threshold"), "force cites hard: {stderr}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.starts_with("Added unit "), "unit lands: {stdout}");
+}
+
+#[test]
+fn test_add_size_flow_tag_silent() {
+    let env = TestEnv::new("size-flow-tag");
+    let body = "x".repeat(150);
+    let output = env.run_with_env(
+        &["add", &body, "--type", "procedure", "--tags", "flow"],
+        &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "100")],
+    );
+    assert!(output.status.success(), "flow tag bypasses: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("split-ruleset"),
+        "flow tag must be silent: {stderr}"
+    );
+}
+
+#[test]
+fn test_add_size_flow_flag_silent() {
+    let env = TestEnv::new("size-flow-flag");
+    let body = "x".repeat(150);
+    let output = env.run_with_env(
+        &["add", &body, "--type", "procedure", "--flow"],
+        &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "100")],
+    );
+    assert!(output.status.success(), "--flow bypasses: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("split-ruleset"),
+        "--flow must be silent: {stderr}"
+    );
+}
+
+#[test]
+fn test_edit_size_hard_rejects_without_force() {
+    let env = TestEnv::new("size-edit-hard");
+    // First insert a small unit under thresholds that pass defaults.
+    let add_out = env.run_ok(&["add", "tiny", "--type", "fact"]);
+    let id = extract_id(&add_out);
+
+    // Now edit with a too-big content under tight thresholds.
+    let big = "x".repeat(150);
+    let output = env.run_with_env(
+        &["edit", &id, "--content", &big],
+        &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "100")],
+    );
+    assert!(!output.status.success(), "edit hard rejects: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("hard threshold"), "cites hard: {stderr}");
+
+    // Content unchanged — original body still present.
+    let show = env.run_ok(&["show", &id]);
+    assert!(show.contains("tiny"), "original content preserved: {show}");
+}
+
+#[test]
+fn test_edit_size_force_allows_large_content() {
+    let env = TestEnv::new("size-edit-force");
+    let add_out = env.run_ok(&["add", "tiny", "--type", "fact"]);
+    let id = extract_id(&add_out);
+
+    let big = "y".repeat(150);
+    let output = env.run_with_env(
+        &["edit", &id, "--content", &big, "--force"],
+        &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "100")],
+    );
+    assert!(output.status.success(), "--force allows edit: {:?}", output);
+    let show = env.run_ok(&["show", &id]);
+    assert!(show.contains(&big), "new content stored");
+}
+
+#[test]
+fn test_edit_size_no_content_change_never_flags() {
+    // Retroactive-safety: editing a tag on an already-large existing unit
+    // must not trigger size check. We seed the unit via --force, then edit
+    // only its tags under tight thresholds.
+    let env = TestEnv::new("size-edit-tagonly");
+    let big = "z".repeat(150);
+    let add = env.run_with_env(
+        &["add", &big, "--type", "fact", "--force"],
+        &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "100")],
+    );
+    assert!(add.status.success());
+    let id = extract_id(&String::from_utf8_lossy(&add.stdout));
+
+    let edit_out = env.run_with_env(
+        &["edit", &id, "--tags", "flow"],
+        &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "100")],
+    );
+    assert!(
+        edit_out.status.success(),
+        "tag-only edit must not reject: {:?}",
+        edit_out
+    );
+    let stderr = String::from_utf8_lossy(&edit_out.stderr);
+    assert!(
+        !stderr.contains("hard threshold"),
+        "tag-only edit must not flag: {stderr}"
+    );
+}
+
+#[test]
+fn test_show_list_never_flag_existing_oversize_units() {
+    // No retroactive enforcement — units stored above threshold must not
+    // trigger any size warning on read paths.
+    let env = TestEnv::new("size-no-retro");
+    let big = "w".repeat(150);
+    let add = env.run_with_env(
+        &["add", &big, "--type", "fact", "--force"],
+        &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "100")],
+    );
+    assert!(add.status.success());
+    let id = extract_id(&String::from_utf8_lossy(&add.stdout));
+
+    let show = env.run_with_env(
+        &["show", &id],
+        &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "100")],
+    );
+    assert!(show.status.success());
+    let show_stderr = String::from_utf8_lossy(&show.stderr);
+    assert!(
+        !show_stderr.contains("split-ruleset"),
+        "show must not warn: {show_stderr}"
+    );
+
+    let list = env.run_with_env(
+        &["list"],
+        &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "100")],
+    );
+    let list_stderr = String::from_utf8_lossy(&list.stderr);
+    assert!(
+        !list_stderr.contains("split-ruleset"),
+        "list must not warn: {list_stderr}"
+    );
+}
+
+#[test]
+fn test_add_defaults_allow_small_bodies_silently() {
+    // Default thresholds (2048/8192) must leave normal-sized adds silent.
+    let env = TestEnv::new("size-default-silent");
+    let output = env.run(&["add", "normal sized content", "--type", "fact"]);
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("split-ruleset"),
+        "default thresholds must be silent: {stderr}"
+    );
+}
+
+#[test]
+fn test_size_env_var_bad_value_falls_back_to_default() {
+    // Non-numeric env var must not crash — fall back to default thresholds.
+    let env = TestEnv::new("size-bad-env");
+    let output = env.run_with_env(
+        &["add", "tiny", "--type", "fact"],
+        &[
+            ("SIMARIS_WARN_BYTES", "not-a-number"),
+            ("SIMARIS_HARD_BYTES", "also-bad"),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "bad env should fall back silently: {:?}",
+        output
+    );
 }

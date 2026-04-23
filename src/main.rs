@@ -3,6 +3,7 @@ mod db;
 mod digest;
 mod display;
 mod emit;
+mod size_guard;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -40,6 +41,14 @@ enum Command {
         /// Tags (comma-separated)
         #[arg(long)]
         tags: Option<String>,
+
+        /// Override hard size threshold (still warns)
+        #[arg(long)]
+        force: bool,
+
+        /// Treat body as a flow sequence — bypass size warning
+        #[arg(long)]
+        flow: bool,
     },
 
     /// Show a knowledge unit
@@ -174,6 +183,14 @@ enum Command {
         /// New tags (comma-separated, replaces existing)
         #[arg(long)]
         tags: Option<String>,
+
+        /// Override hard size threshold (still warns)
+        #[arg(long)]
+        force: bool,
+
+        /// Treat body as a flow sequence — bypass size warning
+        #[arg(long)]
+        flow: bool,
     },
 
     /// Delete a knowledge unit (requires interactive confirmation)
@@ -377,13 +394,20 @@ fn main() -> Result<()> {
             r#type,
             source,
             tags,
+            force,
+            flow,
         } => {
-            let id = if let Some(tag_str) = tags {
-                let tag_vec: Vec<String> = tag_str
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
+            let tag_vec: Vec<String> = tags
+                .as_deref()
+                .map(|t| {
+                    t.split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
+            size_guard::check_size(&content, &tag_vec, flow, force)?;
+            let id = if tags.is_some() {
                 db::add_unit_full(&conn, &content, r#type.as_str(), &source, &tag_vec)?
             } else {
                 db::add_unit(&conn, &content, r#type.as_str(), &source)?
@@ -565,6 +589,8 @@ fn main() -> Result<()> {
             r#type,
             source,
             tags,
+            force,
+            flow,
         } => {
             let id = db::resolve_id(&conn, &id)?;
             let tag_vec: Option<Vec<String>> = tags.map(|t| {
@@ -573,6 +599,16 @@ fn main() -> Result<()> {
                     .filter(|s| !s.is_empty())
                     .collect()
             });
+            // Only check size when content is being set — tag/source-only
+            // edits do not touch body and must not retroactively complain.
+            if let Some(ref new_content) = content {
+                // Use supplied tags if present, otherwise existing tags.
+                let effective_tags: Vec<String> = match tag_vec {
+                    Some(ref t) => t.clone(),
+                    None => db::get_unit(&conn, &id)?.tags,
+                };
+                size_guard::check_size(new_content, &effective_tags, flow, force)?;
+            }
             let unit = db::update_unit(
                 &conn,
                 &id,

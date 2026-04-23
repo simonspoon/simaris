@@ -8,7 +8,7 @@ Rust CLI knowledge management system. Stores typed knowledge units in SQLite wit
 |---------|---------|
 | `cargo build` | Debug build |
 | `cargo build --release` | Release build |
-| `cargo test` | Run all tests (95 total: 45 integration, 50 unit) |
+| `cargo test` | Run all tests |
 | `cargo test test_name` | Run a single test |
 | `cargo install --path .` | Install binary |
 
@@ -21,6 +21,8 @@ Binary: `./target/release/simaris`
 | `SIMARIS_HOME` | Override data directory | `~/.simaris/` |
 | `SIMARIS_ENV=dev` | Isolate to dev database | `~/.simaris/dev/sanctuary.db` |
 | `SIMARIS_MODEL` | Override LLM model for digest/ask | `sonnet` |
+| `SIMARIS_WARN_BYTES` | Warn threshold — body above this triggers a stderr warning citing `split-ruleset` at `add`/`edit` time | `2048` (placeholder; Story 4 calibrates) |
+| `SIMARIS_HARD_BYTES` | Hard threshold — body above this rejects the write (exit non-zero) unless `--force` or tag `flow`/`--flow` | `8192` (placeholder; Story 4 calibrates) |
 
 Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 
@@ -38,7 +40,8 @@ Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 | `src/ask.rs` | 500 | FTS5 search, graph expansion, relevance filter, LLM synthesis |
 | `src/digest.rs` | 120 | LLM classification of inbox items into typed units |
 | `src/display.rs` | 275 | Text and JSON output formatting |
-| `tests/integration.rs` | 759 | End-to-end CLI tests via subprocess |
+| `src/size_guard.rs` | ~100 | Write-time body-size thresholds + warnings (`add`/`edit`) |
+| `tests/integration.rs` | 1800+ | End-to-end CLI tests via subprocess |
 
 ## Architecture
 
