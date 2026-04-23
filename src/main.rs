@@ -89,6 +89,10 @@ enum Command {
         /// Filter by type
         #[arg(long, rename_all = "snake_case")]
         r#type: Option<UnitType>,
+
+        /// Emit full unit bodies (default: lean id/type/slug/headline/tags/source/confidence)
+        #[arg(long)]
+        full: bool,
     },
 
     /// Search knowledge units
@@ -99,6 +103,10 @@ enum Command {
         /// Filter by type
         #[arg(long, rename_all = "snake_case")]
         r#type: Option<UnitType>,
+
+        /// Emit full unit bodies (default: lean id/type/slug/headline/tags/source/confidence)
+        #[arg(long)]
+        full: bool,
     },
 
     /// Create a backup of the knowledge store
@@ -329,6 +337,19 @@ impl MarkKind {
     }
 }
 
+/// Build a per-unit slug hint for lean output. Each entry is the first slug
+/// bound to that unit id (alphabetical order), or `None` when the unit has no
+/// slug. N small in practice (list/search return tens of rows); N+1 queries
+/// acceptable until corpora grow.
+fn build_slug_map(conn: &rusqlite::Connection, units: &[db::Unit]) -> Result<Vec<Option<String>>> {
+    let mut out = Vec::with_capacity(units.len());
+    for u in units {
+        let slugs = db::get_slugs_for_unit(conn, &u.id)?;
+        out.push(slugs.into_iter().next());
+    }
+    Ok(out)
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -403,15 +424,29 @@ fn main() -> Result<()> {
             let items = db::list_inbox(&conn)?;
             display::print_inbox(&items, cli.json);
         }
-        Command::List { r#type } => {
+        Command::List { r#type, full } => {
             let filter = r#type.as_ref().map(|t| t.as_str());
             let units = db::list_units(&conn, filter)?;
-            display::print_units(&units, cli.json);
+            if full {
+                display::print_units(&units, cli.json);
+            } else {
+                let slug_map = build_slug_map(&conn, &units)?;
+                display::print_units_lean(&units, &slug_map, cli.json);
+            }
         }
-        Command::Search { query, r#type } => {
+        Command::Search {
+            query,
+            r#type,
+            full,
+        } => {
             let filter = r#type.as_ref().map(|t| t.as_str());
             let units = db::search_units(&conn, &query, filter)?;
-            display::print_units(&units, cli.json);
+            if full {
+                display::print_units(&units, cli.json);
+            } else {
+                let slug_map = build_slug_map(&conn, &units)?;
+                display::print_units_lean(&units, &slug_map, cli.json);
+            }
         }
         Command::Backup => {
             let path = db::create_backup(&conn)?;

@@ -361,16 +361,152 @@ fn test_list_json_output() {
     env.run_ok(&["add", "fact one", "--type", "fact", "--source", "test"]);
     env.run_ok(&["add", "idea one", "--type", "idea", "--source", "test"]);
 
+    // Default list output is LEAN: headline, no content.
     let out = env.run_ok(&["--json", "list"]);
     let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
     assert_eq!(parsed.len(), 2);
-    assert!(parsed.iter().any(|u| u["content"] == "fact one"));
-    assert!(parsed.iter().any(|u| u["content"] == "idea one"));
     assert!(
-        parsed[0]["id"].is_string(),
-        "id should be a string, got: {out}"
+        parsed.iter().all(|u| u.get("content").is_none()),
+        "default list JSON must omit `content`, got: {out}"
     );
-    assert!(parsed[0]["type"].is_string());
+    assert!(parsed.iter().any(|u| u["headline"] == "fact one"));
+    assert!(parsed.iter().any(|u| u["headline"] == "idea one"));
+    for u in &parsed {
+        assert!(u["id"].is_string(), "id should be a string, got: {out}");
+        assert!(u["type"].is_string());
+        assert!(u["tags"].is_array());
+        assert!(u["source"].is_string());
+        assert!(u["confidence"].is_number());
+        // slug is null when no slug bound
+        assert!(u.get("slug").is_some(), "slug key must be present");
+    }
+}
+
+#[test]
+fn test_list_json_full_restores_content() {
+    let env = TestEnv::new("listjsonfull");
+    env.run_ok(&["add", "fact one", "--type", "fact", "--source", "test"]);
+
+    let out = env.run_ok(&["--json", "list", "--full"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0]["content"], "fact one");
+    assert!(parsed[0]["id"].is_string());
+}
+
+#[test]
+fn test_search_json_default_lean() {
+    let env = TestEnv::new("searchjsonlean");
+    env.run_ok(&[
+        "add",
+        "caching improves performance\nsecond line detail",
+        "--type",
+        "fact",
+    ]);
+
+    let out = env.run_ok(&["--json", "search", "caching"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+    assert_eq!(parsed.len(), 1);
+    assert!(
+        parsed[0].get("content").is_none(),
+        "default search JSON must omit `content`, got: {out}"
+    );
+    assert_eq!(parsed[0]["headline"], "caching improves performance");
+    // Body second line must not leak via headline.
+    assert!(
+        !parsed[0]["headline"]
+            .as_str()
+            .unwrap()
+            .contains("second line"),
+        "headline must be first line only, got: {out}"
+    );
+}
+
+#[test]
+fn test_search_json_full_restores_content() {
+    let env = TestEnv::new("searchjsonfull");
+    env.run_ok(&[
+        "add",
+        "caching improves performance\nsecond line detail",
+        "--type",
+        "fact",
+    ]);
+
+    let out = env.run_ok(&["--json", "search", "caching", "--full"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+    assert_eq!(parsed.len(), 1);
+    let content = parsed[0]["content"].as_str().unwrap();
+    assert!(content.contains("caching improves performance"));
+    assert!(content.contains("second line detail"));
+}
+
+#[test]
+fn test_list_default_text_omits_body() {
+    let env = TestEnv::new("listtextlean");
+    // Multi-line body; default text output must show first line only.
+    env.run_ok(&[
+        "add",
+        "first line headline\nsecond line body content that must not appear",
+        "--type",
+        "fact",
+    ]);
+    let out = env.run_ok(&["list"]);
+    assert!(out.contains("first line headline"), "got: {out}");
+    assert!(
+        !out.contains("second line body content"),
+        "default text output leaked body, got: {out}"
+    );
+}
+
+#[test]
+fn test_list_full_text_shows_body() {
+    let env = TestEnv::new("listtextfull");
+    env.run_ok(&[
+        "add",
+        "first line headline\nsecond line body content",
+        "--type",
+        "fact",
+    ]);
+    let out = env.run_ok(&["list", "--full"]);
+    assert!(out.contains("first line headline"), "got: {out}");
+    assert!(out.contains("second line body content"), "got: {out}");
+}
+
+#[test]
+fn test_show_unchanged_has_content() {
+    let env = TestEnv::new("showunchanged");
+    let add = env.run_ok(&["add", "body text\nsecond line", "--type", "fact"]);
+    let id = extract_id(&add);
+    let out = env.run_ok(&["--json", "show", &id]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(parsed["unit"]["content"], "body text\nsecond line");
+}
+
+#[test]
+fn test_headline_truncates_long_first_line() {
+    let env = TestEnv::new("headlinetrunc");
+    let long = "a".repeat(200);
+    env.run_ok(&["add", &long, "--type", "fact"]);
+    let out = env.run_ok(&["--json", "list"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+    let headline = parsed[0]["headline"].as_str().unwrap();
+    assert!(headline.ends_with("..."), "headline must end with ellipsis when truncated, got: {headline}");
+    // 120 chars + "..." = 123 char headline max
+    let char_count = headline.chars().count();
+    assert_eq!(char_count, 123, "truncated headline should be 120 chars + '...', got {char_count}: {headline}");
+}
+
+#[test]
+fn test_lean_includes_slug_when_bound() {
+    let env = TestEnv::new("leanslug");
+    let add = env.run_ok(&["add", "fact with slug", "--type", "fact"]);
+    let id = extract_id(&add);
+    env.run_ok(&["slug", "set", "my-fact", &id]);
+
+    let out = env.run_ok(&["--json", "list"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+    let row = parsed.iter().find(|u| u["id"] == id).expect("row present");
+    assert_eq!(row["slug"], "my-fact");
 }
 
 #[test]
@@ -431,7 +567,7 @@ fn test_restore_command() {
         1,
         "should have 1 unit after restore, got: {out}"
     );
-    assert_eq!(parsed[0]["content"], "original knowledge");
+    assert_eq!(parsed[0]["headline"], "original knowledge");
 }
 
 #[test]

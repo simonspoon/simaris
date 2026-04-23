@@ -1,11 +1,89 @@
 use crate::ask::PrimeResult;
 use crate::db::{InboxItem, Link, ScanResult, SlugRow, Unit};
 use crate::emit::EmitResult;
+use serde::Serialize;
 use std::path::Path;
 
 /// Short UUID for human-readable display (first 8 chars).
 fn short_id(id: &str) -> &str {
     if id.len() >= 8 { &id[..8] } else { id }
+}
+
+/// Headline for lean list/search rows: first non-empty line of `content`,
+/// trimmed and truncated at 120 chars (ellipsis appended if cut). Char-aware
+/// to avoid splitting a UTF-8 codepoint.
+pub fn derive_headline(content: &str) -> String {
+    let first = content
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("");
+    const MAX: usize = 120;
+    if first.chars().count() > MAX {
+        let end = first
+            .char_indices()
+            .nth(MAX)
+            .map(|(i, _)| i)
+            .unwrap_or(first.len());
+        format!("{}...", &first[..end])
+    } else {
+        first.to_string()
+    }
+}
+
+/// Lean row shape for default `search` / `list` output. Omits body to keep
+/// agent call sizes under the bash output cap. Full body still available via
+/// `simaris show <id>` or by passing `--full` to search/list.
+#[derive(Serialize)]
+struct LeanUnit<'a> {
+    id: &'a str,
+    #[serde(rename = "type")]
+    unit_type: &'a str,
+    slug: Option<&'a str>,
+    headline: String,
+    tags: &'a [String],
+    source: &'a str,
+    confidence: f64,
+}
+
+pub fn print_units_lean(units: &[Unit], slug_map: &[Option<String>], json: bool) {
+    if json {
+        let rows: Vec<LeanUnit> = units
+            .iter()
+            .zip(slug_map.iter())
+            .map(|(u, s)| LeanUnit {
+                id: &u.id,
+                unit_type: &u.unit_type,
+                slug: s.as_deref(),
+                headline: derive_headline(&u.content),
+                tags: &u.tags,
+                source: &u.source,
+                confidence: u.confidence,
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+    } else if units.is_empty() {
+        println!("No units found.");
+    } else {
+        for (unit, slug) in units.iter().zip(slug_map.iter()) {
+            let slug_disp = slug.as_deref().unwrap_or("-");
+            let tags_str = if unit.tags.is_empty() {
+                String::new()
+            } else {
+                format!("  [{}]", unit.tags.join(", "))
+            };
+            println!(
+                "[{}] {} ({}) {}  {}  conf={:.2}{}",
+                short_id(&unit.id),
+                unit.unit_type,
+                unit.source,
+                slug_disp,
+                derive_headline(&unit.content),
+                unit.confidence,
+                tags_str,
+            );
+        }
+    }
 }
 
 pub fn print_unit(unit: &Unit, outgoing: &[Link], incoming: &[Link], slugs: &[String], json: bool) {
