@@ -167,17 +167,32 @@ pub fn skeleton_for(unit_type: &str) -> String {
     }
 }
 
-/// Strip leading `#` comment lines from a buffer. Stops at the first blank
-/// line or `---` fence, whichever comes first. Leaves body `#` headers
-/// (`# Heading`) that sit after the blank line untouched.
+/// Strip leading `#` comment lines from a buffer, plus the separator blank
+/// lines between the header block and the real content. Stops at the first
+/// non-blank, non-`#` line. Leaves body `#` headers (`# Heading`) that sit
+/// after the blank line untouched.
+///
+/// The separator-blank strip matters: frontmatter detection requires the
+/// `---` fence at byte 0 of stored content, so any stray `\n` prefix from
+/// the header separator would cause `has_frontmatter` to miss the block.
 pub fn strip_header_comments(content: &str) -> String {
     let mut byte_skip = 0usize;
+    let mut in_header = true;
     for line in content.lines() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with('#') && !trimmed.starts_with("---") {
+        if in_header && trimmed.starts_with('#') && !trimmed.starts_with("---") {
             byte_skip += line.len() + 1; // +1 for the '\n' that .lines() strips
+        } else if in_header && trimmed.is_empty() {
+            // Consume separator blank lines between header and body.
+            byte_skip += line.len() + 1;
         } else {
+            // First non-header, non-blank line ends the strip.
             break;
+        }
+        // Once we see a blank line, any further `#` lines are body headers,
+        // not header comments — stop treating them as strippable.
+        if line.trim_start().is_empty() {
+            in_header = false;
         }
     }
     if byte_skip >= content.len() {
@@ -305,7 +320,8 @@ mod tests {
     #[test]
     fn strip_removes_leading_hash_lines_until_blank() {
         let input = "# hello\n# world\n\nreal content\n";
-        assert_eq!(strip_header_comments(input), "\nreal content\n");
+        // Separator blank also consumed so body starts cleanly.
+        assert_eq!(strip_header_comments(input), "real content\n");
     }
 
     #[test]
@@ -316,10 +332,22 @@ mod tests {
     }
 
     #[test]
+    fn strip_preserves_fence_when_separator_present() {
+        // Regression: compose_buffer prefixes `#` header then blank then
+        // `---`. The stored content must begin at `---`, not at the blank,
+        // otherwise `has_frontmatter` misses the block and `scan
+        // --unstructured` re-surfaces the unit.
+        let input = "# simaris rewrite -- id: x  type: aspect\n# Save + quit to apply.\n\n---\nrole: \"\"\n---\nbody\n";
+        let out = strip_header_comments(input);
+        assert!(out.starts_with("---\n"), "fence at byte 0: {out:?}");
+    }
+
+    #[test]
     fn strip_preserves_body_hash_headers() {
         let input = "# header comment\n\n# Actual Heading\nbody\n";
         let out = strip_header_comments(input);
-        assert_eq!(out, "\n# Actual Heading\nbody\n");
+        // Separator blank consumed; body `#` heading preserved.
+        assert_eq!(out, "# Actual Heading\nbody\n");
     }
 
     #[test]
