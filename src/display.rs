@@ -13,22 +13,59 @@ fn short_id(id: &str) -> &str {
 /// Headline for lean list/search rows: first non-empty line of `content`,
 /// trimmed and truncated at 120 chars (ellipsis appended if cut). Char-aware
 /// to avoid splitting a UTF-8 codepoint.
+///
+/// For structured units (frontmatter present), the fence `---` is not a
+/// useful headline — the hook would show just `---`. Parse the frontmatter
+/// off and use the body's first non-empty line. If the body is empty, fall
+/// back to a representative frontmatter scalar (`role` / `scope` / `trigger`
+/// / `context` / `tension`) so the hook still surfaces something meaningful.
 pub fn derive_headline(content: &str) -> String {
-    let first = content
+    let parsed = frontmatter::parse(content);
+    let source = if parsed.frontmatter.is_some() {
+        parsed.body
+    } else {
+        content
+    };
+
+    let first = source
         .lines()
         .map(str::trim)
         .find(|l| !l.is_empty())
         .unwrap_or("");
+
+    // Fall back to a frontmatter scalar if the body is empty.
+    let pick = if first.is_empty() {
+        parsed
+            .frontmatter
+            .as_ref()
+            .and_then(|fm| fm.as_mapping())
+            .and_then(|m| {
+                for key in ["role", "scope", "trigger", "context", "tension"] {
+                    if let Some(v) = m.get(serde_yml::Value::String(key.to_string())) {
+                        if let Some(s) = v.as_str() {
+                            if !s.is_empty() {
+                                return Some(s.to_string());
+                            }
+                        }
+                    }
+                }
+                None
+            })
+            .unwrap_or_default()
+    } else {
+        first.to_string()
+    };
+
     const MAX: usize = 120;
-    if first.chars().count() > MAX {
-        let end = first
+    if pick.chars().count() > MAX {
+        let end = pick
             .char_indices()
             .nth(MAX)
             .map(|(i, _)| i)
-            .unwrap_or(first.len());
-        format!("{}...", &first[..end])
+            .unwrap_or(pick.len());
+        format!("{}...", &pick[..end])
     } else {
-        first.to_string()
+        pick
     }
 }
 
@@ -515,5 +552,57 @@ pub fn print_slug_list(rows: &[SlugRow], json: bool) {
         for row in rows {
             println!("{} -> {}", row.slug, row.unit_id);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn headline_prose_uses_first_line() {
+        let c = "first line of prose\n\nsecond para\n";
+        assert_eq!(derive_headline(c), "first line of prose");
+    }
+
+    #[test]
+    fn headline_prose_skips_blank_lines() {
+        let c = "\n\n  real content here\n";
+        assert_eq!(derive_headline(c), "real content here");
+    }
+
+    #[test]
+    fn headline_structured_skips_fence_picks_body_heading() {
+        // Regression: hook surfaced `---` as the headline for units with
+        // frontmatter. Body's first line should win.
+        let c = "---\nrole: \"r\"\n---\n\n# Body Heading\n\nparagraph\n";
+        assert_eq!(derive_headline(c), "# Body Heading");
+    }
+
+    #[test]
+    fn headline_structured_no_body_falls_back_to_role() {
+        let c = "---\nrole: \"skeptical reviewer\"\n---\n";
+        assert_eq!(derive_headline(c), "skeptical reviewer");
+    }
+
+    #[test]
+    fn headline_structured_no_body_falls_back_to_trigger() {
+        let c = "---\ntrigger: \"new target found\"\n---\n";
+        assert_eq!(derive_headline(c), "new target found");
+    }
+
+    #[test]
+    fn headline_structured_no_body_no_fallback_key_returns_empty() {
+        let c = "---\nfoo: bar\n---\n";
+        assert_eq!(derive_headline(c), "");
+    }
+
+    #[test]
+    fn headline_truncates_at_120_chars() {
+        let long: String = "x".repeat(150);
+        let out = derive_headline(&long);
+        // 120 chars + "..." = 123
+        assert_eq!(out.chars().count(), 123);
+        assert!(out.ends_with("..."));
     }
 }
