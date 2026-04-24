@@ -41,12 +41,11 @@ pub fn derive_headline(content: &str) -> String {
             .and_then(|fm| fm.as_mapping())
             .and_then(|m| {
                 for key in ["role", "scope", "trigger", "context", "tension"] {
-                    if let Some(v) = m.get(serde_yml::Value::String(key.to_string())) {
-                        if let Some(s) = v.as_str() {
-                            if !s.is_empty() {
-                                return Some(s.to_string());
-                            }
-                        }
+                    if let Some(v) = m.get(serde_yml::Value::String(key.to_string()))
+                        && let Some(s) = v.as_str()
+                        && !s.is_empty()
+                    {
+                        return Some(s.to_string());
                     }
                 }
                 None
@@ -467,7 +466,11 @@ pub fn print_scan_unstructured(rows: &[UnstructuredRow], json: bool) {
     for row in rows {
         let slug = row.slugs.first().map(String::as_str).unwrap_or("-");
         let slug_trim = if slug.chars().count() > 16 {
-            let end = slug.char_indices().nth(16).map(|(i, _)| i).unwrap_or(slug.len());
+            let end = slug
+                .char_indices()
+                .nth(16)
+                .map(|(i, _)| i)
+                .unwrap_or(slug.len());
             format!("{}…", &slug[..end])
         } else {
             slug.to_string()

@@ -502,10 +502,16 @@ fn test_headline_truncates_long_first_line() {
     let out = env.run_ok(&["--json", "list"]);
     let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
     let headline = parsed[0]["headline"].as_str().unwrap();
-    assert!(headline.ends_with("..."), "headline must end with ellipsis when truncated, got: {headline}");
+    assert!(
+        headline.ends_with("..."),
+        "headline must end with ellipsis when truncated, got: {headline}"
+    );
     // 120 chars + "..." = 123 char headline max
     let char_count = headline.chars().count();
-    assert_eq!(char_count, 123, "truncated headline should be 120 chars + '...', got {char_count}: {headline}");
+    assert_eq!(
+        char_count, 123,
+        "truncated headline should be 120 chars + '...', got {char_count}: {headline}"
+    );
 }
 
 #[test]
@@ -979,12 +985,7 @@ fn test_scan_unstructured_mixes_prose_and_frontmatter() {
         schema_file.to_str().unwrap(),
     ]);
 
-    env.run_ok(&[
-        "add",
-        &long_prose("PROSE_MARKER"),
-        "--type",
-        "aspect",
-    ]);
+    env.run_ok(&["add", &long_prose("PROSE_MARKER"), "--type", "aspect"]);
 
     let out = env.run_ok(&["scan", "--unstructured"]);
     assert!(out.contains("PROSE_MARKER"), "prose aspect listed: {out}");
@@ -1011,12 +1012,7 @@ fn test_scan_unstructured_skips_short_bodies() {
 fn test_scan_unstructured_sorts_aspect_first() {
     let env = TestEnv::new("scan-unstruct-aspect-first");
     // Procedure with many marks — still ranks below aspect with zero marks.
-    let proc_out = env.run_ok(&[
-        "add",
-        &long_prose("PROC_MARKER"),
-        "--type",
-        "procedure",
-    ]);
+    let proc_out = env.run_ok(&["add", &long_prose("PROC_MARKER"), "--type", "procedure"]);
     let proc_id = extract_id(&proc_out);
     for _ in 0..5 {
         env.run_ok(&["mark", &proc_id, "--kind", "used"]);
@@ -1036,19 +1032,9 @@ fn test_scan_unstructured_sorts_aspect_first() {
 #[test]
 fn test_scan_unstructured_sorts_by_mark_count_then_confidence() {
     let env = TestEnv::new("scan-unstruct-marks-conf");
-    let low_out = env.run_ok(&[
-        "add",
-        &long_prose("LOW_MARKER"),
-        "--type",
-        "procedure",
-    ]);
+    let low_out = env.run_ok(&["add", &long_prose("LOW_MARKER"), "--type", "procedure"]);
     let low_id = extract_id(&low_out);
-    let high_out = env.run_ok(&[
-        "add",
-        &long_prose("HIGH_MARKER"),
-        "--type",
-        "procedure",
-    ]);
+    let high_out = env.run_ok(&["add", &long_prose("HIGH_MARKER"), "--type", "procedure"]);
     let high_id = extract_id(&high_out);
     env.run_ok(&["mark", &low_id, "--kind", "used"]);
     for _ in 0..3 {
@@ -1058,27 +1044,14 @@ fn test_scan_unstructured_sorts_by_mark_count_then_confidence() {
     let out = env.run_ok(&["scan", "--unstructured"]);
     let high_pos = out.find("HIGH_MARKER").expect("high in output");
     let low_pos = out.find("LOW_MARKER").expect("low in output");
-    assert!(
-        high_pos < low_pos,
-        "higher mark count sorts first: {out}"
-    );
+    assert!(high_pos < low_pos, "higher mark count sorts first: {out}");
 }
 
 #[test]
 fn test_scan_unstructured_type_filter_narrows() {
     let env = TestEnv::new("scan-unstruct-type-filter");
-    env.run_ok(&[
-        "add",
-        &long_prose("ASPECT_TF_MARKER"),
-        "--type",
-        "aspect",
-    ]);
-    env.run_ok(&[
-        "add",
-        &long_prose("PROC_TF_MARKER"),
-        "--type",
-        "procedure",
-    ]);
+    env.run_ok(&["add", &long_prose("ASPECT_TF_MARKER"), "--type", "aspect"]);
+    env.run_ok(&["add", &long_prose("PROC_TF_MARKER"), "--type", "procedure"]);
 
     let out = env.run_ok(&["scan", "--unstructured", "--type", "aspect"]);
     assert!(out.contains("ASPECT_TF_MARKER"), "aspect present: {out}");
@@ -1840,7 +1813,14 @@ fn test_emit_json_shape() {
     let id = extract_id(&add_out);
     env.run_ok(&["slug", "set", "jsonner", &id]);
 
-    let out = env.run_ok(&["--json", "emit", "--target", "claude-code", "--type", "aspect"]);
+    let out = env.run_ok(&[
+        "--json",
+        "emit",
+        "--target",
+        "claude-code",
+        "--type",
+        "aspect",
+    ]);
     let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
     assert_eq!(parsed["written"], serde_json::json!(["jsonner"]));
     assert_eq!(parsed["swept"], serde_json::json!([]));
@@ -1863,9 +1843,16 @@ fn test_add_size_warn_stderr_cites_slug() {
         &["add", &body, "--type", "fact"],
         &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "200")],
     );
-    assert!(output.status.success(), "warn must not reject: {:?}", output);
+    assert!(
+        output.status.success(),
+        "warn must not reject: {:?}",
+        output
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("split-ruleset"), "stderr lacks citation: {stderr}");
+    assert!(
+        stderr.contains("split-ruleset"),
+        "stderr lacks citation: {stderr}"
+    );
     assert!(stderr.contains("80"), "stderr lacks actual bytes: {stderr}");
     assert!(stderr.contains("50"), "stderr lacks warn bytes: {stderr}");
     assert!(
@@ -1884,10 +1871,19 @@ fn test_add_size_hard_rejects_without_force() {
     );
     assert!(!output.status.success(), "hard must reject: {:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("split-ruleset"), "stderr lacks citation: {stderr}");
-    assert!(stderr.contains("150"), "stderr lacks actual bytes: {stderr}");
+    assert!(
+        stderr.contains("split-ruleset"),
+        "stderr lacks citation: {stderr}"
+    );
+    assert!(
+        stderr.contains("150"),
+        "stderr lacks actual bytes: {stderr}"
+    );
     assert!(stderr.contains("100"), "stderr lacks hard bytes: {stderr}");
-    assert!(stderr.contains("hard threshold"), "stderr lacks hard label: {stderr}");
+    assert!(
+        stderr.contains("hard threshold"),
+        "stderr lacks hard label: {stderr}"
+    );
 
     // DB should be empty — reject happened before insert.
     let list = env.run_ok(&["list"]);
@@ -1902,10 +1898,20 @@ fn test_add_size_force_overrides_hard() {
         &["add", &body, "--type", "fact", "--force"],
         &[("SIMARIS_WARN_BYTES", "50"), ("SIMARIS_HARD_BYTES", "100")],
     );
-    assert!(output.status.success(), "--force must succeed: {:?}", output);
+    assert!(
+        output.status.success(),
+        "--force must succeed: {:?}",
+        output
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("split-ruleset"), "force still warns: {stderr}");
-    assert!(stderr.contains("hard threshold"), "force cites hard: {stderr}");
+    assert!(
+        stderr.contains("split-ruleset"),
+        "force still warns: {stderr}"
+    );
+    assert!(
+        stderr.contains("hard threshold"),
+        "force cites hard: {stderr}"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.starts_with("Added unit "), "unit lands: {stdout}");
 }
@@ -2255,7 +2261,9 @@ fn test_add_aspect_repeated_dispatches_to_becomes_list() {
 
     let raw = env.run_ok(&["show", &id, "--raw"]);
     assert!(
-        raw.contains("dispatches_to:") && raw.contains("- researcher") && raw.contains("- project-manager"),
+        raw.contains("dispatches_to:")
+            && raw.contains("- researcher")
+            && raw.contains("- project-manager"),
         "raw yaml sequence: {raw}"
     );
 }
@@ -2289,20 +2297,10 @@ fn test_add_fact_evidence_renders() {
 #[test]
 fn test_add_flag_on_wrong_type_errors_with_useful_message() {
     let env = TestEnv::new("fm-p1-wrong-type");
-    let output = env.run(&[
-        "add",
-        "body",
-        "--type",
-        "fact",
-        "--trigger",
-        "weekly",
-    ]);
+    let output = env.run(&["add", "body", "--type", "fact", "--trigger", "weekly"]);
     assert!(!output.status.success(), "must fail: {:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("--trigger"),
-        "err msg names flag: {stderr}"
-    );
+    assert!(stderr.contains("--trigger"), "err msg names flag: {stderr}");
     assert!(
         stderr.contains("procedure"),
         "err msg cites valid type: {stderr}"
@@ -2377,10 +2375,7 @@ fn test_add_from_file_malformed_yaml_errors_cleanly() {
         "err cites malformed: {stderr}"
     );
     // Must be an error, not a Rust panic.
-    assert!(
-        !stderr.contains("panicked at"),
-        "must not panic: {stderr}"
-    );
+    assert!(!stderr.contains("panicked at"), "must not panic: {stderr}");
 }
 
 #[test]
@@ -2439,10 +2434,7 @@ fn test_edit_content_on_frontmatter_unit_preserves_fields() {
         raw.contains("cadence: monthly"),
         "cadence preserved in raw: {raw}"
     );
-    assert!(
-        raw.contains("new body text"),
-        "body swapped in raw: {raw}"
-    );
+    assert!(raw.contains("new body text"), "body swapped in raw: {raw}");
     assert!(
         !raw.contains("original body"),
         "old body gone from raw: {raw}"
@@ -2462,10 +2454,7 @@ fn test_edit_field_flag_updates_only_that_field() {
         "trigger updated: {raw}"
     );
     assert!(raw.contains("check: report ok"), "check untouched: {raw}");
-    assert!(
-        raw.contains("cadence: monthly"),
-        "cadence untouched: {raw}"
-    );
+    assert!(raw.contains("cadence: monthly"), "cadence untouched: {raw}");
     assert!(
         raw.contains("original body"),
         "body untouched when only field flag set: {raw}"
@@ -2518,10 +2507,7 @@ fn test_edit_replace_all_clobbers_frontmatter() {
         !raw.contains("---\n"),
         "frontmatter gone after --replace-all: {raw}"
     );
-    assert!(
-        !raw.contains("trigger:"),
-        "no trigger key left: {raw}"
-    );
+    assert!(!raw.contains("trigger:"), "no trigger key left: {raw}");
     assert!(
         raw.contains("total clobber body"),
         "new body present: {raw}"
@@ -2538,10 +2524,7 @@ fn test_edit_field_flag_on_wrong_type_errors() {
     let output = env.run(&["edit", &id, "--trigger", "weekly"]);
     assert!(!output.status.success(), "must fail: {:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("--trigger"),
-        "err names flag: {stderr}"
-    );
+    assert!(stderr.contains("--trigger"), "err names flag: {stderr}");
     assert!(
         stderr.contains("procedure"),
         "err cites valid type: {stderr}"
@@ -2564,16 +2547,10 @@ fn test_edit_field_flag_plus_content_merges_both() {
     ]);
 
     let raw = env.run_ok(&["show", &id, "--raw"]);
-    assert!(
-        raw.contains("trigger: hourly"),
-        "trigger updated: {raw}"
-    );
+    assert!(raw.contains("trigger: hourly"), "trigger updated: {raw}");
     assert!(raw.contains("check: report ok"), "other field kept: {raw}");
     assert!(raw.contains("fresh body"), "body swapped: {raw}");
-    assert!(
-        !raw.contains("original body"),
-        "old body gone: {raw}"
-    );
+    assert!(!raw.contains("original body"), "old body gone: {raw}");
 }
 
 #[test]
@@ -2615,14 +2592,8 @@ fn test_edit_prose_unit_content_only_unchanged_regression_guard() {
         !raw.contains("---\n"),
         "no fm injected on prose edit: {raw}"
     );
-    assert!(
-        raw.contains("updated idea text"),
-        "new body present: {raw}"
-    );
-    assert!(
-        !raw.contains("original idea text"),
-        "old body gone: {raw}"
-    );
+    assert!(raw.contains("updated idea text"), "new body present: {raw}");
+    assert!(!raw.contains("original idea text"), "old body gone: {raw}");
 
     // Inspect JSON to confirm exact content (no trailing metadata noise).
     let json = env.run_ok(&["show", &id, "--json"]);
@@ -2644,10 +2615,7 @@ fn editor_replaces_with(fixture_path: &std::path::Path) -> String {
     // Putting the editor command in quotes above, we need the inner script
     // to cat the fixture into the temp path. The temp path arrives as the
     // last positional arg — we read it via "$1" inside another sh -c.
-    format!(
-        "sh -c 'cat \"{}\" > \"$1\"' --",
-        fixture_path.display()
-    )
+    format!("sh -c 'cat \"{}\" > \"$1\"' --", fixture_path.display())
 }
 
 fn editor_noop() -> String {
@@ -2686,11 +2654,7 @@ fn test_rewrite_prose_to_structured() {
 fn test_rewrite_structured_noop_leaves_unit() {
     let env = TestEnv::new("fm-p3a-noop");
     let fixture = env.dir.join("seed.md");
-    std::fs::write(
-        &fixture,
-        "---\ntrigger: x\n---\nbody\n",
-    )
-    .unwrap();
+    std::fs::write(&fixture, "---\ntrigger: x\n---\nbody\n").unwrap();
     let out = env.run_ok(&[
         "add",
         "--type",
@@ -2701,10 +2665,7 @@ fn test_rewrite_structured_noop_leaves_unit() {
     let id = extract_id(&out);
     let before = env.run_ok(&["show", &id, "--raw"]);
 
-    let output = env.run_with_env(
-        &["rewrite", &id],
-        &[("SIMARIS_EDITOR", &editor_noop())],
-    );
+    let output = env.run_with_env(&["rewrite", &id], &[("SIMARIS_EDITOR", &editor_noop())]);
     assert!(output.status.success(), "noop exits 0: {:?}", output);
 
     let after = env.run_ok(&["show", &id, "--raw"]);
@@ -2718,10 +2679,7 @@ fn test_rewrite_empty_buffer_aborts() {
     let id = extract_id(&out);
     let before = env.run_ok(&["show", &id, "--raw"]);
 
-    let output = env.run_with_env(
-        &["rewrite", &id],
-        &[("SIMARIS_EDITOR", &editor_empties())],
-    );
+    let output = env.run_with_env(&["rewrite", &id], &[("SIMARIS_EDITOR", &editor_empties())]);
     assert!(output.status.success(), "abort exits 0: {:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("abort"), "stderr announces abort: {stderr}");
@@ -2744,7 +2702,11 @@ fn test_rewrite_invalid_yaml_rejected() {
         &["rewrite", &id],
         &[("SIMARIS_EDITOR", &editor_replaces_with(&fixture))],
     );
-    assert!(!output.status.success(), "invalid yaml rejects: {:?}", output);
+    assert!(
+        !output.status.success(),
+        "invalid yaml rejects: {:?}",
+        output
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("malformed") || stderr.contains("invalid frontmatter"),
@@ -2763,15 +2725,18 @@ fn test_rewrite_template_only_skeleton() {
 
     // Editor dumps the seed buffer out so we can inspect composition.
     let capture = env.dir.join("captured.md");
-    let editor_cmd = format!(
-        "sh -c 'cp \"$1\" \"{}\"' --",
-        capture.display()
+    let editor_cmd = format!("sh -c 'cp \"$1\" \"{}\"' --", capture.display());
+    env.run_with_env(
+        &["rewrite", &id, "--template-only"],
+        &[("SIMARIS_EDITOR", &editor_cmd)],
     );
-    env.run_with_env(&["rewrite", &id, "--template-only"], &[("SIMARIS_EDITOR", &editor_cmd)]);
 
     let seen = std::fs::read_to_string(&capture).unwrap();
     assert!(seen.contains("trigger:"), "skeleton fields present: {seen}");
-    assert!(!seen.contains("existing body text"), "body excluded: {seen}");
+    assert!(
+        !seen.contains("existing body text"),
+        "body excluded: {seen}"
+    );
 }
 
 #[test]
@@ -2789,11 +2754,7 @@ fn test_rewrite_preserves_tags_and_slug() {
     env.run_ok(&["slug", "set", "my-proc", &id]);
 
     let fixture = env.dir.join("rewrite.md");
-    std::fs::write(
-        &fixture,
-        "---\ntrigger: daily\n---\nnew body\n",
-    )
-    .unwrap();
+    std::fs::write(&fixture, "---\ntrigger: daily\n---\nnew body\n").unwrap();
 
     env.run_with_env(
         &["rewrite", &id],
@@ -2849,11 +2810,7 @@ fn test_rewrite_header_comments_stripped() {
     let id = extract_id(&out);
 
     let fixture = env.dir.join("with-comments.md");
-    std::fs::write(
-        &fixture,
-        "# user comment\n# another\n\nreal body\n",
-    )
-    .unwrap();
+    std::fs::write(&fixture, "# user comment\n# another\n\nreal body\n").unwrap();
 
     env.run_with_env(
         &["rewrite", &id],
@@ -2863,7 +2820,10 @@ fn test_rewrite_header_comments_stripped() {
     let json = env.run_ok(&["show", &id, "--json"]);
     let v: serde_json::Value = serde_json::from_str(&json).unwrap();
     let content = v["unit"]["content"].as_str().expect("content field");
-    assert!(!content.starts_with("# user comment"), "header stripped: {content}");
+    assert!(
+        !content.starts_with("# user comment"),
+        "header stripped: {content}"
+    );
     assert!(content.contains("real body"), "body kept: {content}");
 }
 
@@ -2880,7 +2840,11 @@ fn test_rewrite_missing_editor_clean_error() {
             ("EDITOR", ""),
         ],
     );
-    assert!(!output.status.success(), "missing editor fails: {:?}", output);
+    assert!(
+        !output.status.success(),
+        "missing editor fails: {:?}",
+        output
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!stderr.contains("panicked at"), "no panic: {stderr}");
 }
@@ -2899,7 +2863,11 @@ fn test_rewrite_wrong_type_field_rejected() {
         &["rewrite", &id],
         &[("SIMARIS_EDITOR", &editor_replaces_with(&fixture))],
     );
-    assert!(!output.status.success(), "type mismatch rejects: {:?}", output);
+    assert!(
+        !output.status.success(),
+        "type mismatch rejects: {:?}",
+        output
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("not valid for unit type") || stderr.contains("aspect"),
@@ -2926,10 +2894,7 @@ fn test_rewrite_prose_noop_leaves_unit() {
     let id = extract_id(&out);
     let before = env.run_ok(&["show", &id, "--raw"]);
 
-    let output = env.run_with_env(
-        &["rewrite", &id],
-        &[("SIMARIS_EDITOR", &editor_noop())],
-    );
+    let output = env.run_with_env(&["rewrite", &id], &[("SIMARIS_EDITOR", &editor_noop())]);
     assert!(output.status.success(), "prose noop exits 0: {:?}", output);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -2948,22 +2913,18 @@ fn test_rewrite_prose_noop_leaves_unit() {
 #[test]
 fn test_rewrite_prose_identical_rewrite_is_noop() {
     let env = TestEnv::new("fm-p3a1-prose-identical");
-    let out = env.run_ok(&[
-        "add",
-        "prose body kept verbatim",
-        "--type",
-        "procedure",
-    ]);
+    let out = env.run_ok(&["add", "prose body kept verbatim", "--type", "procedure"]);
     let id = extract_id(&out);
     let before = env.run_ok(&["show", &id, "--raw"]);
 
     // Editor reads the seed and writes it back byte-for-byte.
     let editor_cmd = "sh -c 'cat \"$1\" > \"$1.tmp\" && mv \"$1.tmp\" \"$1\"' --";
-    let output = env.run_with_env(
-        &["rewrite", &id],
-        &[("SIMARIS_EDITOR", editor_cmd)],
+    let output = env.run_with_env(&["rewrite", &id], &[("SIMARIS_EDITOR", editor_cmd)]);
+    assert!(
+        output.status.success(),
+        "identical rewrite exits 0: {:?}",
+        output
     );
-    assert!(output.status.success(), "identical rewrite exits 0: {:?}", output);
 
     let after = env.run_ok(&["show", &id, "--raw"]);
     assert_eq!(before, after, "prose unit unchanged on identical rewrite");

@@ -209,7 +209,11 @@ pub fn invoke_editor(path: &Path) -> Result<()> {
     let editor = std::env::var("SIMARIS_EDITOR")
         .ok()
         .filter(|s| !s.trim().is_empty())
-        .or_else(|| std::env::var("EDITOR").ok().filter(|s| !s.trim().is_empty()))
+        .or_else(|| {
+            std::env::var("EDITOR")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+        })
         .unwrap_or_else(|| "vi".to_string());
 
     // Quote the path with single quotes and escape any embedded single quotes.
@@ -283,7 +287,10 @@ mod tests {
         // Buffer: header comments + blank line + existing content.
         // Stripped: blank line (from header trailing '\n') + existing content.
         let stripped = strip_header_comments(&buf);
-        assert!(stripped.contains(&u.content), "structured verbatim: {stripped}");
+        assert!(
+            stripped.contains(&u.content),
+            "structured verbatim: {stripped}"
+        );
         // Trimming the leading separator yields the original unit content.
         assert_eq!(stripped.trim_start_matches('\n'), u.content);
     }
@@ -301,7 +308,10 @@ mod tests {
             stripped.trim_start().starts_with("---\n"),
             "has skeleton fence: {stripped}"
         );
-        assert!(stripped.contains("plain body"), "body preserved: {stripped}");
+        assert!(
+            stripped.contains("plain body"),
+            "body preserved: {stripped}"
+        );
     }
 
     #[test]
@@ -313,7 +323,10 @@ mod tests {
         );
         let buf = compose_buffer(&u, true);
         let stripped = strip_header_comments(&buf);
-        assert!(!stripped.contains("plain body"), "body excluded: {stripped}");
+        assert!(
+            !stripped.contains("plain body"),
+            "body excluded: {stripped}"
+        );
         assert!(stripped.contains("trigger:"), "has skeleton: {stripped}");
     }
 
@@ -390,10 +403,19 @@ mod tests {
         let stripped = strip_header_comments(&buf);
         // The stripped result must not contain any of the `#`-prefixed
         // header lines compose_buffer writes.
-        assert!(!stripped.contains("simaris rewrite -- id:"), "header gone: {stripped}");
-        assert!(!stripped.contains("Save + quit to apply"), "header gone: {stripped}");
+        assert!(
+            !stripped.contains("simaris rewrite -- id:"),
+            "header gone: {stripped}"
+        );
+        assert!(
+            !stripped.contains("Save + quit to apply"),
+            "header gone: {stripped}"
+        );
         // The body we seeded must survive.
-        assert!(stripped.contains("plain body"), "body preserved: {stripped}");
+        assert!(
+            stripped.contains("plain body"),
+            "body preserved: {stripped}"
+        );
         // A no-edit cancel compares this baseline to itself → equal.
         assert!(buffers_equal(&stripped, &stripped));
     }

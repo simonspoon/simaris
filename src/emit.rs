@@ -141,8 +141,7 @@ pub fn emit_claude_code_aspects(conn: &Connection, target_dir: &Path) -> Result<
         if live_slugs.contains(&managed_slug) {
             continue;
         }
-        fs::remove_file(&path)
-            .with_context(|| format!("Failed to remove {}", path.display()))?;
+        fs::remove_file(&path).with_context(|| format!("Failed to remove {}", path.display()))?;
         swept.push(managed_slug);
     }
     swept.sort();

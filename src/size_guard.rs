@@ -54,12 +54,7 @@ pub fn hard_threshold() -> usize {
 ///
 /// `flow == true` OR `tags` containing the literal `"flow"` short-circuits
 /// all checks (flow sequences legitimately exceed the budget).
-pub fn check_size<S: AsRef<str>>(
-    content: &str,
-    tags: &[S],
-    flow: bool,
-    force: bool,
-) -> Result<()> {
+pub fn check_size<S: AsRef<str>>(content: &str, tags: &[S], flow: bool, force: bool) -> Result<()> {
     if flow || tags.iter().any(|t| t.as_ref() == "flow") {
         return Ok(());
     }

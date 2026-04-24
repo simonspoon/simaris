@@ -604,11 +604,7 @@ fn validate_flag_type_compat(unit_type: &UnitType, flags: &TypeFlags<'_>) -> Res
     check(!flags.prereq.is_empty(), "prereq", &[Procedure])?;
     check(flags.cadence.is_some(), "cadence", &[Procedure])?;
     check(flags.role.is_some(), "role", &[Aspect])?;
-    check(
-        !flags.dispatches_to.is_empty(),
-        "dispatches-to",
-        &[Aspect],
-    )?;
+    check(!flags.dispatches_to.is_empty(), "dispatches-to", &[Aspect])?;
     check(
         !flags.handles_directly.is_empty(),
         "handles-directly",
@@ -846,9 +842,8 @@ fn main() -> Result<()> {
             validate_add_flags(&r#type, &flags, from_file.as_deref(), content.as_deref())?;
 
             let final_content = if let Some(path) = from_file.as_deref() {
-                let body = std::fs::read_to_string(path).map_err(|e| {
-                    anyhow::anyhow!("failed to read --from-file `{path}`: {e}")
-                })?;
+                let body = std::fs::read_to_string(path)
+                    .map_err(|e| anyhow::anyhow!("failed to read --from-file `{path}`: {e}"))?;
                 frontmatter::validate_from_file(&body)?;
                 body
             } else {
