@@ -183,6 +183,47 @@ pub fn build_frontmatter(fields: &[(&str, FieldValue)]) -> Option<String> {
     Some(format!("{FENCE}{yaml}{}", "---\n"))
 }
 
+/// Merge per-type field overrides into an existing frontmatter mapping.
+///
+/// - `existing` — mapping parsed from the stored unit (None when the unit is
+///   pure prose today).
+/// - `overrides` — ordered `(key, FieldValue)` list in spec order. Empty
+///   scalars and empty lists are treated as "no override" in P1.5 (no unset
+///   support — `--unset-<field>` lands in P2).
+///
+/// Determinism rules:
+/// - Existing keys keep their original position in the mapping.
+/// - Any override key not already present is appended in the order it appears
+///   in `overrides`.
+/// - Returns `None` when the merged mapping is empty (neither existing nor
+///   any override populated).
+pub fn merge_frontmatter(
+    existing: Option<&Value>,
+    overrides: &[(&str, FieldValue)],
+) -> Option<String> {
+    let mut mapping = match existing {
+        Some(Value::Mapping(m)) => m.clone(),
+        _ => serde_yml::Mapping::new(),
+    };
+    for (key, val) in overrides {
+        match val {
+            FieldValue::Scalar(s) if !s.is_empty() => {
+                mapping.insert(Value::String((*key).to_string()), Value::String(s.clone()));
+            }
+            FieldValue::List(items) if !items.is_empty() => {
+                let seq: Vec<Value> = items.iter().cloned().map(Value::String).collect();
+                mapping.insert(Value::String((*key).to_string()), Value::Sequence(seq));
+            }
+            _ => {} // empty — no override in P1.5
+        }
+    }
+    if mapping.is_empty() {
+        return None;
+    }
+    let yaml = serde_yml::to_string(&Value::Mapping(mapping)).ok()?;
+    Some(format!("{FENCE}{yaml}{}", "---\n"))
+}
+
 /// Validate that a user-supplied `--from-file` payload either has no
 /// frontmatter fences (pure prose is fine) or has a valid YAML mapping
 /// frontmatter block. Returns Err with a diagnostic on malformed YAML or
@@ -335,6 +376,55 @@ mod tests {
         assert!(s.contains("refs:"), "has refs: {s}");
         assert!(!s.contains("check:"), "skipped check: {s}");
         assert!(!s.contains("prereq:"), "skipped prereq: {s}");
+    }
+
+    #[test]
+    fn merge_fm_no_existing_no_overrides_returns_none() {
+        let overrides: Vec<(&str, FieldValue)> = vec![];
+        assert!(merge_frontmatter(None, &overrides).is_none());
+    }
+
+    #[test]
+    fn merge_fm_no_existing_with_overrides_emits_fresh_block() {
+        let overrides = vec![("trigger", FieldValue::Scalar("weekly".into()))];
+        let s = merge_frontmatter(None, &overrides).unwrap();
+        assert!(s.starts_with("---\n"), "opening fence: {s}");
+        assert!(s.contains("trigger: weekly"), "trigger: {s}");
+    }
+
+    #[test]
+    fn merge_fm_existing_preserves_order_and_updates() {
+        let src = "---\ntrigger: old\ncheck: keep\ncadence: weekly\n---\n";
+        let p = parse(src);
+        let overrides = vec![("trigger", FieldValue::Scalar("new".into()))];
+        let s = merge_frontmatter(p.frontmatter.as_ref(), &overrides).unwrap();
+        let tp = s.find("trigger:").unwrap();
+        let cp = s.find("check:").unwrap();
+        let xp = s.find("cadence:").unwrap();
+        assert!(tp < cp && cp < xp, "order preserved: {s}");
+        assert!(s.contains("trigger: new"), "updated value: {s}");
+        assert!(s.contains("check: keep"), "untouched field: {s}");
+    }
+
+    #[test]
+    fn merge_fm_new_field_appended() {
+        let src = "---\ntrigger: old\n---\n";
+        let p = parse(src);
+        let overrides = vec![("check", FieldValue::Scalar("fresh".into()))];
+        let s = merge_frontmatter(p.frontmatter.as_ref(), &overrides).unwrap();
+        let tp = s.find("trigger:").unwrap();
+        let cp = s.find("check:").unwrap();
+        assert!(tp < cp, "appended after existing: {s}");
+    }
+
+    #[test]
+    fn merge_fm_empty_override_does_not_unset() {
+        // P1.5 intentionally skips unset. Empty scalar = no-op.
+        let src = "---\ntrigger: keep\n---\n";
+        let p = parse(src);
+        let overrides = vec![("trigger", FieldValue::Scalar(String::new()))];
+        let s = merge_frontmatter(p.frontmatter.as_ref(), &overrides).unwrap();
+        assert!(s.contains("trigger: keep"), "value untouched: {s}");
     }
 
     #[test]

@@ -260,6 +260,74 @@ enum Command {
         /// Treat body as a flow sequence — bypass size warning
         #[arg(long)]
         flow: bool,
+
+        /// Replace entire content verbatim — skip frontmatter merge (legacy,
+        /// destructive on schema'd units).
+        #[arg(long)]
+        replace_all: bool,
+
+        /// Read content verbatim from file path (mutex with field flags + --replace-all)
+        #[arg(long, value_name = "PATH")]
+        from_file: Option<String>,
+
+        // --- procedure-only -----------------------------------------------
+        /// procedure: condition that fires the procedure
+        #[arg(long)]
+        trigger: Option<String>,
+
+        /// procedure: verification condition
+        #[arg(long)]
+        check: Option<String>,
+
+        /// procedure: edge case or caveat
+        #[arg(long)]
+        caveat: Option<String>,
+
+        /// procedure: prerequisite (repeatable)
+        #[arg(long)]
+        prereq: Vec<String>,
+
+        /// procedure: how often the procedure runs
+        #[arg(long)]
+        cadence: Option<String>,
+
+        // --- aspect-only --------------------------------------------------
+        /// aspect: role the aspect plays
+        #[arg(long)]
+        role: Option<String>,
+
+        /// aspect: subagent this aspect dispatches to (repeatable)
+        #[arg(long = "dispatches-to")]
+        dispatches_to: Vec<String>,
+
+        /// aspect: task this aspect handles directly (repeatable)
+        #[arg(long = "handles-directly")]
+        handles_directly: Vec<String>,
+
+        // --- fact + lesson ------------------------------------------------
+        /// fact / lesson: scope where the unit applies
+        #[arg(long)]
+        scope: Option<String>,
+
+        // --- fact-only ----------------------------------------------------
+        /// fact: evidence supporting the claim
+        #[arg(long)]
+        evidence: Option<String>,
+
+        // --- principle-only -----------------------------------------------
+        /// principle: underlying design tension
+        #[arg(long)]
+        tension: Option<String>,
+
+        // --- lesson-only --------------------------------------------------
+        /// lesson: surrounding context that gave rise to the lesson
+        #[arg(long)]
+        context: Option<String>,
+
+        // --- shared -------------------------------------------------------
+        /// Reference (repeatable) — valid on procedure / aspect / fact / principle / lesson
+        #[arg(long = "ref")]
+        refs: Vec<String>,
     },
 
     /// Delete a knowledge unit (requires interactive confirmation)
@@ -349,6 +417,22 @@ impl UnitType {
     }
 }
 
+/// Parse a database-stored type string back into the `UnitType` enum.
+/// Used by `edit` to determine the effective type when no `--type` flag is
+/// passed. Unknown values error rather than defaulting silently.
+fn parse_unit_type(s: &str) -> Result<UnitType> {
+    Ok(match s {
+        "fact" => UnitType::Fact,
+        "procedure" => UnitType::Procedure,
+        "principle" => UnitType::Principle,
+        "preference" => UnitType::Preference,
+        "lesson" => UnitType::Lesson,
+        "idea" => UnitType::Idea,
+        "aspect" => UnitType::Aspect,
+        other => anyhow::bail!("unknown unit type `{other}` stored in db"),
+    })
+}
+
 #[derive(Clone, ValueEnum)]
 #[value(rename_all = "snake_case")]
 enum Relationship {
@@ -436,9 +520,9 @@ fn build_slug_map(conn: &rusqlite::Connection, units: &[db::Unit]) -> Result<Vec
     Ok(out)
 }
 
-/// Borrowed view of all P1 frontmatter flags on `add`. Passed together to the
-/// validator + builder so the two stay in lockstep.
-struct AddFlags<'a> {
+/// Borrowed view of all per-type frontmatter flags. Used by both `add` and
+/// `edit` (P1.5) for validation + serialization.
+struct TypeFlags<'a> {
     trigger: &'a Option<String>,
     check: &'a Option<String>,
     caveat: &'a Option<String>,
@@ -454,7 +538,7 @@ struct AddFlags<'a> {
     refs: &'a [String],
 }
 
-impl AddFlags<'_> {
+impl TypeFlags<'_> {
     /// Does this flag set contain any field value?
     fn any_set(&self) -> bool {
         self.trigger.is_some()
@@ -473,33 +557,10 @@ impl AddFlags<'_> {
     }
 }
 
-/// Validate per-type flag compatibility + mutex with `--from-file`.
-///
-/// - `--from-file` + any field flag → mutex error.
-/// - Field flag on wrong unit type → error citing the flag name + valid types.
-/// - Neither body nor `--from-file` → error (positional content required when
-///   no file source is given).
-fn validate_add_flags(
-    unit_type: &UnitType,
-    flags: &AddFlags<'_>,
-    from_file: Option<&str>,
-    content: Option<&str>,
-) -> Result<()> {
-    // Mutex check — from-file cannot combine with field flags.
-    if from_file.is_some() && flags.any_set() {
-        anyhow::bail!(
-            "--from-file is mutually exclusive with per-type field flags \
-             (--trigger, --check, --role, ...); pass fields inside the file's frontmatter"
-        );
-    }
-
-    // Content presence — if no file, body must be supplied positionally.
-    if from_file.is_none() && content.is_none() {
-        anyhow::bail!("positional <content> required when --from-file is not used");
-    }
-
-    // Per-flag type compatibility. Helper closure: emit a uniform error
-    // naming the offending flag + valid types. Order matches spec.
+/// Check that each populated per-type flag is valid for the given unit type.
+/// Shared between `add` and `edit`; callers handle their own mutex and
+/// content-presence rules upstream.
+fn validate_flag_type_compat(unit_type: &UnitType, flags: &TypeFlags<'_>) -> Result<()> {
     let check = |present: bool, name: &str, valid: &[UnitType]| -> Result<()> {
         if !present {
             return Ok(());
@@ -544,16 +605,72 @@ fn validate_add_flags(
     Ok(())
 }
 
-/// Build a YAML frontmatter block for the given unit type from populated
-/// flags. Field order follows the per-type schema in the frontmatter-p1 spec.
-/// Returns `None` when no fields are set.
-fn build_type_frontmatter(unit_type: &UnitType, flags: &AddFlags<'_>) -> Option<String> {
+/// Validate `add`-path rules: per-type flag compatibility, mutex with
+/// `--from-file`, and positional content presence.
+fn validate_add_flags(
+    unit_type: &UnitType,
+    flags: &TypeFlags<'_>,
+    from_file: Option<&str>,
+    content: Option<&str>,
+) -> Result<()> {
+    // Mutex check — from-file cannot combine with field flags.
+    if from_file.is_some() && flags.any_set() {
+        anyhow::bail!(
+            "--from-file is mutually exclusive with per-type field flags \
+             (--trigger, --check, --role, ...); pass fields inside the file's frontmatter"
+        );
+    }
+
+    // Content presence — if no file, body must be supplied positionally.
+    if from_file.is_none() && content.is_none() {
+        anyhow::bail!("positional <content> required when --from-file is not used");
+    }
+
+    validate_flag_type_compat(unit_type, flags)
+}
+
+/// Validate `edit`-path rules (P1.5):
+/// - `--from-file` + any field flag → mutex error.
+/// - `--from-file` + `--replace-all` → mutex error (`--from-file` is already
+///   total replacement).
+/// - Per-type flag compatibility against the existing unit's type.
+fn validate_edit_flags(
+    unit_type: &UnitType,
+    flags: &TypeFlags<'_>,
+    from_file: Option<&str>,
+    replace_all: bool,
+) -> Result<()> {
+    if from_file.is_some() && flags.any_set() {
+        anyhow::bail!(
+            "--from-file is mutually exclusive with per-type field flags \
+             (--trigger, --check, --role, ...); pass fields inside the file's frontmatter"
+        );
+    }
+    if from_file.is_some() && replace_all {
+        anyhow::bail!(
+            "--from-file and --replace-all are mutually exclusive; --from-file \
+             already replaces content verbatim"
+        );
+    }
+
+    validate_flag_type_compat(unit_type, flags)
+}
+
+/// Assemble the per-type `(key, FieldValue)` list in spec order for a given
+/// unit type. Returns `None` for types that carry no schema (preference,
+/// idea). The returned list always contains one entry per schema key — empty
+/// `FieldValue`s stand for "flag not passed" and are skipped downstream by
+/// both `build_frontmatter` and `merge_frontmatter`.
+fn type_field_list<'a>(
+    unit_type: &UnitType,
+    flags: &'a TypeFlags<'_>,
+) -> Option<Vec<(&'static str, frontmatter::FieldValue)>> {
     use frontmatter::FieldValue;
 
     let scalar = |v: &Option<String>| FieldValue::Scalar(v.clone().unwrap_or_default());
-    let list = |v: &[String]| FieldValue::List(v.to_vec());
+    let list = |v: &'a [String]| FieldValue::List(v.to_vec());
 
-    let fields: Vec<(&str, FieldValue)> = match unit_type {
+    let fields: Vec<(&'static str, FieldValue)> = match unit_type {
         UnitType::Procedure => vec![
             ("trigger", scalar(flags.trigger)),
             ("check", scalar(flags.check)),
@@ -582,11 +699,68 @@ fn build_type_frontmatter(unit_type: &UnitType, flags: &AddFlags<'_>) -> Option<
             ("scope", scalar(flags.scope)),
             ("refs", list(flags.refs)),
         ],
-        // preference and idea skip schema per spec.
         UnitType::Preference | UnitType::Idea => return None,
     };
+    Some(fields)
+}
 
+/// Build a YAML frontmatter block for the given unit type from populated
+/// flags. Field order follows the per-type schema in the frontmatter-p1 spec.
+/// Returns `None` when no fields are set.
+fn build_type_frontmatter(unit_type: &UnitType, flags: &TypeFlags<'_>) -> Option<String> {
+    let fields = type_field_list(unit_type, flags)?;
     frontmatter::build_frontmatter(&fields)
+}
+
+/// Compose the new stored content for an edit, applying P1.5 merge rules.
+///
+/// - `existing_content` — current `content` column.
+/// - `unit_type` — resolved type (existing type, or overridden via `--type`).
+/// - `flags` — per-type field flags. Any populated flag merges into fm.
+/// - `new_body` — value of `--content`. `None` means leave body as-is.
+/// - `replace_all` — when `true`, skip merge and return `new_body` verbatim
+///   (legacy clobber behavior).
+///
+/// Returns `None` when nothing changes (neither flags nor `--content`).
+fn compose_edit_content(
+    existing_content: &str,
+    unit_type: &UnitType,
+    flags: &TypeFlags<'_>,
+    new_body: Option<&str>,
+    replace_all: bool,
+) -> Option<String> {
+    // Legacy clobber — ignore existing frontmatter entirely.
+    if replace_all {
+        return new_body.map(str::to_string);
+    }
+
+    let parsed = frontmatter::parse(existing_content);
+    let has_fm = parsed.frontmatter.is_some();
+    let any_flag = flags.any_set();
+
+    // Pure-body edit on prose unit: nothing to merge, caller may still use
+    // the new content as-is. Return None to signal "pass through".
+    if !any_flag && !has_fm {
+        return new_body.map(str::to_string);
+    }
+
+    // Case: flags present, OR existing frontmatter we must preserve.
+    let body = match new_body {
+        Some(b) => b,
+        None => parsed.body,
+    };
+
+    // Build the ordered override list for this type. Types without a schema
+    // (preference, idea) just pass through — flag validation already rejects
+    // field flags on those types upstream.
+    let overrides = type_field_list(unit_type, flags).unwrap_or_default();
+
+    let merged = frontmatter::merge_frontmatter(parsed.frontmatter.as_ref(), &overrides);
+    match merged {
+        Some(fm_block) => Some(format!("{fm_block}{body}")),
+        // No fm (neither existing nor overrides) — body-only edit.
+        None => Some(body.to_string()),
+    }
 }
 
 fn main() -> Result<()> {
@@ -633,7 +807,7 @@ fn main() -> Result<()> {
             context,
             refs,
         } => {
-            let flags = AddFlags {
+            let flags = TypeFlags {
                 trigger: &trigger,
                 check: &check,
                 caveat: &caveat,
@@ -859,28 +1033,96 @@ fn main() -> Result<()> {
             tags,
             force,
             flow,
+            replace_all,
+            from_file,
+            trigger,
+            check,
+            caveat,
+            prereq,
+            cadence,
+            role,
+            dispatches_to,
+            handles_directly,
+            scope,
+            evidence,
+            tension,
+            context,
+            refs,
         } => {
             let id = db::resolve_id(&conn, &id)?;
+            let flags = TypeFlags {
+                trigger: &trigger,
+                check: &check,
+                caveat: &caveat,
+                prereq: &prereq,
+                cadence: &cadence,
+                role: &role,
+                dispatches_to: &dispatches_to,
+                handles_directly: &handles_directly,
+                scope: &scope,
+                evidence: &evidence,
+                tension: &tension,
+                context: &context,
+                refs: &refs,
+            };
+
+            // Resolve the effective type against which to validate field
+            // flags. `--type` override wins; otherwise use the existing unit's
+            // type. Load the existing unit once and reuse.
+            let existing = db::get_unit(&conn, &id)?;
+            let effective_type = match &r#type {
+                Some(t) => t.clone(),
+                None => parse_unit_type(&existing.unit_type)?,
+            };
+
+            validate_edit_flags(&effective_type, &flags, from_file.as_deref(), replace_all)?;
+
+            // Compute the new content field (if any).
+            //
+            // Precedence:
+            //   1. --from-file — verbatim replacement (validated).
+            //   2. --replace-all + --content — verbatim replacement of body.
+            //   3. flag-driven merge (optionally including new body).
+            //   4. content-only: delegate to compose_edit_content which
+            //      preserves existing frontmatter.
+            let new_content: Option<String> = if let Some(path) = from_file.as_deref() {
+                let body = std::fs::read_to_string(path)
+                    .map_err(|e| anyhow::anyhow!("failed to read --from-file `{path}`: {e}"))?;
+                frontmatter::validate_from_file(&body)?;
+                Some(body)
+            } else if flags.any_set() || content.is_some() {
+                compose_edit_content(
+                    &existing.content,
+                    &effective_type,
+                    &flags,
+                    content.as_deref(),
+                    replace_all,
+                )
+            } else {
+                None
+            };
+
             let tag_vec: Option<Vec<String>> = tags.map(|t| {
                 t.split(',')
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect()
             });
+
             // Only check size when content is being set — tag/source-only
             // edits do not touch body and must not retroactively complain.
-            if let Some(ref new_content) = content {
-                // Use supplied tags if present, otherwise existing tags.
+            if let Some(ref nc) = new_content {
                 let effective_tags: Vec<String> = match tag_vec {
                     Some(ref t) => t.clone(),
-                    None => db::get_unit(&conn, &id)?.tags,
+                    None => existing.tags.clone(),
                 };
-                size_guard::check_size(new_content, &effective_tags, flow, force)?;
+                size_guard::check_size(nc, &effective_tags, flow, force)?;
             }
+
             let unit = db::update_unit(
                 &conn,
                 &id,
-                content.as_deref(),
+                new_content.as_deref(),
                 r#type.as_ref().map(|t| t.as_str()),
                 source.as_deref(),
                 tag_vec.as_deref(),

@@ -2210,3 +2210,235 @@ fn test_add_no_flags_no_from_file_unchanged_regression_guard() {
         "raw content must have no injected frontmatter: {raw}"
     );
 }
+
+// --- Frontmatter (P1.5 edit-merge + clobber guard) ---------------------
+
+/// Seed a schema'd procedure unit via `add --trigger ... --check ...` and
+/// return its id. Shared by several P1.5 edit tests.
+fn seed_procedure_with_frontmatter(env: &TestEnv) -> String {
+    let out = env.run_ok(&[
+        "add",
+        "original body",
+        "--type",
+        "procedure",
+        "--trigger",
+        "weekly",
+        "--check",
+        "report ok",
+        "--cadence",
+        "monthly",
+    ]);
+    extract_id(&out)
+}
+
+#[test]
+fn test_edit_content_on_frontmatter_unit_preserves_fields() {
+    let env = TestEnv::new("fm-p1-5-edit-content-preserves");
+    let id = seed_procedure_with_frontmatter(&env);
+
+    env.run_ok(&["edit", &id, "--content", "new body text"]);
+
+    let raw = env.run_ok(&["show", &id, "--raw"]);
+    assert!(
+        raw.contains("trigger: weekly"),
+        "trigger preserved in raw: {raw}"
+    );
+    assert!(
+        raw.contains("check: report ok"),
+        "check preserved in raw: {raw}"
+    );
+    assert!(
+        raw.contains("cadence: monthly"),
+        "cadence preserved in raw: {raw}"
+    );
+    assert!(
+        raw.contains("new body text"),
+        "body swapped in raw: {raw}"
+    );
+    assert!(
+        !raw.contains("original body"),
+        "old body gone from raw: {raw}"
+    );
+}
+
+#[test]
+fn test_edit_field_flag_updates_only_that_field() {
+    let env = TestEnv::new("fm-p1-5-edit-field-update");
+    let id = seed_procedure_with_frontmatter(&env);
+
+    env.run_ok(&["edit", &id, "--trigger", "daily, after lunch"]);
+
+    let raw = env.run_ok(&["show", &id, "--raw"]);
+    assert!(
+        raw.contains("trigger: daily, after lunch"),
+        "trigger updated: {raw}"
+    );
+    assert!(raw.contains("check: report ok"), "check untouched: {raw}");
+    assert!(
+        raw.contains("cadence: monthly"),
+        "cadence untouched: {raw}"
+    );
+    assert!(
+        raw.contains("original body"),
+        "body untouched when only field flag set: {raw}"
+    );
+}
+
+#[test]
+fn test_edit_field_flag_on_unit_without_frontmatter_adds_block() {
+    let env = TestEnv::new("fm-p1-5-edit-adds-fm");
+    // Seed a plain procedure (no frontmatter injected).
+    let out = env.run_ok(&["add", "plain procedure body", "--type", "procedure"]);
+    let id = extract_id(&out);
+
+    // Confirm no fences initially.
+    let raw_before = env.run_ok(&["show", &id, "--raw"]);
+    assert!(
+        !raw_before.contains("---\n"),
+        "no fm before edit: {raw_before}"
+    );
+
+    env.run_ok(&["edit", &id, "--trigger", "fresh"]);
+
+    let raw_after = env.run_ok(&["show", &id, "--raw"]);
+    // Body of raw output includes the `---\n` fence on its own line.
+    assert!(
+        raw_after.contains("\n---\ntrigger: fresh\n---\n"),
+        "frontmatter block inserted: {raw_after}"
+    );
+    assert!(
+        raw_after.contains("plain procedure body"),
+        "body preserved: {raw_after}"
+    );
+}
+
+#[test]
+fn test_edit_replace_all_clobbers_frontmatter() {
+    let env = TestEnv::new("fm-p1-5-edit-replace-all");
+    let id = seed_procedure_with_frontmatter(&env);
+
+    env.run_ok(&[
+        "edit",
+        &id,
+        "--replace-all",
+        "--content",
+        "total clobber body",
+    ]);
+
+    let raw = env.run_ok(&["show", &id, "--raw"]);
+    assert!(
+        !raw.contains("---\n"),
+        "frontmatter gone after --replace-all: {raw}"
+    );
+    assert!(
+        !raw.contains("trigger:"),
+        "no trigger key left: {raw}"
+    );
+    assert!(
+        raw.contains("total clobber body"),
+        "new body present: {raw}"
+    );
+}
+
+#[test]
+fn test_edit_field_flag_on_wrong_type_errors() {
+    let env = TestEnv::new("fm-p1-5-edit-wrong-type");
+    // Seed a plain fact — --trigger does not apply to facts.
+    let out = env.run_ok(&["add", "a fact body", "--type", "fact"]);
+    let id = extract_id(&out);
+
+    let output = env.run(&["edit", &id, "--trigger", "weekly"]);
+    assert!(!output.status.success(), "must fail: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--trigger"),
+        "err names flag: {stderr}"
+    );
+    assert!(
+        stderr.contains("procedure"),
+        "err cites valid type: {stderr}"
+    );
+    assert!(stderr.contains("fact"), "err cites stored type: {stderr}");
+}
+
+#[test]
+fn test_edit_field_flag_plus_content_merges_both() {
+    let env = TestEnv::new("fm-p1-5-edit-field-and-content");
+    let id = seed_procedure_with_frontmatter(&env);
+
+    env.run_ok(&[
+        "edit",
+        &id,
+        "--trigger",
+        "hourly",
+        "--content",
+        "fresh body",
+    ]);
+
+    let raw = env.run_ok(&["show", &id, "--raw"]);
+    assert!(
+        raw.contains("trigger: hourly"),
+        "trigger updated: {raw}"
+    );
+    assert!(raw.contains("check: report ok"), "other field kept: {raw}");
+    assert!(raw.contains("fresh body"), "body swapped: {raw}");
+    assert!(
+        !raw.contains("original body"),
+        "old body gone: {raw}"
+    );
+}
+
+#[test]
+fn test_edit_from_file_plus_field_flag_mutex_error() {
+    let env = TestEnv::new("fm-p1-5-edit-from-file-mutex");
+    let id = seed_procedure_with_frontmatter(&env);
+
+    let file = env.dir.join("draft.md");
+    std::fs::write(&file, "---\ntrigger: from file\n---\nbody from file\n").unwrap();
+
+    let output = env.run(&[
+        "edit",
+        &id,
+        "--from-file",
+        file.to_str().unwrap(),
+        "--trigger",
+        "also here",
+    ]);
+    assert!(!output.status.success(), "must fail: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("mutually exclusive"),
+        "err cites mutex: {stderr}"
+    );
+    assert!(stderr.contains("--from-file"), "err names flag: {stderr}");
+}
+
+#[test]
+fn test_edit_prose_unit_content_only_unchanged_regression_guard() {
+    let env = TestEnv::new("fm-p1-5-edit-prose-regression");
+    // Plain idea unit — no schema at all.
+    let out = env.run_ok(&["add", "original idea text", "--type", "idea"]);
+    let id = extract_id(&out);
+
+    env.run_ok(&["edit", &id, "--content", "updated idea text"]);
+
+    let raw = env.run_ok(&["show", &id, "--raw"]);
+    assert!(
+        !raw.contains("---\n"),
+        "no fm injected on prose edit: {raw}"
+    );
+    assert!(
+        raw.contains("updated idea text"),
+        "new body present: {raw}"
+    );
+    assert!(
+        !raw.contains("original idea text"),
+        "old body gone: {raw}"
+    );
+
+    // Inspect JSON to confirm exact content (no trailing metadata noise).
+    let json = env.run_ok(&["show", &id, "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let content = v["unit"]["content"].as_str().expect("content field");
+    assert_eq!(content, "updated idea text", "content exact match");
+}
