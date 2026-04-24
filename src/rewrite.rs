@@ -46,6 +46,12 @@ pub fn run(conn: &Connection, id_or_slug: &str, template_only: bool) -> Result<(
     let unit = db::get_unit(conn, &id)?;
 
     let buffer = compose_buffer(&unit, template_only);
+    // Baseline for no-op detection: the body we *wrote* to the temp file,
+    // post-header-strip. Compared against the post-edit stripped buffer.
+    // Comparing against unit.content is wrong for prose units — the composed
+    // buffer prepends a skeleton, so a no-edit cancel would still diff
+    // against the DB body-only and trigger a destructive write.
+    let initial_stripped = strip_header_comments(&buffer);
 
     // Temp file path: $TMPDIR/simaris-rewrite-<shortid>-<pid>.md
     let short = if unit.id.len() >= 8 {
@@ -80,8 +86,9 @@ pub fn run(conn: &Connection, id_or_slug: &str, template_only: bool) -> Result<(
         return Ok(());
     }
 
-    // No substantive change → no-op.
-    if buffers_equal(&unit.content, &stripped) {
+    // No substantive change → no-op. Compare final buffer to the baseline we
+    // seeded (post-header-strip), not to DB content — see `initial_stripped`.
+    if buffers_equal(&initial_stripped, &stripped) {
         eprintln!("rewrite no-op: no changes, unit unchanged");
         return Ok(());
     }
@@ -337,5 +344,29 @@ mod tests {
     #[test]
     fn buffers_equal_detects_content_change() {
         assert!(!buffers_equal("hello\n", "world\n"));
+    }
+
+    /// R1 mitigation (task `onqm`): the no-op check relies on
+    /// `strip_header_comments(compose_buffer(..))` yielding a stable baseline
+    /// that equals the composed buffer minus its `#` header block. If the
+    /// header format drifts and stripping fails to remove it, the no-op
+    /// check silently breaks. Lock the contract.
+    #[test]
+    fn compose_then_strip_removes_only_header() {
+        let u = mk_unit(
+            "019abc00-0000-7000-8000-000000000000",
+            "procedure",
+            "plain body\n",
+        );
+        let buf = compose_buffer(&u, false);
+        let stripped = strip_header_comments(&buf);
+        // The stripped result must not contain any of the `#`-prefixed
+        // header lines compose_buffer writes.
+        assert!(!stripped.contains("simaris rewrite -- id:"), "header gone: {stripped}");
+        assert!(!stripped.contains("Save + quit to apply"), "header gone: {stripped}");
+        // The body we seeded must survive.
+        assert!(stripped.contains("plain body"), "body preserved: {stripped}");
+        // A no-edit cancel compares this baseline to itself → equal.
+        assert!(buffers_equal(&stripped, &stripped));
     }
 }

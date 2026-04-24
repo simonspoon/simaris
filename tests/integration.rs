@@ -2906,3 +2906,65 @@ fn test_rewrite_wrong_type_field_rejected() {
         "err cites mismatch: {stderr}"
     );
 }
+
+// --- P3a.1 regression: cancel-without-edit must not mutate ------------
+
+/// Dogfood bug (task `onqm`): on a prose unit, `rewrite` composes
+/// skeleton+body into the buffer. Old no-op check compared buffer-final to
+/// DB content (body-only) — so closing editor without edits still saw a
+/// "diff" and wrote back the skeleton-prepended body, destroying the unit.
+/// Fix: compare buffer-final to buffer-initial. Regression guard.
+#[test]
+fn test_rewrite_prose_noop_leaves_unit() {
+    let env = TestEnv::new("fm-p3a1-prose-noop");
+    let out = env.run_ok(&[
+        "add",
+        "original prose body with no frontmatter here",
+        "--type",
+        "aspect",
+    ]);
+    let id = extract_id(&out);
+    let before = env.run_ok(&["show", &id, "--raw"]);
+
+    let output = env.run_with_env(
+        &["rewrite", &id],
+        &[("SIMARIS_EDITOR", &editor_noop())],
+    );
+    assert!(output.status.success(), "prose noop exits 0: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("no-op") || stderr.contains("no changes"),
+        "stderr announces no-op: {stderr}"
+    );
+
+    let after = env.run_ok(&["show", &id, "--raw"]);
+    assert_eq!(before, after, "prose unit unchanged on no-edit cancel");
+}
+
+/// Even when the editor *writes* the buffer back unchanged (vim :wq with no
+/// edits — touches mtime, same bytes), rewrite must treat it as a no-op.
+/// Covers the "editor touched file but content identical" path for a prose
+/// unit, where the initial buffer carries a skeleton that's not in the DB.
+#[test]
+fn test_rewrite_prose_identical_rewrite_is_noop() {
+    let env = TestEnv::new("fm-p3a1-prose-identical");
+    let out = env.run_ok(&[
+        "add",
+        "prose body kept verbatim",
+        "--type",
+        "procedure",
+    ]);
+    let id = extract_id(&out);
+    let before = env.run_ok(&["show", &id, "--raw"]);
+
+    // Editor reads the seed and writes it back byte-for-byte.
+    let editor_cmd = "sh -c 'cat \"$1\" > \"$1.tmp\" && mv \"$1.tmp\" \"$1\"' --";
+    let output = env.run_with_env(
+        &["rewrite", &id],
+        &[("SIMARIS_EDITOR", editor_cmd)],
+    );
+    assert!(output.status.success(), "identical rewrite exits 0: {:?}", output);
+
+    let after = env.run_ok(&["show", &id, "--raw"]);
+    assert_eq!(before, after, "prose unit unchanged on identical rewrite");
+}
