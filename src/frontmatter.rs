@@ -83,6 +83,15 @@ pub fn parse(content: &str) -> Parsed<'_> {
     }
 }
 
+/// Cheap predicate — does `content` have a parseable frontmatter block?
+/// Short-circuits on the opening fence before attempting full YAML parse.
+pub fn has_frontmatter(content: &str) -> bool {
+    if !content.starts_with(FENCE) {
+        return false;
+    }
+    parse(content).frontmatter.is_some()
+}
+
 /// Render top-level frontmatter keys as markdown lines.
 ///
 /// - scalars → `**key:** value`
@@ -273,6 +282,27 @@ fn scalar_to_string(v: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn has_frontmatter_true_on_valid() {
+        assert!(has_frontmatter("---\ntitle: x\n---\nbody\n"));
+    }
+
+    #[test]
+    fn has_frontmatter_false_on_prose() {
+        assert!(!has_frontmatter("just prose\n"));
+    }
+
+    #[test]
+    fn has_frontmatter_false_on_malformed() {
+        assert!(!has_frontmatter("---\n: : bad yaml :: :\n---\nbody\n"));
+    }
+
+    #[test]
+    fn has_frontmatter_false_on_bare_dashes() {
+        // leading "---" without the newline must not count
+        assert!(!has_frontmatter("---not a fence"));
+    }
 
     #[test]
     fn parse_no_frontmatter() {

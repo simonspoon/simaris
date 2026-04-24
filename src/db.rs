@@ -53,6 +53,25 @@ pub struct ContradictionPair {
     pub to_content: String,
 }
 
+/// One row of `scan --unstructured` output — a unit that lacks a frontmatter
+/// block and is large enough to be worth rewriting. Ordered for rewrite
+/// priority: aspect first, then mark_count DESC, then confidence DESC.
+#[derive(Debug, Serialize)]
+pub struct UnstructuredRow {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub unit_type: String,
+    pub slugs: Vec<String>,
+    pub marks: u32,
+    pub confidence: f64,
+    pub first_line: String,
+}
+
+/// Minimum body length (bytes) before a unit becomes eligible for rewrite.
+/// Short prose — one sentence, a URL, a single fact — carries no schema
+/// payload, so skip. Matches the spec in frontmatter-p2.
+pub const UNSTRUCTURED_MIN_BYTES: usize = 200;
+
 pub fn data_dir() -> PathBuf {
     let base = if let Ok(dir) = std::env::var("SIMARIS_HOME") {
         PathBuf::from(dir)
@@ -1029,6 +1048,79 @@ pub fn scan(conn: &Connection, stale_days: u32) -> Result<ScanResult> {
         orphans,
         stale,
     })
+}
+
+/// List units that lack a frontmatter block and carry enough body to warrant
+/// a rewrite. Ordered for rewrite priority: aspect type first, then mark
+/// count descending, then confidence descending, then `updated` descending
+/// as a final tiebreak.
+///
+/// `type_filter` narrows to a single unit type ("aspect", "procedure", …).
+///
+/// The SQL pre-filter uses `length(content) >= 200` as a cheap gate (SQLite's
+/// `length()` on TEXT counts characters, not bytes — close enough for a
+/// pre-filter). Rust then confirms byte length and confirms the absence of a
+/// parseable frontmatter block via the P0 parser, so malformed-YAML units
+/// still surface as unstructured.
+pub fn scan_unstructured(
+    conn: &Connection,
+    type_filter: Option<&str>,
+) -> Result<Vec<UnstructuredRow>> {
+    // Pre-filter: length guard + optional type match + sort by rewrite
+    // priority. Mark count comes from a left-join on a grouped subquery so
+    // units with zero marks still appear (as 0).
+    let sql = "SELECT u.id, u.content, u.type, u.confidence,
+                      COALESCE(m.n, 0) AS mark_count
+               FROM units u
+               LEFT JOIN (
+                   SELECT unit_id, COUNT(*) AS n FROM marks GROUP BY unit_id
+               ) m ON m.unit_id = u.id
+               WHERE length(u.content) >= 200
+                 AND (?1 IS NULL OR u.type = ?1)
+               ORDER BY (u.type = 'aspect') DESC,
+                        mark_count DESC,
+                        u.confidence DESC,
+                        u.updated DESC";
+    let mut stmt = conn.prepare(sql)?;
+
+    let rows = stmt
+        .query_map(params![type_filter], |row| {
+            let id: String = row.get(0)?;
+            let content: String = row.get(1)?;
+            let unit_type: String = row.get(2)?;
+            let confidence: f64 = row.get(3)?;
+            let marks: i64 = row.get(4)?;
+            Ok((id, content, unit_type, confidence, marks))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut out: Vec<UnstructuredRow> = Vec::new();
+    for (id, content, unit_type, confidence, marks) in rows {
+        // Byte-accurate body-size gate — spec says 200 B, SQL used chars.
+        if content.len() < UNSTRUCTURED_MIN_BYTES {
+            continue;
+        }
+        // Skip units that already have a valid frontmatter block.
+        if crate::frontmatter::has_frontmatter(&content) {
+            continue;
+        }
+        let slugs = get_slugs_for_unit(conn, &id)?;
+        let first_line = content
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("")
+            .to_string();
+        out.push(UnstructuredRow {
+            id,
+            unit_type,
+            slugs,
+            marks: marks.max(0) as u32,
+            confidence,
+            first_line,
+        });
+    }
+    Ok(out)
 }
 
 pub fn drop_item(conn: &Connection, content: &str, source: &str) -> Result<String> {

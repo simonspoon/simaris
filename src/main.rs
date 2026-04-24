@@ -341,6 +341,16 @@ enum Command {
         /// Days without marks before a unit is considered stale
         #[arg(long, default_value = "90")]
         stale_days: u32,
+
+        /// List units without a frontmatter block, ranked for rewrite
+        /// priority (aspect first, then mark count, then confidence).
+        /// Overrides stale-days.
+        #[arg(long)]
+        unstructured: bool,
+
+        /// Narrow `--unstructured` to a single unit type.
+        #[arg(long = "type", rename_all = "snake_case")]
+        type_filter: Option<UnitType>,
     },
 
     /// Manage human-readable slugs pointing at units
@@ -1137,9 +1147,19 @@ fn main() -> Result<()> {
             db::delete_unit(&conn, &id)?;
             display::print_deleted(&id, cli.json);
         }
-        Command::Scan { stale_days } => {
-            let result = db::scan(&conn, stale_days)?;
-            display::print_scan(&result, cli.json);
+        Command::Scan {
+            stale_days,
+            unstructured,
+            type_filter,
+        } => {
+            if unstructured {
+                let filter = type_filter.as_ref().map(UnitType::as_str);
+                let rows = db::scan_unstructured(&conn, filter)?;
+                display::print_scan_unstructured(&rows, cli.json);
+            } else {
+                let result = db::scan(&conn, stale_days)?;
+                display::print_scan(&result, cli.json);
+            }
         }
         Command::Slug { action } => match action {
             SlugAction::Set { slug, id } => {

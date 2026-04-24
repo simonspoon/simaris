@@ -1,5 +1,5 @@
 use crate::ask::PrimeResult;
-use crate::db::{InboxItem, Link, ScanResult, SlugRow, Unit};
+use crate::db::{InboxItem, Link, ScanResult, SlugRow, Unit, UnstructuredRow};
 use crate::emit::EmitResult;
 use crate::frontmatter;
 use serde::Serialize;
@@ -408,6 +408,43 @@ pub fn print_scan(result: &ScanResult, json: bool) {
 
     if !found_issues {
         println!("No issues found.");
+    }
+}
+
+/// Render rows from `scan --unstructured`. JSON mode serializes the vector
+/// as-is; text mode prints a compact table with short id, type, first slug
+/// (or `-`), mark count, confidence, and the leading line of the body.
+pub fn print_scan_unstructured(rows: &[UnstructuredRow], json: bool) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(rows).unwrap());
+        return;
+    }
+    if rows.is_empty() {
+        println!("No unstructured units found.");
+        return;
+    }
+    println!(
+        "{:<8}  {:<10}  {:<16}  {:>5}  {:>5}  first-line",
+        "id", "type", "slug", "marks", "conf"
+    );
+    for row in rows {
+        let slug = row.slugs.first().map(String::as_str).unwrap_or("-");
+        let slug_trim = if slug.chars().count() > 16 {
+            let end = slug.char_indices().nth(16).map(|(i, _)| i).unwrap_or(slug.len());
+            format!("{}…", &slug[..end])
+        } else {
+            slug.to_string()
+        };
+        let first = truncate_content(&row.first_line);
+        println!(
+            "{:<8}  {:<10}  {:<16}  {:>5}  {:>5.2}  {}",
+            short_id(&row.id),
+            row.unit_type,
+            slug_trim,
+            row.marks,
+            row.confidence,
+            first
+        );
     }
 }
 

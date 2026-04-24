@@ -940,6 +940,194 @@ fn test_scan_stale_days() {
     assert!(out.contains(&format!("[{}]", short_id(&id))), "got: {out}");
 }
 
+// ========================================================================
+// scan --unstructured (frontmatter-p2, task fsuh)
+// ========================================================================
+
+/// Produce a body of at least 200 bytes so scan --unstructured considers it.
+fn long_prose(seed: &str) -> String {
+    let filler = "lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. ";
+    format!("{seed} {filler}{filler}")
+}
+
+#[test]
+fn test_scan_unstructured_empty_store() {
+    let env = TestEnv::new("scan-unstruct-empty");
+    let out = env.run_ok(&["scan", "--unstructured"]);
+    assert!(out.contains("No unstructured units found"), "got: {out}");
+}
+
+#[test]
+fn test_scan_unstructured_mixes_prose_and_frontmatter() {
+    // UUIDv7 short_ids can collide for units added in the same ms, so match
+    // on unique body keywords instead.
+    let env = TestEnv::new("scan-unstruct-mix");
+    let schema_file = env.dir.join("schema.md");
+    std::fs::write(
+        &schema_file,
+        format!(
+            "---\nname: schema-unit\n---\n{}\n",
+            long_prose("SCHEMA_MARKER")
+        ),
+    )
+    .unwrap();
+    env.run_ok(&[
+        "add",
+        "--type",
+        "aspect",
+        "--from-file",
+        schema_file.to_str().unwrap(),
+    ]);
+
+    env.run_ok(&[
+        "add",
+        &long_prose("PROSE_MARKER"),
+        "--type",
+        "aspect",
+    ]);
+
+    let out = env.run_ok(&["scan", "--unstructured"]);
+    assert!(out.contains("PROSE_MARKER"), "prose aspect listed: {out}");
+    assert!(
+        !out.contains("SCHEMA_MARKER"),
+        "schema'd aspect absent: {out}"
+    );
+}
+
+#[test]
+fn test_scan_unstructured_skips_short_bodies() {
+    let env = TestEnv::new("scan-unstruct-short");
+    // Body well under 200 B.
+    let short_out = env.run_ok(&["add", "too short to rewrite", "--type", "fact"]);
+    let short_id_ = extract_id(&short_out);
+    let out = env.run_ok(&["scan", "--unstructured"]);
+    assert!(
+        !out.contains(&short_id(&short_id_).to_string()),
+        "short body skipped: {out}"
+    );
+}
+
+#[test]
+fn test_scan_unstructured_sorts_aspect_first() {
+    let env = TestEnv::new("scan-unstruct-aspect-first");
+    // Procedure with many marks — still ranks below aspect with zero marks.
+    let proc_out = env.run_ok(&[
+        "add",
+        &long_prose("PROC_MARKER"),
+        "--type",
+        "procedure",
+    ]);
+    let proc_id = extract_id(&proc_out);
+    for _ in 0..5 {
+        env.run_ok(&["mark", &proc_id, "--kind", "used"]);
+    }
+
+    env.run_ok(&["add", &long_prose("ASPECT_MARKER"), "--type", "aspect"]);
+
+    let out = env.run_ok(&["scan", "--unstructured"]);
+    let aspect_pos = out.find("ASPECT_MARKER").expect("aspect in output");
+    let proc_pos = out.find("PROC_MARKER").expect("procedure in output");
+    assert!(
+        aspect_pos < proc_pos,
+        "aspect must sort before procedure: {out}"
+    );
+}
+
+#[test]
+fn test_scan_unstructured_sorts_by_mark_count_then_confidence() {
+    let env = TestEnv::new("scan-unstruct-marks-conf");
+    let low_out = env.run_ok(&[
+        "add",
+        &long_prose("LOW_MARKER"),
+        "--type",
+        "procedure",
+    ]);
+    let low_id = extract_id(&low_out);
+    let high_out = env.run_ok(&[
+        "add",
+        &long_prose("HIGH_MARKER"),
+        "--type",
+        "procedure",
+    ]);
+    let high_id = extract_id(&high_out);
+    env.run_ok(&["mark", &low_id, "--kind", "used"]);
+    for _ in 0..3 {
+        env.run_ok(&["mark", &high_id, "--kind", "used"]);
+    }
+
+    let out = env.run_ok(&["scan", "--unstructured"]);
+    let high_pos = out.find("HIGH_MARKER").expect("high in output");
+    let low_pos = out.find("LOW_MARKER").expect("low in output");
+    assert!(
+        high_pos < low_pos,
+        "higher mark count sorts first: {out}"
+    );
+}
+
+#[test]
+fn test_scan_unstructured_type_filter_narrows() {
+    let env = TestEnv::new("scan-unstruct-type-filter");
+    env.run_ok(&[
+        "add",
+        &long_prose("ASPECT_TF_MARKER"),
+        "--type",
+        "aspect",
+    ]);
+    env.run_ok(&[
+        "add",
+        &long_prose("PROC_TF_MARKER"),
+        "--type",
+        "procedure",
+    ]);
+
+    let out = env.run_ok(&["scan", "--unstructured", "--type", "aspect"]);
+    assert!(out.contains("ASPECT_TF_MARKER"), "aspect present: {out}");
+    assert!(
+        !out.contains("PROC_TF_MARKER"),
+        "procedure filtered out: {out}"
+    );
+}
+
+#[test]
+fn test_scan_unstructured_json_shape() {
+    let env = TestEnv::new("scan-unstruct-json");
+    let out_a = env.run_ok(&["add", &long_prose("prose a"), "--type", "fact"]);
+    let id_a = extract_id(&out_a);
+
+    let out = env.run_ok(&["--json", "scan", "--unstructured"]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let arr = parsed.as_array().expect("top-level array");
+    assert!(!arr.is_empty(), "non-empty: {out}");
+    let first = &arr[0];
+    assert!(first["id"].as_str().is_some(), "id present: {out}");
+    assert!(first["type"].as_str().is_some(), "type present: {out}");
+    assert!(first["slugs"].is_array(), "slugs array: {out}");
+    assert!(first["marks"].is_number(), "marks number: {out}");
+    assert!(first["confidence"].is_number(), "conf number: {out}");
+    assert!(
+        first["first_line"].as_str().is_some(),
+        "first_line present: {out}"
+    );
+    assert!(
+        arr.iter().any(|r| r["id"].as_str() == Some(&*id_a)),
+        "target unit present: {out}"
+    );
+}
+
+#[test]
+fn test_scan_unstructured_unchanged_when_flag_absent() {
+    // Regression guard — plain `scan` still produces the standard health
+    // report, not the unstructured list, even when unstructured candidates
+    // exist.
+    let env = TestEnv::new("scan-unstruct-regress");
+    env.run_ok(&["add", &long_prose("bare prose"), "--type", "fact"]);
+    let out = env.run_ok(&["scan"]);
+    assert!(
+        !out.contains("first-line"),
+        "standard scan does not print unstructured header: {out}"
+    );
+}
+
 #[test]
 fn test_add_auto_links() {
     let env = TestEnv::new("autolink");
