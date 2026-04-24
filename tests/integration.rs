@@ -1887,3 +1887,109 @@ fn test_size_env_var_bad_value_falls_back_to_default() {
         output
     );
 }
+
+// --- Frontmatter (P0) ---------------------------------------------------
+
+#[test]
+fn test_show_frontmatter_roundtrip() {
+    let env = TestEnv::new("fm-roundtrip");
+    let body = "---\ntitle: hello\nstatus: draft\n---\nbody prose here\n";
+    let out = env.run_ok(&["add", "--type", "fact", "--", body]);
+    let id = extract_id(&out);
+
+    let shown = env.run_ok(&["show", &id]);
+    assert!(
+        shown.contains("**title:** hello"),
+        "missing title field line: {shown}"
+    );
+    assert!(
+        shown.contains("**status:** draft"),
+        "missing status field line: {shown}"
+    );
+    assert!(
+        shown.contains("body prose here"),
+        "missing body text: {shown}"
+    );
+    // Rendered view must not echo raw fences.
+    assert!(
+        !shown.contains("---\ntitle:"),
+        "rendered view leaked raw fences: {shown}"
+    );
+}
+
+#[test]
+fn test_show_no_frontmatter_unchanged() {
+    let env = TestEnv::new("fm-none");
+    let body = "plain prose no fences";
+    let out = env.run_ok(&["add", body, "--type", "fact"]);
+    let id = extract_id(&out);
+
+    let shown = env.run_ok(&["show", &id]);
+    assert!(shown.contains(body), "body missing: {shown}");
+    assert!(
+        !shown.contains("**"),
+        "unexpected markdown field markers: {shown}"
+    );
+}
+
+#[test]
+fn test_show_malformed_frontmatter_falls_back() {
+    let env = TestEnv::new("fm-malformed");
+    // Invalid YAML inside fences — must not crash, must render body.
+    let body = "---\n: : bad yaml :: :\n---\nfallback body\n";
+    let out = env.run_ok(&["add", "--type", "fact", "--", body]);
+    let id = extract_id(&out);
+
+    let output = env.run(&["show", &id]);
+    assert!(
+        output.status.success(),
+        "show must not crash on malformed yaml: {:?}",
+        output
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Body present, no field lines rendered.
+    assert!(stdout.contains("fallback body"), "body missing: {stdout}");
+    assert!(
+        !stdout.contains("**title:"),
+        "unexpected rendered field: {stdout}"
+    );
+}
+
+#[test]
+fn test_show_raw_prints_fences_verbatim() {
+    let env = TestEnv::new("fm-raw");
+    let body = "---\ntitle: hello\n---\nbody text\n";
+    let out = env.run_ok(&["add", "--type", "fact", "--", body]);
+    let id = extract_id(&out);
+
+    let shown = env.run_ok(&["show", &id, "--raw"]);
+    assert!(
+        shown.contains("---\ntitle: hello\n---"),
+        "raw output missing literal fences: {shown}"
+    );
+    // Raw mode must not render parsed markdown field lines.
+    assert!(
+        !shown.contains("**title:**"),
+        "raw mode leaked rendered field: {shown}"
+    );
+}
+
+#[test]
+fn test_show_json_content_has_raw_fences() {
+    let env = TestEnv::new("fm-json");
+    let body = "---\ntitle: hello\n---\nbody text\n";
+    let out = env.run_ok(&["add", "--type", "fact", "--", body]);
+    let id = extract_id(&out);
+
+    let shown = env.run_ok(&["show", &id, "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&shown).expect("json parse");
+    let content = v
+        .get("unit")
+        .and_then(|u| u.get("content"))
+        .and_then(|c| c.as_str())
+        .expect("content field");
+    assert!(
+        content.contains("---\ntitle: hello\n---"),
+        "json content missing raw fences: {content}"
+    );
+}

@@ -1,6 +1,7 @@
 use crate::ask::PrimeResult;
 use crate::db::{InboxItem, Link, ScanResult, SlugRow, Unit};
 use crate::emit::EmitResult;
+use crate::frontmatter;
 use serde::Serialize;
 use std::path::Path;
 
@@ -86,7 +87,14 @@ pub fn print_units_lean(units: &[Unit], slug_map: &[Option<String>], json: bool)
     }
 }
 
-pub fn print_unit(unit: &Unit, outgoing: &[Link], incoming: &[Link], slugs: &[String], json: bool) {
+pub fn print_unit(
+    unit: &Unit,
+    outgoing: &[Link],
+    incoming: &[Link],
+    slugs: &[String],
+    json: bool,
+    raw: bool,
+) {
     if json {
         let value = serde_json::json!({
             "unit": unit,
@@ -99,7 +107,21 @@ pub fn print_unit(unit: &Unit, outgoing: &[Link], incoming: &[Link], slugs: &[St
         println!("{}", serde_json::to_string_pretty(&value).unwrap());
     } else {
         println!("[{}] {} ({})", unit.id, unit.unit_type, unit.source);
-        println!("{}", unit.content);
+        if raw {
+            println!("{}", unit.content);
+        } else {
+            let parsed = frontmatter::parse(&unit.content);
+            if let Some(ref fm) = parsed.frontmatter {
+                let md = frontmatter::render_markdown(fm);
+                if !md.is_empty() {
+                    print!("{md}");
+                    println!();
+                }
+                println!("{}", parsed.body);
+            } else {
+                println!("{}", unit.content);
+            }
+        }
         println!(
             "confidence: {}  verified: {}",
             unit.confidence, unit.verified

@@ -3,6 +3,7 @@ mod db;
 mod digest;
 mod display;
 mod emit;
+mod frontmatter;
 mod size_guard;
 
 use anyhow::Result;
@@ -55,6 +56,10 @@ enum Command {
     Show {
         /// Unit ID
         id: String,
+
+        /// Print content verbatim (including `---` fences) — skip parsing
+        #[arg(long)]
+        raw: bool,
     },
 
     /// Link two knowledge units
@@ -418,13 +423,13 @@ fn main() -> Result<()> {
                 println!("  auto-linked to {linked} existing unit(s)");
             }
         }
-        Command::Show { id } => {
+        Command::Show { id, raw } => {
             let id = db::resolve_id(&conn, &id)?;
             let unit = db::get_unit(&conn, &id)?;
             let outgoing = db::get_links_from(&conn, &id)?;
             let incoming = db::get_links_to(&conn, &id)?;
             let slugs = db::get_slugs_for_unit(&conn, &id)?;
-            display::print_unit(&unit, &outgoing, &incoming, &slugs, cli.json);
+            display::print_unit(&unit, &outgoing, &incoming, &slugs, cli.json, raw);
         }
         Command::Link {
             from_id,
@@ -620,7 +625,7 @@ fn main() -> Result<()> {
             let outgoing = db::get_links_from(&conn, &id)?;
             let incoming = db::get_links_to(&conn, &id)?;
             let slugs = db::get_slugs_for_unit(&conn, &id)?;
-            display::print_unit(&unit, &outgoing, &incoming, &slugs, cli.json);
+            display::print_unit(&unit, &outgoing, &incoming, &slugs, cli.json, false);
         }
         Command::Delete { id } => {
             let id = db::resolve_id(&conn, &id)?;
