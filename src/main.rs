@@ -25,11 +25,12 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 enum Command {
     /// Add a knowledge unit
     Add {
-        /// Content of the unit
-        content: String,
+        /// Content of the unit (optional when `--from-file` is used)
+        content: Option<String>,
 
         /// Type of knowledge unit
         #[arg(long, rename_all = "snake_case")]
@@ -50,6 +51,69 @@ enum Command {
         /// Treat body as a flow sequence — bypass size warning
         #[arg(long)]
         flow: bool,
+
+        /// Read content verbatim from file path (mutex with any field flag)
+        #[arg(long, value_name = "PATH")]
+        from_file: Option<String>,
+
+        // --- procedure-only -----------------------------------------------
+        /// procedure: condition that fires the procedure
+        #[arg(long)]
+        trigger: Option<String>,
+
+        /// procedure: verification condition
+        #[arg(long)]
+        check: Option<String>,
+
+        /// procedure: edge case or caveat
+        #[arg(long)]
+        caveat: Option<String>,
+
+        /// procedure: prerequisite (repeatable)
+        #[arg(long)]
+        prereq: Vec<String>,
+
+        /// procedure: how often the procedure runs
+        #[arg(long)]
+        cadence: Option<String>,
+
+        // --- aspect-only --------------------------------------------------
+        /// aspect: role the aspect plays
+        #[arg(long)]
+        role: Option<String>,
+
+        /// aspect: subagent this aspect dispatches to (repeatable)
+        #[arg(long = "dispatches-to")]
+        dispatches_to: Vec<String>,
+
+        /// aspect: task this aspect handles directly (repeatable)
+        #[arg(long = "handles-directly")]
+        handles_directly: Vec<String>,
+
+        // --- fact + lesson ------------------------------------------------
+        /// fact / lesson: scope where the unit applies
+        #[arg(long)]
+        scope: Option<String>,
+
+        // --- fact-only ----------------------------------------------------
+        /// fact: evidence supporting the claim
+        #[arg(long)]
+        evidence: Option<String>,
+
+        // --- principle-only -----------------------------------------------
+        /// principle: underlying design tension
+        #[arg(long)]
+        tension: Option<String>,
+
+        // --- lesson-only --------------------------------------------------
+        /// lesson: surrounding context that gave rise to the lesson
+        #[arg(long)]
+        context: Option<String>,
+
+        // --- shared -------------------------------------------------------
+        /// Reference (repeatable) — valid on procedure / aspect / fact / principle / lesson
+        #[arg(long = "ref")]
+        refs: Vec<String>,
     },
 
     /// Show a knowledge unit
@@ -372,6 +436,159 @@ fn build_slug_map(conn: &rusqlite::Connection, units: &[db::Unit]) -> Result<Vec
     Ok(out)
 }
 
+/// Borrowed view of all P1 frontmatter flags on `add`. Passed together to the
+/// validator + builder so the two stay in lockstep.
+struct AddFlags<'a> {
+    trigger: &'a Option<String>,
+    check: &'a Option<String>,
+    caveat: &'a Option<String>,
+    prereq: &'a [String],
+    cadence: &'a Option<String>,
+    role: &'a Option<String>,
+    dispatches_to: &'a [String],
+    handles_directly: &'a [String],
+    scope: &'a Option<String>,
+    evidence: &'a Option<String>,
+    tension: &'a Option<String>,
+    context: &'a Option<String>,
+    refs: &'a [String],
+}
+
+impl AddFlags<'_> {
+    /// Does this flag set contain any field value?
+    fn any_set(&self) -> bool {
+        self.trigger.is_some()
+            || self.check.is_some()
+            || self.caveat.is_some()
+            || !self.prereq.is_empty()
+            || self.cadence.is_some()
+            || self.role.is_some()
+            || !self.dispatches_to.is_empty()
+            || !self.handles_directly.is_empty()
+            || self.scope.is_some()
+            || self.evidence.is_some()
+            || self.tension.is_some()
+            || self.context.is_some()
+            || !self.refs.is_empty()
+    }
+}
+
+/// Validate per-type flag compatibility + mutex with `--from-file`.
+///
+/// - `--from-file` + any field flag → mutex error.
+/// - Field flag on wrong unit type → error citing the flag name + valid types.
+/// - Neither body nor `--from-file` → error (positional content required when
+///   no file source is given).
+fn validate_add_flags(
+    unit_type: &UnitType,
+    flags: &AddFlags<'_>,
+    from_file: Option<&str>,
+    content: Option<&str>,
+) -> Result<()> {
+    // Mutex check — from-file cannot combine with field flags.
+    if from_file.is_some() && flags.any_set() {
+        anyhow::bail!(
+            "--from-file is mutually exclusive with per-type field flags \
+             (--trigger, --check, --role, ...); pass fields inside the file's frontmatter"
+        );
+    }
+
+    // Content presence — if no file, body must be supplied positionally.
+    if from_file.is_none() && content.is_none() {
+        anyhow::bail!("positional <content> required when --from-file is not used");
+    }
+
+    // Per-flag type compatibility. Helper closure: emit a uniform error
+    // naming the offending flag + valid types. Order matches spec.
+    let check = |present: bool, name: &str, valid: &[UnitType]| -> Result<()> {
+        if !present {
+            return Ok(());
+        }
+        if valid.iter().any(|v| v.as_str() == unit_type.as_str()) {
+            return Ok(());
+        }
+        let joined: Vec<&str> = valid.iter().map(|v| v.as_str()).collect();
+        anyhow::bail!(
+            "--{name} is not valid for --type {}; valid types: {}",
+            unit_type.as_str(),
+            joined.join(", ")
+        );
+    };
+
+    use UnitType::*;
+    check(flags.trigger.is_some(), "trigger", &[Procedure])?;
+    check(flags.check.is_some(), "check", &[Procedure])?;
+    check(flags.caveat.is_some(), "caveat", &[Procedure])?;
+    check(!flags.prereq.is_empty(), "prereq", &[Procedure])?;
+    check(flags.cadence.is_some(), "cadence", &[Procedure])?;
+    check(flags.role.is_some(), "role", &[Aspect])?;
+    check(
+        !flags.dispatches_to.is_empty(),
+        "dispatches-to",
+        &[Aspect],
+    )?;
+    check(
+        !flags.handles_directly.is_empty(),
+        "handles-directly",
+        &[Aspect],
+    )?;
+    check(flags.scope.is_some(), "scope", &[Fact, Lesson])?;
+    check(flags.evidence.is_some(), "evidence", &[Fact])?;
+    check(flags.tension.is_some(), "tension", &[Principle])?;
+    check(flags.context.is_some(), "context", &[Lesson])?;
+    check(
+        !flags.refs.is_empty(),
+        "ref",
+        &[Procedure, Aspect, Fact, Principle, Lesson],
+    )?;
+    Ok(())
+}
+
+/// Build a YAML frontmatter block for the given unit type from populated
+/// flags. Field order follows the per-type schema in the frontmatter-p1 spec.
+/// Returns `None` when no fields are set.
+fn build_type_frontmatter(unit_type: &UnitType, flags: &AddFlags<'_>) -> Option<String> {
+    use frontmatter::FieldValue;
+
+    let scalar = |v: &Option<String>| FieldValue::Scalar(v.clone().unwrap_or_default());
+    let list = |v: &[String]| FieldValue::List(v.to_vec());
+
+    let fields: Vec<(&str, FieldValue)> = match unit_type {
+        UnitType::Procedure => vec![
+            ("trigger", scalar(flags.trigger)),
+            ("check", scalar(flags.check)),
+            ("cadence", scalar(flags.cadence)),
+            ("caveat", scalar(flags.caveat)),
+            ("prereq", list(flags.prereq)),
+            ("refs", list(flags.refs)),
+        ],
+        UnitType::Aspect => vec![
+            ("role", scalar(flags.role)),
+            ("dispatches_to", list(flags.dispatches_to)),
+            ("handles_directly", list(flags.handles_directly)),
+            ("refs", list(flags.refs)),
+        ],
+        UnitType::Fact => vec![
+            ("scope", scalar(flags.scope)),
+            ("evidence", scalar(flags.evidence)),
+            ("refs", list(flags.refs)),
+        ],
+        UnitType::Principle => vec![
+            ("tension", scalar(flags.tension)),
+            ("refs", list(flags.refs)),
+        ],
+        UnitType::Lesson => vec![
+            ("context", scalar(flags.context)),
+            ("scope", scalar(flags.scope)),
+            ("refs", list(flags.refs)),
+        ],
+        // preference and idea skip schema per spec.
+        UnitType::Preference | UnitType::Idea => return None,
+    };
+
+    frontmatter::build_frontmatter(&fields)
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -401,7 +618,53 @@ fn main() -> Result<()> {
             tags,
             force,
             flow,
+            from_file,
+            trigger,
+            check,
+            caveat,
+            prereq,
+            cadence,
+            role,
+            dispatches_to,
+            handles_directly,
+            scope,
+            evidence,
+            tension,
+            context,
+            refs,
         } => {
+            let flags = AddFlags {
+                trigger: &trigger,
+                check: &check,
+                caveat: &caveat,
+                prereq: &prereq,
+                cadence: &cadence,
+                role: &role,
+                dispatches_to: &dispatches_to,
+                handles_directly: &handles_directly,
+                scope: &scope,
+                evidence: &evidence,
+                tension: &tension,
+                context: &context,
+                refs: &refs,
+            };
+            validate_add_flags(&r#type, &flags, from_file.as_deref(), content.as_deref())?;
+
+            let final_content = if let Some(path) = from_file.as_deref() {
+                let body = std::fs::read_to_string(path).map_err(|e| {
+                    anyhow::anyhow!("failed to read --from-file `{path}`: {e}")
+                })?;
+                frontmatter::validate_from_file(&body)?;
+                body
+            } else {
+                let body = content.unwrap_or_default();
+                let fm_block = build_type_frontmatter(&r#type, &flags);
+                match fm_block {
+                    Some(block) => format!("{block}{body}"),
+                    None => body,
+                }
+            };
+
             let tag_vec: Vec<String> = tags
                 .as_deref()
                 .map(|t| {
@@ -411,11 +674,11 @@ fn main() -> Result<()> {
                         .collect()
                 })
                 .unwrap_or_default();
-            size_guard::check_size(&content, &tag_vec, flow, force)?;
+            size_guard::check_size(&final_content, &tag_vec, flow, force)?;
             let id = if tags.is_some() {
-                db::add_unit_full(&conn, &content, r#type.as_str(), &source, &tag_vec)?
+                db::add_unit_full(&conn, &final_content, r#type.as_str(), &source, &tag_vec)?
             } else {
-                db::add_unit(&conn, &content, r#type.as_str(), &source)?
+                db::add_unit(&conn, &final_content, r#type.as_str(), &source)?
             };
             display::print_added(&id, cli.json);
             let linked = db::auto_link(&conn, &id)?;

@@ -1,12 +1,26 @@
-//! Frontmatter parser — read-side only (P0).
+//! Frontmatter parser — read-side (P0) + builder (P1).
 //!
 //! Recognises a leading YAML frontmatter block delimited by `---\n` fences at
 //! byte 0. On malformed YAML, falls back to treating the entire content as
 //! body so `show` never crashes.
+//!
+//! The P1 builder emits deterministic YAML from CLI flags. Field order matches
+//! the per-type schema order in the frontmatter-p1 spec — scalar before list,
+//! trigger before check before caveat, etc. Ordering matters for diff
+//! readability.
 
+use anyhow::{Result, bail};
 use serde_yml::Value;
 
 const FENCE: &str = "---\n";
+
+/// A single frontmatter field value — either a scalar string or an ordered
+/// list of strings. Empty-string scalars and empty lists are skipped by the
+/// builder.
+pub enum FieldValue {
+    Scalar(String),
+    List(Vec<String>),
+}
 
 /// Parsed view of unit content.
 pub struct Parsed<'a> {
@@ -131,6 +145,73 @@ pub fn render_markdown(fm: &Value) -> String {
     out
 }
 
+/// Build a YAML frontmatter block (fences included) from an ordered list of
+/// `(key, value)` fields. Returns `None` if every field was absent/empty.
+///
+/// Output shape:
+/// ```text
+/// ---
+/// key: value
+/// list_key:
+///   - item1
+///   - item2
+/// ---
+/// ```
+///
+/// Closing fence ends with `\n` so callers can concat a body directly.
+/// Scalars are emitted as YAML plain-or-quoted strings via serde_yml so
+/// awkward values (leading `#`, colons, etc.) stay legal.
+pub fn build_frontmatter(fields: &[(&str, FieldValue)]) -> Option<String> {
+    let mut mapping = serde_yml::Mapping::new();
+    for (key, val) in fields {
+        match val {
+            FieldValue::Scalar(s) if !s.is_empty() => {
+                mapping.insert(Value::String((*key).to_string()), Value::String(s.clone()));
+            }
+            FieldValue::List(items) if !items.is_empty() => {
+                let seq: Vec<Value> = items.iter().cloned().map(Value::String).collect();
+                mapping.insert(Value::String((*key).to_string()), Value::Sequence(seq));
+            }
+            _ => {} // skip empty
+        }
+    }
+    if mapping.is_empty() {
+        return None;
+    }
+    let yaml = serde_yml::to_string(&Value::Mapping(mapping)).ok()?;
+    // serde_yml always terminates with '\n'.
+    Some(format!("{FENCE}{yaml}{}", "---\n"))
+}
+
+/// Validate that a user-supplied `--from-file` payload either has no
+/// frontmatter fences (pure prose is fine) or has a valid YAML mapping
+/// frontmatter block. Returns Err with a diagnostic on malformed YAML or
+/// non-mapping roots.
+pub fn validate_from_file(content: &str) -> Result<()> {
+    if !content.starts_with(FENCE) {
+        return Ok(()); // pure prose — fine
+    }
+    let after_open = &content[FENCE.len()..];
+    let yaml_src = if let Some(idx) = after_open.find("\n---\n") {
+        &after_open[..idx]
+    } else if let Some(idx) = after_open.rfind("\n---") {
+        let tail = &after_open[idx + "\n---".len()..];
+        if tail.is_empty() || tail == "\n" {
+            &after_open[..idx]
+        } else {
+            bail!("malformed frontmatter: opening `---` fence without closing `---` fence");
+        }
+    } else {
+        bail!("malformed frontmatter: opening `---` fence without closing `---` fence");
+    };
+
+    match serde_yml::from_str::<Value>(yaml_src) {
+        Ok(v) if v.is_mapping() => Ok(()),
+        Ok(_) => bail!("malformed frontmatter: YAML root must be a mapping, got scalar or list"),
+        Err(e) => bail!("malformed frontmatter YAML: {e}"),
+    }
+}
+
 fn is_simple_scalar(v: &Value) -> bool {
     matches!(
         v,
@@ -199,5 +280,91 @@ mod tests {
         assert!(md.contains("**items:**"));
         assert!(md.contains("- a"));
         assert!(md.contains("- d"));
+    }
+
+    #[test]
+    fn build_fm_all_empty_returns_none() {
+        let fields: Vec<(&str, FieldValue)> = vec![
+            ("trigger", FieldValue::Scalar(String::new())),
+            ("prereq", FieldValue::List(vec![])),
+        ];
+        assert!(build_frontmatter(&fields).is_none());
+    }
+
+    #[test]
+    fn build_fm_scalar_preserves_order() {
+        let fields = vec![
+            ("trigger", FieldValue::Scalar("weekly".into())),
+            ("check", FieldValue::Scalar("report".into())),
+            ("caveat", FieldValue::Scalar("edge case".into())),
+        ];
+        let s = build_frontmatter(&fields).unwrap();
+        assert!(s.starts_with("---\n"), "opening fence: {s}");
+        assert!(s.ends_with("---\n"), "closing fence: {s}");
+        let tp = s.find("trigger").unwrap();
+        let cp = s.find("check").unwrap();
+        let xp = s.find("caveat").unwrap();
+        assert!(tp < cp && cp < xp, "ordering broken: {s}");
+    }
+
+    #[test]
+    fn build_fm_list_becomes_yaml_sequence() {
+        let fields = vec![
+            (
+                "prereq",
+                FieldValue::List(vec!["@one".into(), "@two".into()]),
+            ),
+            ("refs", FieldValue::List(vec!["@proposal".into()])),
+        ];
+        let s = build_frontmatter(&fields).unwrap();
+        // parse roundtrip — confirms the builder emits legal YAML mapping
+        let p = parse(&s);
+        assert!(p.frontmatter.is_some(), "roundtrip: {s}");
+    }
+
+    #[test]
+    fn build_fm_skips_empty_fields_but_keeps_populated() {
+        let fields = vec![
+            ("trigger", FieldValue::Scalar("weekly".into())),
+            ("check", FieldValue::Scalar(String::new())),
+            ("prereq", FieldValue::List(vec![])),
+            ("refs", FieldValue::List(vec!["@proposal".into()])),
+        ];
+        let s = build_frontmatter(&fields).unwrap();
+        assert!(s.contains("trigger:"), "has trigger: {s}");
+        assert!(s.contains("refs:"), "has refs: {s}");
+        assert!(!s.contains("check:"), "skipped check: {s}");
+        assert!(!s.contains("prereq:"), "skipped prereq: {s}");
+    }
+
+    #[test]
+    fn validate_from_file_pure_prose_ok() {
+        assert!(validate_from_file("just prose\n").is_ok());
+    }
+
+    #[test]
+    fn validate_from_file_valid_fm_ok() {
+        assert!(validate_from_file("---\ntitle: hello\n---\nbody\n").is_ok());
+    }
+
+    #[test]
+    fn validate_from_file_malformed_yaml_errs() {
+        let err = validate_from_file("---\n: : bad yaml :: :\n---\nbody\n").unwrap_err();
+        assert!(
+            format!("{err}").contains("malformed frontmatter"),
+            "msg: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_from_file_unclosed_fence_errs() {
+        let err = validate_from_file("---\ntitle: hello\nbody with no close\n").unwrap_err();
+        assert!(format!("{err}").contains("malformed"), "msg: {err}");
+    }
+
+    #[test]
+    fn validate_from_file_non_mapping_root_errs() {
+        let err = validate_from_file("---\n- just a list\n- of items\n---\nbody\n").unwrap_err();
+        assert!(format!("{err}").contains("mapping"), "msg: {err}");
     }
 }

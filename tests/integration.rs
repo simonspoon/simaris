@@ -1993,3 +1993,220 @@ fn test_show_json_content_has_raw_fences() {
         "json content missing raw fences: {content}"
     );
 }
+
+// --- Frontmatter (P1 write-path flags) ---------------------------------
+
+#[test]
+fn test_add_procedure_all_flags_renders_fields() {
+    let env = TestEnv::new("fm-p1-procedure-all");
+    let out = env.run_ok(&[
+        "add",
+        "body prose",
+        "--type",
+        "procedure",
+        "--trigger",
+        "weekly, after digest",
+        "--check",
+        "report on maintenance-log",
+        "--cadence",
+        "monthly full",
+        "--prereq",
+        "@simaris-maint",
+        "--ref",
+        "@frontmatter-proposal",
+    ]);
+    let id = extract_id(&out);
+
+    let shown = env.run_ok(&["show", &id]);
+    assert!(
+        shown.contains("**trigger:** weekly, after digest"),
+        "trigger line: {shown}"
+    );
+    assert!(
+        shown.contains("**check:** report on maintenance-log"),
+        "check line: {shown}"
+    );
+    assert!(
+        shown.contains("**cadence:** monthly full"),
+        "cadence line: {shown}"
+    );
+    assert!(shown.contains("body prose"), "body missing: {shown}");
+    assert!(
+        !shown.contains("---\ntrigger:"),
+        "rendered view leaked raw fences: {shown}"
+    );
+}
+
+#[test]
+fn test_add_aspect_repeated_dispatches_to_becomes_list() {
+    let env = TestEnv::new("fm-p1-aspect-dispatches");
+    let out = env.run_ok(&[
+        "add",
+        "lotus routes prompts",
+        "--type",
+        "aspect",
+        "--role",
+        "front-door router",
+        "--dispatches-to",
+        "researcher",
+        "--dispatches-to",
+        "project-manager",
+    ]);
+    let id = extract_id(&out);
+
+    let shown = env.run_ok(&["show", &id]);
+    assert!(
+        shown.contains("**role:** front-door router"),
+        "role line: {shown}"
+    );
+    // short list ≤3 items renders inline per P0 markdown renderer
+    assert!(
+        shown.contains("**dispatches_to:** researcher, project-manager"),
+        "dispatches_to inline list: {shown}"
+    );
+
+    let raw = env.run_ok(&["show", &id, "--raw"]);
+    assert!(
+        raw.contains("dispatches_to:") && raw.contains("- researcher") && raw.contains("- project-manager"),
+        "raw yaml sequence: {raw}"
+    );
+}
+
+#[test]
+fn test_add_fact_evidence_renders() {
+    let env = TestEnv::new("fm-p1-fact-evidence");
+    let out = env.run_ok(&[
+        "add",
+        "rust uses ownership",
+        "--type",
+        "fact",
+        "--scope",
+        "memory management",
+        "--evidence",
+        "rust-lang.org/book ch4",
+    ]);
+    let id = extract_id(&out);
+
+    let shown = env.run_ok(&["show", &id]);
+    assert!(
+        shown.contains("**scope:** memory management"),
+        "scope line: {shown}"
+    );
+    assert!(
+        shown.contains("**evidence:** rust-lang.org/book ch4"),
+        "evidence line: {shown}"
+    );
+}
+
+#[test]
+fn test_add_flag_on_wrong_type_errors_with_useful_message() {
+    let env = TestEnv::new("fm-p1-wrong-type");
+    let output = env.run(&[
+        "add",
+        "body",
+        "--type",
+        "fact",
+        "--trigger",
+        "weekly",
+    ]);
+    assert!(!output.status.success(), "must fail: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--trigger"),
+        "err msg names flag: {stderr}"
+    );
+    assert!(
+        stderr.contains("procedure"),
+        "err msg cites valid type: {stderr}"
+    );
+    assert!(stderr.contains("fact"), "err msg cites bad type: {stderr}");
+}
+
+#[test]
+fn test_add_from_file_with_valid_frontmatter_stored_verbatim() {
+    let env = TestEnv::new("fm-p1-from-file-ok");
+    let file = env.dir.join("draft.md");
+    let body = "---\ntrigger: on demand\ncheck: passes\n---\nbody from file\n";
+    std::fs::write(&file, body).unwrap();
+
+    let out = env.run_ok(&[
+        "add",
+        "--type",
+        "procedure",
+        "--from-file",
+        file.to_str().unwrap(),
+    ]);
+    let id = extract_id(&out);
+
+    let raw = env.run_ok(&["show", &id, "--raw"]);
+    assert!(
+        raw.contains("---\ntrigger: on demand\ncheck: passes\n---\nbody from file"),
+        "stored verbatim: {raw}"
+    );
+}
+
+#[test]
+fn test_add_from_file_plus_field_flag_mutex_error() {
+    let env = TestEnv::new("fm-p1-mutex");
+    let file = env.dir.join("draft.md");
+    std::fs::write(&file, "---\ntrigger: x\n---\nbody\n").unwrap();
+
+    let output = env.run(&[
+        "add",
+        "--type",
+        "procedure",
+        "--from-file",
+        file.to_str().unwrap(),
+        "--trigger",
+        "also here",
+    ]);
+    assert!(!output.status.success(), "must fail: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("mutually exclusive"),
+        "err cites mutex: {stderr}"
+    );
+    assert!(stderr.contains("--from-file"), "err names flag: {stderr}");
+}
+
+#[test]
+fn test_add_from_file_malformed_yaml_errors_cleanly() {
+    let env = TestEnv::new("fm-p1-from-file-bad");
+    let file = env.dir.join("bad.md");
+    std::fs::write(&file, "---\n: : bad yaml :: :\n---\nbody\n").unwrap();
+
+    let output = env.run(&[
+        "add",
+        "--type",
+        "procedure",
+        "--from-file",
+        file.to_str().unwrap(),
+    ]);
+    assert!(!output.status.success(), "must reject malformed yaml");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("malformed frontmatter"),
+        "err cites malformed: {stderr}"
+    );
+    // Must be an error, not a Rust panic.
+    assert!(
+        !stderr.contains("panicked at"),
+        "must not panic: {stderr}"
+    );
+}
+
+#[test]
+fn test_add_no_flags_no_from_file_unchanged_regression_guard() {
+    let env = TestEnv::new("fm-p1-regression");
+    let out = env.run_ok(&["add", "plain body", "--type", "fact"]);
+    let id = extract_id(&out);
+
+    let shown = env.run_ok(&["show", &id]);
+    assert!(shown.contains("plain body"), "body preserved: {shown}");
+    // No frontmatter fences should be injected when no flags used.
+    let raw = env.run_ok(&["show", &id, "--raw"]);
+    assert!(
+        !raw.contains("---\n"),
+        "raw content must have no injected frontmatter: {raw}"
+    );
+}
