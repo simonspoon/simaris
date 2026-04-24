@@ -4,6 +4,7 @@ mod digest;
 mod display;
 mod emit;
 mod frontmatter;
+mod rewrite;
 mod size_guard;
 
 use anyhow::Result;
@@ -368,6 +369,16 @@ enum Command {
         /// Type of knowledge unit to emit
         #[arg(long, rename_all = "snake_case")]
         r#type: EmitType,
+    },
+
+    /// Rewrite a unit in `$EDITOR` with a type-aware skeleton (P3a)
+    Rewrite {
+        /// Unit id or slug
+        id: String,
+
+        /// Open buffer with skeleton only, no existing body
+        #[arg(long)]
+        template_only: bool,
     },
 }
 
@@ -1181,6 +1192,9 @@ fn main() -> Result<()> {
             let target_dir = emit::claude_agents_dir()?;
             let result = emit::emit_claude_code_aspects(&conn, &target_dir)?;
             display::print_emit_result(&result, &target_dir, cli.json);
+        }
+        Command::Rewrite { id, template_only } => {
+            rewrite::run(&conn, &id, template_only)?;
         }
         Command::Restore { .. } => unreachable!(),
     }

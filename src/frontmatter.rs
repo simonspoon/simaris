@@ -233,6 +233,104 @@ pub fn merge_frontmatter(
     Some(format!("{FENCE}{yaml}{}", "---\n"))
 }
 
+/// Known top-level schema keys per unit type. Unknown keys remain allowed
+/// (forward-compat) — this list is only used to reject obvious type/field
+/// mismatches during `rewrite` validation, e.g. `trigger:` on an `aspect`
+/// unit where the schema expects `role:`. Types absent from this map
+/// (`preference`, `idea`) carry no schema and accept any keys.
+fn known_keys_for(unit_type: &str) -> Option<&'static [&'static str]> {
+    match unit_type {
+        "procedure" => Some(&["trigger", "check", "cadence", "caveat", "prereq", "refs"]),
+        "aspect" => Some(&["role", "dispatches_to", "handles_directly", "refs"]),
+        "fact" => Some(&["scope", "evidence", "refs"]),
+        "principle" => Some(&["tension", "refs"]),
+        "lesson" => Some(&["context", "scope", "refs"]),
+        _ => None,
+    }
+}
+
+/// Keys that are *known to some other type* (so they hint at a type mismatch
+/// when seen on the "wrong" type). Used to upgrade a generic "unknown key"
+/// into a sharper diagnostic during `rewrite` validation.
+fn cross_type_reserved() -> &'static [&'static str] {
+    &[
+        "trigger",
+        "check",
+        "cadence",
+        "caveat",
+        "prereq",
+        "role",
+        "dispatches_to",
+        "handles_directly",
+        "scope",
+        "evidence",
+        "tension",
+        "context",
+    ]
+}
+
+/// Validate post-editor buffer content for a unit of `unit_type`.
+///
+/// Rules:
+/// - Pure prose (no `---` fence at byte 0) is acceptable (the rewrite command
+///   still treats this as a valid save — frontmatter is optional overlay).
+/// - Opening fence without closing fence → error.
+/// - Malformed YAML inside fences → error.
+/// - Non-mapping YAML root (scalar or list) → error.
+/// - For typed schemas, any key that belongs to a *different* type's schema
+///   is rejected as a type mismatch. Unknown keys not in any type's schema
+///   are accepted (forward-compat with future fields).
+pub fn validate(content: &str, unit_type: &str) -> Result<()> {
+    if !content.starts_with(FENCE) {
+        return Ok(());
+    }
+    let after_open = &content[FENCE.len()..];
+    let yaml_src = if let Some(idx) = after_open.find("\n---\n") {
+        &after_open[..idx]
+    } else if let Some(idx) = after_open.rfind("\n---") {
+        let tail = &after_open[idx + "\n---".len()..];
+        if tail.is_empty() || tail == "\n" {
+            &after_open[..idx]
+        } else {
+            bail!("malformed frontmatter: opening `---` fence without closing `---` fence");
+        }
+    } else {
+        bail!("malformed frontmatter: opening `---` fence without closing `---` fence");
+    };
+
+    let value: Value = match serde_yml::from_str(yaml_src) {
+        Ok(v) => v,
+        Err(e) => bail!("malformed frontmatter YAML: {e}"),
+    };
+    let map = match &value {
+        Value::Mapping(m) => m,
+        _ => bail!("malformed frontmatter: YAML root must be a mapping, got scalar or list"),
+    };
+
+    // Only type-check mismatches when the type has a known schema.
+    if let Some(known) = known_keys_for(unit_type) {
+        let reserved = cross_type_reserved();
+        for (k, _) in map {
+            let key = match k.as_str() {
+                Some(s) => s,
+                None => continue,
+            };
+            if known.contains(&key) {
+                continue;
+            }
+            if reserved.contains(&key) {
+                bail!(
+                    "frontmatter key `{key}` is not valid for unit type `{unit_type}`; \
+                     valid keys: {}",
+                    known.join(", ")
+                );
+            }
+            // Unknown key not reserved by another type — forward-compat, accept.
+        }
+    }
+    Ok(())
+}
+
 /// Validate that a user-supplied `--from-file` payload either has no
 /// frontmatter fences (pure prose is fine) or has a valid YAML mapping
 /// frontmatter block. Returns Err with a diagnostic on malformed YAML or

@@ -2630,3 +2630,279 @@ fn test_edit_prose_unit_content_only_unchanged_regression_guard() {
     let content = v["unit"]["content"].as_str().expect("content field");
     assert_eq!(content, "updated idea text", "content exact match");
 }
+
+// --- P3a rewrite (editor core) -----------------------------------------
+
+/// Return a `SIMARIS_EDITOR` shell command that overwrites its `$1` argument
+/// (the temp file path) with the contents of `fixture_path`. Matches the
+/// editor contract: we feed `sh -c "<cmd> <temp_path>"`, so `$0` inside the
+/// inner script receives the temp path (since `sh -c '<cmd>' <arg>` sets
+/// `$0` to `<arg>`). We use that trick so the test fixture reliably
+/// replaces the buffer.
+fn editor_replaces_with(fixture_path: &std::path::Path) -> String {
+    // The spawned command is: sh -c "<editor_cmd> <temp_path>".
+    // Putting the editor command in quotes above, we need the inner script
+    // to cat the fixture into the temp path. The temp path arrives as the
+    // last positional arg — we read it via "$1" inside another sh -c.
+    format!(
+        "sh -c 'cat \"{}\" > \"$1\"' --",
+        fixture_path.display()
+    )
+}
+
+fn editor_noop() -> String {
+    // Touch the file without changing it.
+    "true".to_string()
+}
+
+fn editor_empties() -> String {
+    "sh -c ': > \"$1\"' --".to_string()
+}
+
+#[test]
+fn test_rewrite_prose_to_structured() {
+    let env = TestEnv::new("fm-p3a-prose-to-structured");
+    let out = env.run_ok(&["add", "original procedure body", "--type", "procedure"]);
+    let id = extract_id(&out);
+
+    let fixture = env.dir.join("replacement.md");
+    std::fs::write(
+        &fixture,
+        "---\ntrigger: weekly\ncheck: green\n---\nrewritten body\n",
+    )
+    .unwrap();
+
+    env.run_with_env(
+        &["rewrite", &id],
+        &[("SIMARIS_EDITOR", &editor_replaces_with(&fixture))],
+    );
+
+    let raw = env.run_ok(&["show", &id, "--raw"]);
+    assert!(raw.contains("trigger: weekly"), "fm written: {raw}");
+    assert!(raw.contains("rewritten body"), "body written: {raw}");
+}
+
+#[test]
+fn test_rewrite_structured_noop_leaves_unit() {
+    let env = TestEnv::new("fm-p3a-noop");
+    let fixture = env.dir.join("seed.md");
+    std::fs::write(
+        &fixture,
+        "---\ntrigger: x\n---\nbody\n",
+    )
+    .unwrap();
+    let out = env.run_ok(&[
+        "add",
+        "--type",
+        "procedure",
+        "--from-file",
+        fixture.to_str().unwrap(),
+    ]);
+    let id = extract_id(&out);
+    let before = env.run_ok(&["show", &id, "--raw"]);
+
+    let output = env.run_with_env(
+        &["rewrite", &id],
+        &[("SIMARIS_EDITOR", &editor_noop())],
+    );
+    assert!(output.status.success(), "noop exits 0: {:?}", output);
+
+    let after = env.run_ok(&["show", &id, "--raw"]);
+    assert_eq!(before, after, "content unchanged on noop");
+}
+
+#[test]
+fn test_rewrite_empty_buffer_aborts() {
+    let env = TestEnv::new("fm-p3a-empty-abort");
+    let out = env.run_ok(&["add", "keep this body", "--type", "fact"]);
+    let id = extract_id(&out);
+    let before = env.run_ok(&["show", &id, "--raw"]);
+
+    let output = env.run_with_env(
+        &["rewrite", &id],
+        &[("SIMARIS_EDITOR", &editor_empties())],
+    );
+    assert!(output.status.success(), "abort exits 0: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("abort"), "stderr announces abort: {stderr}");
+
+    let after = env.run_ok(&["show", &id, "--raw"]);
+    assert_eq!(before, after, "content unchanged on abort");
+}
+
+#[test]
+fn test_rewrite_invalid_yaml_rejected() {
+    let env = TestEnv::new("fm-p3a-bad-yaml");
+    let out = env.run_ok(&["add", "starting body", "--type", "procedure"]);
+    let id = extract_id(&out);
+    let before = env.run_ok(&["show", &id, "--raw"]);
+
+    let fixture = env.dir.join("bad.md");
+    std::fs::write(&fixture, "---\n: : bad yaml :: :\n---\nbody\n").unwrap();
+
+    let output = env.run_with_env(
+        &["rewrite", &id],
+        &[("SIMARIS_EDITOR", &editor_replaces_with(&fixture))],
+    );
+    assert!(!output.status.success(), "invalid yaml rejects: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("malformed") || stderr.contains("invalid frontmatter"),
+        "err cites frontmatter: {stderr}"
+    );
+
+    let after = env.run_ok(&["show", &id, "--raw"]);
+    assert_eq!(before, after, "content unchanged on reject");
+}
+
+#[test]
+fn test_rewrite_template_only_skeleton() {
+    let env = TestEnv::new("fm-p3a-template-only");
+    let out = env.run_ok(&["add", "existing body text", "--type", "procedure"]);
+    let id = extract_id(&out);
+
+    // Editor dumps the seed buffer out so we can inspect composition.
+    let capture = env.dir.join("captured.md");
+    let editor_cmd = format!(
+        "sh -c 'cp \"$1\" \"{}\"' --",
+        capture.display()
+    );
+    env.run_with_env(&["rewrite", &id, "--template-only"], &[("SIMARIS_EDITOR", &editor_cmd)]);
+
+    let seen = std::fs::read_to_string(&capture).unwrap();
+    assert!(seen.contains("trigger:"), "skeleton fields present: {seen}");
+    assert!(!seen.contains("existing body text"), "body excluded: {seen}");
+}
+
+#[test]
+fn test_rewrite_preserves_tags_and_slug() {
+    let env = TestEnv::new("fm-p3a-preserve");
+    let out = env.run_ok(&[
+        "add",
+        "tagged prose",
+        "--type",
+        "procedure",
+        "--tags",
+        "alpha,beta",
+    ]);
+    let id = extract_id(&out);
+    env.run_ok(&["slug", "set", "my-proc", &id]);
+
+    let fixture = env.dir.join("rewrite.md");
+    std::fs::write(
+        &fixture,
+        "---\ntrigger: daily\n---\nnew body\n",
+    )
+    .unwrap();
+
+    env.run_with_env(
+        &["rewrite", &id],
+        &[("SIMARIS_EDITOR", &editor_replaces_with(&fixture))],
+    );
+
+    let json = env.run_ok(&["show", &id, "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let tags = v["unit"]["tags"].as_array().expect("tags array");
+    assert_eq!(tags.len(), 2, "tags preserved: {tags:?}");
+    let slugs = v["slugs"].as_array().expect("slugs array");
+    assert!(
+        slugs.iter().any(|s| s.as_str() == Some("my-proc")),
+        "slug preserved: {slugs:?}"
+    );
+}
+
+#[test]
+fn test_rewrite_nonexistent_id_clean_error() {
+    let env = TestEnv::new("fm-p3a-missing");
+    let output = env.run_with_env(
+        &["rewrite", "019abcde-0000-7000-8000-000000000000"],
+        &[("SIMARIS_EDITOR", "true")],
+    );
+    assert!(!output.status.success(), "missing id fails: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("panicked at"), "no panic: {stderr}");
+}
+
+#[test]
+fn test_rewrite_resolves_slug() {
+    let env = TestEnv::new("fm-p3a-slug");
+    let out = env.run_ok(&["add", "slugged prose", "--type", "fact"]);
+    let id = extract_id(&out);
+    env.run_ok(&["slug", "set", "my-fact", &id]);
+
+    let fixture = env.dir.join("rw.md");
+    std::fs::write(&fixture, "---\nscope: local\n---\nnew body\n").unwrap();
+
+    let output = env.run_with_env(
+        &["rewrite", "my-fact"],
+        &[("SIMARIS_EDITOR", &editor_replaces_with(&fixture))],
+    );
+    assert!(output.status.success(), "slug resolves: {:?}", output);
+    let raw = env.run_ok(&["show", &id, "--raw"]);
+    assert!(raw.contains("scope: local"), "rewrite applied: {raw}");
+}
+
+#[test]
+fn test_rewrite_header_comments_stripped() {
+    let env = TestEnv::new("fm-p3a-strip-comments");
+    let out = env.run_ok(&["add", "prose body", "--type", "idea"]);
+    let id = extract_id(&out);
+
+    let fixture = env.dir.join("with-comments.md");
+    std::fs::write(
+        &fixture,
+        "# user comment\n# another\n\nreal body\n",
+    )
+    .unwrap();
+
+    env.run_with_env(
+        &["rewrite", &id],
+        &[("SIMARIS_EDITOR", &editor_replaces_with(&fixture))],
+    );
+
+    let json = env.run_ok(&["show", &id, "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let content = v["unit"]["content"].as_str().expect("content field");
+    assert!(!content.starts_with("# user comment"), "header stripped: {content}");
+    assert!(content.contains("real body"), "body kept: {content}");
+}
+
+#[test]
+fn test_rewrite_missing_editor_clean_error() {
+    let env = TestEnv::new("fm-p3a-no-editor");
+    let out = env.run_ok(&["add", "body", "--type", "idea"]);
+    let id = extract_id(&out);
+
+    let output = env.run_with_env(
+        &["rewrite", &id],
+        &[
+            ("SIMARIS_EDITOR", "nonexistent-editor-binary-xyz"),
+            ("EDITOR", ""),
+        ],
+    );
+    assert!(!output.status.success(), "missing editor fails: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("panicked at"), "no panic: {stderr}");
+}
+
+#[test]
+fn test_rewrite_wrong_type_field_rejected() {
+    let env = TestEnv::new("fm-p3a-type-mismatch");
+    let out = env.run_ok(&["add", "starting aspect body", "--type", "aspect"]);
+    let id = extract_id(&out);
+
+    // `trigger:` belongs to procedure, not aspect.
+    let fixture = env.dir.join("mismatch.md");
+    std::fs::write(&fixture, "---\ntrigger: weekly\n---\nbody\n").unwrap();
+
+    let output = env.run_with_env(
+        &["rewrite", &id],
+        &[("SIMARIS_EDITOR", &editor_replaces_with(&fixture))],
+    );
+    assert!(!output.status.success(), "type mismatch rejects: {:?}", output);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("not valid for unit type") || stderr.contains("aspect"),
+        "err cites mismatch: {stderr}"
+    );
+}
