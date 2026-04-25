@@ -371,14 +371,32 @@ enum Command {
         r#type: EmitType,
     },
 
-    /// Rewrite a unit in `$EDITOR` with a type-aware skeleton (P3a)
+    /// Rewrite a unit in `$EDITOR` with a type-aware skeleton (P3a) or LLM
+    /// pre-fill (P3b via `--suggest`).
     Rewrite {
         /// Unit id or slug
         id: String,
 
         /// Open buffer with skeleton only, no existing body
-        #[arg(long)]
+        #[arg(long, conflicts_with = "suggest")]
         template_only: bool,
+
+        /// Pre-fill the editor buffer with an LLM-drafted unit (P3b)
+        #[arg(long)]
+        suggest: bool,
+
+        /// Print the LLM draft to stdout instead of opening the editor.
+        /// Only valid with `--suggest`. No DB change.
+        #[arg(long, requires = "suggest")]
+        dry_run: bool,
+
+        /// Override hard size threshold on the LLM draft (still warns)
+        #[arg(long, requires = "suggest")]
+        force: bool,
+
+        /// Treat LLM-drafted body as a flow sequence — bypass size warning
+        #[arg(long, requires = "suggest")]
+        flow: bool,
     },
 }
 
@@ -1188,8 +1206,19 @@ fn main() -> Result<()> {
             let result = emit::emit_claude_code_aspects(&conn, &target_dir)?;
             display::print_emit_result(&result, &target_dir, cli.json);
         }
-        Command::Rewrite { id, template_only } => {
-            rewrite::run(&conn, &id, template_only)?;
+        Command::Rewrite {
+            id,
+            template_only,
+            suggest,
+            dry_run,
+            force,
+            flow,
+        } => {
+            if suggest {
+                rewrite::run_suggest(&conn, &id, dry_run, force, flow)?;
+            } else {
+                rewrite::run(&conn, &id, template_only)?;
+            }
         }
         Command::Restore { .. } => unreachable!(),
     }

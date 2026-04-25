@@ -23,10 +23,15 @@ use anyhow::{Context, Result, bail};
 use rusqlite::Connection;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use crate::db;
 use crate::frontmatter;
+use crate::size_guard;
+
+/// LLM call timeout — claude is short-lived but unpredictable when API is hot.
+const CLAUDE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// RAII cleanup guard for the rewrite temp file.
 struct TempFile {
@@ -238,6 +243,452 @@ pub fn invoke_editor(path: &Path) -> Result<()> {
                 .unwrap_or_else(|| "signal".to_string())
         );
     }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// P3b — `rewrite --suggest` (LLM pre-fill)
+// ---------------------------------------------------------------------------
+
+/// Resolve the LLM model — mirrors `digest::model()` so users can override
+/// per-call via `SIMARIS_MODEL`.
+fn llm_model() -> String {
+    std::env::var("SIMARIS_MODEL").unwrap_or_else(|_| "sonnet".to_string())
+}
+
+/// Type-aware schema doc snippet baked into the LLM prompt. Listed in
+/// frontmatter-p1 spec order; fields without a stored schema (preference,
+/// idea) return an empty doc and trigger a body-only formatting prompt.
+fn schema_doc(unit_type: &str) -> &'static str {
+    match unit_type {
+        "procedure" => {
+            "  trigger: scalar — condition that fires the procedure\n  \
+             check: scalar — verification condition (\"done\" shape)\n  \
+             cadence: scalar — how often (every-commit, daily, ship-once, ...)\n  \
+             caveat: scalar — edge case or pitfall\n  \
+             prereq: list — prerequisites (one bullet each)\n  \
+             refs: list — slug or id refs\n"
+        }
+        "aspect" => {
+            "  role: scalar — one-line role summary\n  \
+             dispatches_to: list — subagent roles dispatched\n  \
+             handles_directly: list — tasks handled in-aspect\n  \
+             refs: list — slug or id refs\n"
+        }
+        "fact" => {
+            "  scope: scalar — where the fact applies\n  \
+             evidence: scalar — source / how known\n  \
+             refs: list — slug or id refs\n"
+        }
+        "principle" => {
+            "  tension: scalar — underlying design tension\n  \
+             refs: list — slug or id refs\n"
+        }
+        "lesson" => {
+            "  context: scalar — surrounding context that gave rise to lesson\n  \
+             scope: scalar — where the lesson applies\n  \
+             refs: list — slug or id refs\n"
+        }
+        // preference, idea — no schema; LLM returns body only.
+        _ => "",
+    }
+}
+
+/// Hand-curated few-shot exemplars per type. Two per typed schema. Voice =
+/// cavespeak (verb+noun, no the/is/that/a). v1 = inline; future = auto-pick
+/// from highest-mark same-type units in store.
+fn few_shot(unit_type: &str) -> &'static str {
+    match unit_type {
+        "procedure" => {
+            "Example 1 input:\n\
+             Run cargo test before commit. If tests fail, fix the failure not the test. After commit, push to remote.\n\n\
+             Example 1 output:\n\
+             ---\n\
+             trigger: \"before commit\"\n\
+             check: \"cargo test green\"\n\
+             cadence: \"every commit\"\n\
+             caveat: \"fix code, not test\"\n\
+             prereq:\n  - cargo build clean\n\
+             refs: []\n\
+             ---\n\n\
+             # Test before commit\n\n\
+             Run `cargo test`. Failure -> fix code, not test. Then commit + push.\n\n\
+             Example 2 input:\n\
+             After every release, install via brew (brew upgrade or brew install) instead of manual cargo build + sudo cp. Validates the full distribution path.\n\n\
+             Example 2 output:\n\
+             ---\n\
+             trigger: \"post-release validate install path\"\n\
+             check: \"brew install + binary runs\"\n\
+             cadence: \"every release\"\n\
+             caveat: \"no manual cargo + sudo cp\"\n\
+             prereq:\n  - release tagged + pushed\n\
+             refs: []\n\
+             ---\n\n\
+             # Brew install validate post-release\n\n\
+             After release cut, run `brew upgrade` or `brew install simonspoon/tap/<tool>`. Confirms full distribution path. No manual `cargo build + sudo cp`.\n"
+        }
+        "aspect" => {
+            "Example 1 input:\n\
+             The committer agent writes commit messages and runs git commit. It does not push. It dispatches nothing else.\n\n\
+             Example 1 output:\n\
+             ---\n\
+             role: \"write commit message + run git commit\"\n\
+             dispatches_to: []\n\
+             handles_directly:\n  - draft commit message\n  - run git commit\n\
+             refs: []\n\
+             ---\n\n\
+             # Committer\n\n\
+             Write commit message. Run `git commit`. No push. No further dispatch.\n\n\
+             Example 2 input:\n\
+             The orchestrator coordinates work across multiple subagents. It dispatches to worker, researcher, and committer. It does not write code itself.\n\n\
+             Example 2 output:\n\
+             ---\n\
+             role: \"coordinate multi-agent work\"\n\
+             dispatches_to:\n  - worker\n  - researcher\n  - committer\n\
+             handles_directly:\n  - dispatch routing\n  - status aggregation\n\
+             refs: []\n\
+             ---\n\n\
+             # Orchestrator\n\n\
+             Route work across subagents. Dispatch worker, researcher, committer. No code write self.\n"
+        }
+        "fact" => {
+            "Example 1 input:\n\
+             The simaris CLI binary is at ./target/release/simaris. Built via cargo build --release. Installs via cargo install --path .\n\n\
+             Example 1 output:\n\
+             ---\n\
+             scope: \"simaris build + install\"\n\
+             evidence: \"cargo build --release output path\"\n\
+             refs: []\n\
+             ---\n\n\
+             # simaris binary path\n\n\
+             Path: `./target/release/simaris`. Build: `cargo build --release`. Install: `cargo install --path .`.\n\n\
+             Example 2 input:\n\
+             SQLite uses an FTS5 virtual table for full-text search. Synced to units table via triggers on insert/update/delete.\n\n\
+             Example 2 output:\n\
+             ---\n\
+             scope: \"simaris search backend\"\n\
+             evidence: \"src/db.rs schema + triggers\"\n\
+             refs: []\n\
+             ---\n\n\
+             # FTS5 sync triggers\n\n\
+             `units_fts` virtual table mirrors `units`. Triggers sync on insert / update / delete.\n"
+        }
+        "principle" => {
+            "Example 1 input:\n\
+             Always pick the simplest approach first. Over-engineering wastes time. Iterate from simple to complex only when necessary.\n\n\
+             Example 1 output:\n\
+             ---\n\
+             tension: \"simple now vs flexible later\"\n\
+             refs: []\n\
+             ---\n\n\
+             # Simplest first\n\n\
+             Pick simplest approach. Iterate to complex only when forced. Over-engineer wastes time.\n\n\
+             Example 2 input:\n\
+             Verify before reporting status. Re-run commands fresh rather than presenting cached output as current truth.\n\n\
+             Example 2 output:\n\
+             ---\n\
+             tension: \"fast answer vs current truth\"\n\
+             refs: []\n\
+             ---\n\n\
+             # Verify before report\n\n\
+             Re-run commands. Fresh output. No present cached as current.\n"
+        }
+        "lesson" => {
+            "Example 1 input:\n\
+             Adding NOT NULL column to a large table without a default crashes concurrent writes. Backfill default first, then add the constraint.\n\n\
+             Example 1 output:\n\
+             ---\n\
+             context: \"schema migration on hot table\"\n\
+             scope: \"Postgres NOT NULL constraint adds\"\n\
+             refs: []\n\
+             ---\n\n\
+             # Backfill before NOT NULL\n\n\
+             Add NOT NULL on hot table -> concurrent write crash. Fix: backfill default first. Add constraint after.\n\n\
+             Example 2 input:\n\
+             Claude API prompt cache uses a 5-minute TTL. Sleeping past 300 seconds breaks the cache. Stay under 270 seconds for active polling.\n\n\
+             Example 2 output:\n\
+             ---\n\
+             context: \"Claude API prompt cache\"\n\
+             scope: \"schedule wakeup intervals\"\n\
+             refs: []\n\
+             ---\n\n\
+             # Prompt cache TTL\n\n\
+             Cache TTL = 5 min. Sleep > 300s -> cache miss. Active poll: stay < 270s.\n"
+        }
+        // preference, idea — no schema; one body-only example shows voice.
+        _ => {
+            "Example 1 input:\n\
+             Default to Sonnet when spawning agents for lightweight tasks (summarization, deduplication, filtering, formatting). Reserve Opus for complex reasoning.\n\n\
+             Example 1 output:\n\
+             # Spawn-agent model default\n\n\
+             Lightweight task (summarize, dedupe, filter, format) -> Sonnet. Complex reason -> Opus.\n"
+        }
+    }
+}
+
+/// Build the LLM prompt — schema + cavespeak voice rules + 2-shot exemplars +
+/// the unit body to convert. Mirrors digest.rs's "single big string" approach.
+pub fn build_prompt(unit: &db::Unit) -> String {
+    let schema = schema_doc(&unit.unit_type);
+    let shots = few_shot(&unit.unit_type);
+    let schema_block = if schema.is_empty() {
+        format!("Type `{}` carries no frontmatter schema. Output body only, lightly formatted, no `---` fences.\n", unit.unit_type)
+    } else {
+        format!(
+            "Schema for type `{}`:\n{schema}",
+            unit.unit_type
+        )
+    };
+
+    format!(
+        "You are simaris frontmatter-migration assistant. Convert the prose unit below into structured form per the simaris frontmatter schema.\n\n\
+         {schema_block}\n\
+         Constraints:\n\
+         - Body content stays verbatim except: whitespace, list format, markdown fix-ups.\n\
+         - NO word add, remove, or reword in body. Preserve every sentence.\n\
+         - Frontmatter scalar values you author. Use cavespeak voice (verb+noun, no the/is/that/a, short words). Shell stays normal.\n\
+         - Output exactly: YAML frontmatter between `---` fences, blank line, body. No preamble, no markdown code fence around the unit, no trailing commentary.\n\n\
+         {shots}\n\
+         Now convert this unit:\n\n\
+         {body}\n",
+        body = unit.content,
+    )
+}
+
+/// Spawn `claude -p --model <m> <prompt>` with a hard timeout. Returns stdout
+/// as a UTF-8 string on success. On timeout the child is killed and we
+/// `wait()` to reap it so we don't leak zombies. Polling at 100 ms keeps the
+/// CPU cost negligible against a multi-second LLM call.
+fn call_claude(prompt: &str) -> Result<String> {
+    let mut child = Command::new("claude")
+        .args(["-p", "--model", &llm_model(), prompt])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("failed to spawn claude")?;
+
+    let stdout_pipe = child.stdout.take().expect("stdout piped");
+    let stderr_pipe = child.stderr.take().expect("stderr piped");
+
+    // Drain pipes in background threads — a full pipe buffer would deadlock
+    // the child before it exits.
+    let stdout_handle = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut buf = Vec::new();
+        let _ = std::io::BufReader::new(stdout_pipe).read_to_end(&mut buf);
+        buf
+    });
+    let stderr_handle = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut buf = Vec::new();
+        let _ = std::io::BufReader::new(stderr_pipe).read_to_end(&mut buf);
+        buf
+    });
+
+    let start = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait().context("failed to poll claude")? {
+            Some(s) => break s,
+            None => {
+                if start.elapsed() > CLAUDE_TIMEOUT {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    bail!("claude timeout after {}s", CLAUDE_TIMEOUT.as_secs());
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+    };
+
+    let out_buf = stdout_handle.join().unwrap_or_default();
+    let err_buf = stderr_handle.join().unwrap_or_default();
+
+    if !status.success() {
+        bail!("claude failed: {}", String::from_utf8_lossy(&err_buf).trim());
+    }
+
+    String::from_utf8(out_buf).context("claude stdout not UTF-8")
+}
+
+/// Strip a leading markdown code fence (` ```yaml`, ` ```` , etc.) if the LLM
+/// wraps its answer despite the prompt. Mirrors the `digest::classify` strip.
+fn strip_code_fence(s: &str) -> &str {
+    let s = s.trim();
+    let s = s
+        .strip_prefix("```yaml")
+        .or_else(|| s.strip_prefix("```markdown"))
+        .or_else(|| s.strip_prefix("```md"))
+        .or_else(|| s.strip_prefix("```"))
+        .map(|x| x.trim_start_matches('\n'))
+        .unwrap_or(s);
+    s.strip_suffix("```").map(|x| x.trim_end()).unwrap_or(s)
+}
+
+/// Compose the editor buffer for `--suggest`: 3-line header + ORIGINAL block
+/// + LLM (or skeleton) draft.
+///
+/// Each original line gets a `# ` prefix so the existing
+/// `strip_header_comments` consumes the whole reference block before
+/// validation runs.
+pub fn compose_suggest_buffer(unit: &db::Unit, draft: &str) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "# simaris rewrite -- id: {}  type: {}\n",
+        unit.id, unit.unit_type
+    ));
+    out.push_str("# Save + quit to apply. Empty file to abort.\n");
+    out.push_str("# Comment lines starting `#` at top stripped automatically.\n");
+    out.push_str("#\n");
+    out.push_str("# ORIGINAL BODY (reference -- strip on save):\n");
+    for line in unit.content.lines() {
+        if line.is_empty() {
+            out.push_str("#\n");
+        } else {
+            out.push_str("# ");
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    // Exactly one blank line separator so strip_header_comments consumes the
+    // header + blank in a single pass and leaves the draft fence at byte 0.
+    out.push('\n');
+    out.push_str(draft);
+    if !draft.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+/// Prose-fallback skeleton for `--suggest` LLM failure: type skeleton on top
+/// of the original body. Mirrors the prose branch of `compose_buffer`.
+fn skeleton_with_body(unit: &db::Unit) -> String {
+    let skel = skeleton_for(&unit.unit_type);
+    if skel.is_empty() {
+        unit.content.clone()
+    } else {
+        format!("{skel}{}", unit.content)
+    }
+}
+
+/// Try LLM draft. On any failure, log to stderr and return the
+/// `skeleton + original body` fallback so the caller still has something
+/// shippable to drop into the editor or print to stdout.
+fn obtain_draft(unit: &db::Unit) -> String {
+    // 1. claude on PATH?
+    if let Err(e) = crate::digest::check_claude() {
+        eprintln!("simaris: LLM failed: {e}, falling back to skeleton");
+        return skeleton_with_body(unit);
+    }
+
+    // 2. invoke claude.
+    let prompt = build_prompt(unit);
+    let raw = match call_claude(&prompt) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("simaris: LLM failed: {e}, falling back to skeleton");
+            return skeleton_with_body(unit);
+        }
+    };
+    let draft = strip_code_fence(&raw).to_string();
+
+    // 3. validate frontmatter shape (only when the type carries a schema).
+    //    A typed unit MUST come back with a frontmatter block — if the LLM
+    //    skipped fences entirely, the schema is lost; refuse + fall back.
+    if !schema_doc(&unit.unit_type).is_empty() {
+        if !draft.starts_with("---\n") {
+            eprintln!(
+                "simaris: LLM output invalid: missing frontmatter fences, falling back to skeleton"
+            );
+            return skeleton_with_body(unit);
+        }
+        if let Err(e) = frontmatter::validate(&draft, &unit.unit_type) {
+            eprintln!("simaris: LLM output invalid: {e}, falling back to skeleton");
+            return skeleton_with_body(unit);
+        }
+    }
+
+    draft
+}
+
+/// Entry point for `simaris rewrite --suggest <id>`. Builds an LLM draft (or
+/// skeleton fallback), gates it through the size guard, and either prints the
+/// draft to stdout (`--dry-run`) or seeds the editor with the suggest buffer
+/// and runs the existing P3a save path.
+pub fn run_suggest(
+    conn: &Connection,
+    id_or_slug: &str,
+    dry_run: bool,
+    force: bool,
+    flow: bool,
+) -> Result<()> {
+    let id = db::resolve_id(conn, id_or_slug)?;
+    let unit = db::get_unit(conn, &id)?;
+
+    let draft = obtain_draft(&unit);
+
+    // Size guard mirrors add/edit. Applies to the draft body the user is
+    // about to commit to (or stdout under --dry-run). Existing tags apply
+    // because rewrite preserves them.
+    size_guard::check_size(&draft, &unit.tags, flow, force)?;
+
+    if dry_run {
+        // Stdout the draft, no editor, no DB write.
+        print!("{draft}");
+        if !draft.ends_with('\n') {
+            println!();
+        }
+        return Ok(());
+    }
+
+    // Editor flow: seed buffer with header + ORIGINAL block + draft, hand off
+    // to P3a's save path (header-strip → no-op check → validate → write).
+    //
+    // No-op semantics differ from P3a: under `--suggest` the seeded draft
+    // already differs from DB content. "User reviewed + saved without further
+    // edit" means *accept the suggestion*, not "skip the write". We compare
+    // the post-edit buffer against DB content (`unit.content`) instead of the
+    // seeded buffer.
+    let buffer = compose_suggest_buffer(&unit, &draft);
+
+    let short = if unit.id.len() >= 8 {
+        &unit.id[..8]
+    } else {
+        &unit.id[..]
+    };
+    let pid = std::process::id();
+    let temp_path = std::env::temp_dir().join(format!("simaris-rewrite-{short}-{pid}.md"));
+    let _guard = TempFile {
+        path: temp_path.clone(),
+    };
+
+    {
+        let mut f = std::fs::File::create(&temp_path)
+            .with_context(|| format!("failed to create temp file at {}", temp_path.display()))?;
+        f.write_all(buffer.as_bytes())
+            .with_context(|| format!("failed to write temp file {}", temp_path.display()))?;
+    }
+
+    invoke_editor(&temp_path)?;
+
+    let edited = std::fs::read_to_string(&temp_path)
+        .with_context(|| format!("failed to read temp file {}", temp_path.display()))?;
+    let stripped = strip_header_comments(&edited);
+    let trimmed = stripped.trim();
+
+    if trimmed.is_empty() {
+        eprintln!("rewrite aborted: empty buffer, unit unchanged");
+        return Ok(());
+    }
+    if buffers_equal(&unit.content, &stripped) {
+        eprintln!("rewrite no-op: no changes, unit unchanged");
+        return Ok(());
+    }
+
+    frontmatter::validate(&stripped, &unit.unit_type)
+        .context("rewrite rejected: invalid frontmatter")?;
+
+    db::update_unit(conn, &id, Some(&stripped), None, None, None)?;
+    eprintln!("rewrote unit {id}");
     Ok(())
 }
 

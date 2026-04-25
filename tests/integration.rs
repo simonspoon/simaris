@@ -2929,3 +2929,239 @@ fn test_rewrite_prose_identical_rewrite_is_noop() {
     let after = env.run_ok(&["show", &id, "--raw"]);
     assert_eq!(before, after, "prose unit unchanged on identical rewrite");
 }
+
+// --- P3b rewrite --suggest (LLM pre-fill) ------------------------------
+
+/// Build a stub `claude` shell script and return the directory containing it.
+/// Caller prepends this dir to `PATH`. The stub: optionally writes a fixed
+/// stdout payload, optionally exits non-zero, optionally records its argv.
+fn claude_stub_dir(env: &TestEnv, name: &str, body: &str) -> std::path::PathBuf {
+    let dir = env.dir.join(format!("stub-{name}"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("claude");
+    std::fs::write(&path, body).unwrap();
+    let mut perms = std::fs::metadata(&path).unwrap().permissions();
+    use std::os::unix::fs::PermissionsExt;
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&path, perms).unwrap();
+    dir
+}
+
+/// Helper: prepend stub dir to PATH so simaris finds the fake `claude` first.
+fn path_with_stub(stub_dir: &std::path::Path) -> String {
+    let existing = std::env::var("PATH").unwrap_or_default();
+    format!("{}:{existing}", stub_dir.display())
+}
+
+#[test]
+fn test_rewrite_suggest_dry_run_happy_stdout() {
+    let env = TestEnv::new("fm-p3b-dry-run-happy");
+    let out = env.run_ok(&["add", "raw aspect prose body", "--type", "aspect"]);
+    let id = extract_id(&out);
+
+    // Stub claude → emits a valid LLM-style rewrite.
+    let payload = "---\nrole: \"test role\"\ndispatches_to: []\nhandles_directly: []\nrefs: []\n---\n\n# Test aspect\n\nrewritten body line\n";
+    let stub_body = format!(
+        "#!/bin/sh\ncat <<'__SIMARIS_FIXTURE_END__'\n{payload}__SIMARIS_FIXTURE_END__\n"
+    );
+    let stub_dir = claude_stub_dir(&env, "happy", &stub_body);
+
+    let output = env.run_with_env(
+        &["rewrite", "--suggest", &id, "--dry-run"],
+        &[("PATH", &path_with_stub(&stub_dir))],
+    );
+    assert!(output.status.success(), "dry-run happy: {output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("role:"), "fm in stdout: {stdout}");
+    assert!(stdout.contains("rewritten body"), "body in stdout: {stdout}");
+
+    // DB unchanged (still prose).
+    let raw = env.run_ok(&["show", &id, "--raw"]);
+    assert!(
+        raw.contains("raw aspect prose body"),
+        "DB body untouched: {raw}"
+    );
+    assert!(!raw.contains("rewritten body"), "DB not written: {raw}");
+}
+
+#[test]
+fn test_rewrite_suggest_dry_run_claude_missing_falls_back() {
+    let env = TestEnv::new("fm-p3b-dry-run-no-claude");
+    let out = env.run_ok(&["add", "fact body for fallback", "--type", "fact"]);
+    let id = extract_id(&out);
+
+    // Empty PATH: `which claude` fails.
+    let output = env.run_with_env(
+        &["rewrite", "--suggest", &id, "--dry-run"],
+        &[("PATH", "/nonexistent")],
+    );
+    assert!(output.status.success(), "fallback exits 0: {output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("LLM failed") && stderr.contains("falling back"),
+        "stderr cites fallback: {stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Skeleton + original body.
+    assert!(stdout.contains("scope:"), "skeleton in stdout: {stdout}");
+    assert!(
+        stdout.contains("fact body for fallback"),
+        "original body in stdout: {stdout}"
+    );
+}
+
+#[test]
+fn test_rewrite_suggest_dry_run_invalid_yaml_falls_back() {
+    let env = TestEnv::new("fm-p3b-dry-run-bad-yaml");
+    let out = env.run_ok(&["add", "principle body to convert", "--type", "principle"]);
+    let id = extract_id(&out);
+
+    // Stub claude → emits invalid YAML.
+    let stub_body = "#!/bin/sh\nprintf '%s\\n' '---' ': : bad yaml :: :' '---' '' 'body'\n";
+    let stub_dir = claude_stub_dir(&env, "bad-yaml", stub_body);
+
+    let output = env.run_with_env(
+        &["rewrite", "--suggest", &id, "--dry-run"],
+        &[("PATH", &path_with_stub(&stub_dir))],
+    );
+    assert!(output.status.success(), "fallback exits 0: {output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("LLM output invalid") && stderr.contains("falling back"),
+        "stderr cites fallback: {stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("tension:"), "skeleton in stdout: {stdout}");
+    assert!(
+        stdout.contains("principle body to convert"),
+        "original body in stdout: {stdout}"
+    );
+}
+
+#[test]
+fn test_rewrite_suggest_dry_run_missing_fences_falls_back() {
+    // LLM emits prose-only (no `---` fences) on a typed unit. Schema would
+    // be silently lost — must refuse + fall back to skeleton.
+    let env = TestEnv::new("fm-p3b-dry-run-no-fences");
+    let out = env.run_ok(&["add", "fact body original", "--type", "fact"]);
+    let id = extract_id(&out);
+
+    let stub_body = "#!/bin/sh\nprintf '%s\\n' '# Heading only' 'body line'\n";
+    let stub_dir = claude_stub_dir(&env, "no-fences", stub_body);
+
+    let output = env.run_with_env(
+        &["rewrite", "--suggest", &id, "--dry-run"],
+        &[("PATH", &path_with_stub(&stub_dir))],
+    );
+    assert!(output.status.success(), "fallback exits 0: {output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("missing frontmatter fences"),
+        "stderr cites fence miss: {stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("scope:"), "skeleton in stdout: {stdout}");
+}
+
+#[test]
+fn test_rewrite_dry_run_without_suggest_errors() {
+    let env = TestEnv::new("fm-p3b-dry-run-bad-flag");
+    let out = env.run_ok(&["add", "some body", "--type", "fact"]);
+    let id = extract_id(&out);
+
+    let output = env.run(&["rewrite", "--dry-run", &id]);
+    assert!(!output.status.success(), "clap requires fail: {output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--suggest")
+            || stderr.contains("required")
+            || stderr.contains("requires"),
+        "stderr cites requires: {stderr}"
+    );
+}
+
+#[test]
+fn test_rewrite_suggest_editor_buffer_has_original_block() {
+    // Capture the editor buffer to confirm the suggest flow seeds:
+    // 3-line header + ORIGINAL block + LLM draft.
+    let env = TestEnv::new("fm-p3b-editor-buffer");
+    let out = env.run_ok(&[
+        "add",
+        "first line of original\nsecond line",
+        "--type",
+        "aspect",
+    ]);
+    let id = extract_id(&out);
+
+    let payload = "---\nrole: \"captured\"\ndispatches_to: []\nhandles_directly: []\nrefs: []\n---\n\n# Captured\n\nLLM draft line\n";
+    let stub_body = format!(
+        "#!/bin/sh\ncat <<'__SIMARIS_FIXTURE_END__'\n{payload}__SIMARIS_FIXTURE_END__\n"
+    );
+    let stub_dir = claude_stub_dir(&env, "editor-cap", &stub_body);
+
+    // Editor copies the seeded buffer to a capture file then exits without
+    // changing the temp file → no-op rewrite.
+    let capture = env.dir.join("captured.md");
+    let editor_cmd = format!("sh -c 'cp \"$1\" \"{}\"' --", capture.display());
+
+    env.run_with_env(
+        &["rewrite", "--suggest", &id],
+        &[
+            ("PATH", &path_with_stub(&stub_dir)),
+            ("SIMARIS_EDITOR", &editor_cmd),
+        ],
+    );
+
+    let seen = std::fs::read_to_string(&capture).unwrap();
+    assert!(
+        seen.contains("# simaris rewrite -- id:"),
+        "header present: {seen}"
+    );
+    assert!(
+        seen.contains("# ORIGINAL BODY"),
+        "ORIGINAL marker: {seen}"
+    );
+    assert!(
+        seen.contains("# first line of original"),
+        "original l1 prefixed: {seen}"
+    );
+    assert!(
+        seen.contains("# second line"),
+        "original l2 prefixed: {seen}"
+    );
+    assert!(seen.contains("LLM draft line"), "LLM draft seeded: {seen}");
+    assert!(
+        seen.contains("role: \"captured\""),
+        "LLM frontmatter seeded: {seen}"
+    );
+}
+
+#[test]
+fn test_rewrite_suggest_editor_save_writes_unit() {
+    // Full editor flow: stub claude → suggest seeds buffer → editor saves →
+    // P3a write path runs. Confirm DB has the LLM-drafted frontmatter.
+    let env = TestEnv::new("fm-p3b-editor-save");
+    let out = env.run_ok(&["add", "prose to upgrade", "--type", "aspect"]);
+    let id = extract_id(&out);
+
+    let payload = "---\nrole: \"upgraded\"\ndispatches_to: []\nhandles_directly: []\nrefs: []\n---\n\n# Upgraded\n\nbody saved\n";
+    let stub_body = format!(
+        "#!/bin/sh\ncat <<'__SIMARIS_FIXTURE_END__'\n{payload}__SIMARIS_FIXTURE_END__\n"
+    );
+    let stub_dir = claude_stub_dir(&env, "editor-save", &stub_body);
+
+    // No-op editor (file already seeded with the LLM draft + header).
+    let editor_cmd = "true";
+
+    env.run_with_env(
+        &["rewrite", "--suggest", &id],
+        &[
+            ("PATH", &path_with_stub(&stub_dir)),
+            ("SIMARIS_EDITOR", editor_cmd),
+        ],
+    );
+
+    let raw = env.run_ok(&["show", &id, "--raw"]);
+    assert!(raw.contains("role: \"upgraded\""), "fm written: {raw}");
+    assert!(raw.contains("body saved"), "body written: {raw}");
+}
