@@ -1125,6 +1125,127 @@ fn test_scan_unstructured_include_superseded_opts_in() {
     assert!(out.contains("NEW_AUDIT"), "current unit also surfaces: {out}");
 }
 
+/// Write `body` to a temp file under `env.dir` and return its path.
+/// Helper for tests that add units with leading `---` frontmatter (clap
+/// rejects leading-dash positional args; `--from-file` bypasses this).
+fn write_body(env: &TestEnv, name: &str, body: &str) -> String {
+    let path = env.dir.join(name);
+    std::fs::write(&path, body).expect("write body fixture");
+    path.to_string_lossy().to_string()
+}
+
+#[test]
+fn test_sync_refs_creates_related_to_on_add() {
+    // F15: frontmatter `refs:` entries materialize as related_to edges.
+    let env = TestEnv::new("sync-refs-add");
+    // Target unit has a slug we can reference.
+    let tgt = env.run_ok(&["add", "rust cli target", "--type", "fact"]);
+    let tgt_id = extract_id(&tgt);
+    env.run_ok(&["slug", "set", "ref-target-slug", &tgt_id]);
+
+    // Add a unit with frontmatter listing the target slug under refs.
+    let body = "---\nscope: linking test\nrefs:\n  - ref-target-slug\n---\n\nbody text";
+    let path = write_body(&env, "refs-add.md", body);
+    let out = env.run_ok(&["add", "--type", "fact", "--from-file", &path]);
+    let src_id = extract_id(&out);
+
+    // show should list an outgoing related_to edge to the target.
+    let shown = env.run_ok(&["show", &src_id]);
+    assert!(
+        shown.contains(&format!("-> {tgt_id} (related_to)")),
+        "expected edge to target: {shown}"
+    );
+}
+
+#[test]
+fn test_sync_refs_idempotent_on_re_edit() {
+    // F15: re-edits must not duplicate edges (INSERT OR IGNORE).
+    let env = TestEnv::new("sync-refs-idempotent");
+    let tgt = env.run_ok(&["add", "target body", "--type", "fact"]);
+    let tgt_id = extract_id(&tgt);
+    env.run_ok(&["slug", "set", "target-s", &tgt_id]);
+
+    let body = "---\nscope: test\nrefs:\n  - target-s\n---\n\nbody";
+    let path = write_body(&env, "refs-idem.md", body);
+    let out = env.run_ok(&["add", "--type", "fact", "--from-file", &path]);
+    let src_id = extract_id(&out);
+
+    // Re-edit same content via --from-file (triggers update_unit path).
+    env.run_ok(&["edit", &src_id, "--from-file", &path, "--source", "second-pass"]);
+
+    // Assert exactly one outgoing related_to edge src→tgt.
+    let json = env.run_ok(&["show", &src_id, "--json"]);
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+    let outgoing = parsed["links"]["outgoing"]
+        .as_array()
+        .expect("outgoing array");
+    let related_to_tgt: Vec<_> = outgoing
+        .iter()
+        .filter(|l| {
+            l["relationship"].as_str() == Some("related_to")
+                && l["to_id"].as_str() == Some(&tgt_id)
+        })
+        .collect();
+    assert_eq!(
+        related_to_tgt.len(),
+        1,
+        "expected exactly one related_to edge after re-edit, got: {related_to_tgt:?}"
+    );
+}
+
+#[test]
+fn test_sync_refs_warns_on_unknown_target() {
+    // F15: unresolvable ref → stderr warn + skip, not fail.
+    let env = TestEnv::new("sync-refs-unknown");
+    let body = "---\nscope: test\nrefs:\n  - ghost-slug-does-not-exist\n---\n\nbody";
+    let path = write_body(&env, "refs-ghost.md", body);
+    let output = env.run(&["add", "--type", "fact", "--from-file", &path]);
+    assert!(output.status.success(), "add must succeed despite bad ref");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("does not resolve") || stderr.contains("ghost-slug"),
+        "expected warn about unresolvable ref, got stderr: {stderr}"
+    );
+}
+
+#[test]
+fn test_sync_refs_accepts_uuid_and_slug_with_hint() {
+    // F15: refs may be bare UUID, slug, or `slug (uuid)` combo (the form
+    // the dogfood-log uses). First-whitespace-token is treated as the
+    // resolvable token.
+    let env = TestEnv::new("sync-refs-formats");
+    let t1 = env.run_ok(&["add", "t1 body", "--type", "fact"]);
+    let t1_id = extract_id(&t1);
+    env.run_ok(&["slug", "set", "t1-slug", &t1_id]);
+
+    let body = format!(
+        "---\nscope: test\nrefs:\n  - t1-slug (019d-hint)\n  - {t1_id}\n---\n\nbody"
+    );
+    let path = write_body(&env, "refs-formats.md", &body);
+    let out = env.run_ok(&["add", "--type", "fact", "--from-file", &path]);
+    let src_id = extract_id(&out);
+
+    let json = env.run_ok(&["show", &src_id, "--json"]);
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+    let outgoing = parsed["links"]["outgoing"]
+        .as_array()
+        .expect("outgoing array");
+    // Both refs point at t1 — expect exactly 1 edge (slug + UUID resolve to
+    // the same target and INSERT OR IGNORE dedups).
+    let hits: Vec<_> = outgoing
+        .iter()
+        .filter(|l| {
+            l["relationship"].as_str() == Some("related_to")
+                && l["to_id"].as_str() == Some(&t1_id)
+        })
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected exactly one edge to t1 from two aliased refs: {hits:?}"
+    );
+}
+
 #[test]
 fn test_scan_unstructured_unchanged_when_flag_absent() {
     // Regression guard — plain `scan` still produces the standard health

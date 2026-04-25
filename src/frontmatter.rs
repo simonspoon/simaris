@@ -83,6 +83,42 @@ pub fn parse(content: &str) -> Parsed<'_> {
     }
 }
 
+/// Pull `refs:` values out of frontmatter as a flat list of strings.
+///
+/// Accepts either a scalar (single ref) or a sequence (multiple). Non-string
+/// entries are skipped. Returns an empty vec when the unit has no
+/// frontmatter, no `refs` key, or an unexpected shape.
+///
+/// Used by the write-path hook that materializes frontmatter refs as
+/// `related_to` graph edges (F15).
+pub fn extract_refs(content: &str) -> Vec<String> {
+    let Some(fm) = parse(content).frontmatter else {
+        return Vec::new();
+    };
+    let Some(map) = fm.as_mapping() else {
+        return Vec::new();
+    };
+    let Some(refs_val) = map.get(Value::String("refs".to_string())) else {
+        return Vec::new();
+    };
+    match refs_val {
+        Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                Vec::new()
+            } else {
+                vec![t.to_string()]
+            }
+        }
+        Value::Sequence(seq) => seq
+            .iter()
+            .filter_map(|v| v.as_str().map(str::trim).filter(|s| !s.is_empty()))
+            .map(str::to_string)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// Cheap predicate — does `content` have a parseable frontmatter block?
 /// Short-circuits on the opening fence before attempting full YAML parse.
 pub fn has_frontmatter(content: &str) -> bool {

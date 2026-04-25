@@ -615,6 +615,8 @@ pub fn add_unit(conn: &Connection, content: &str, unit_type: &str, source: &str)
         "INSERT INTO units (id, content, type, source) VALUES (?1, ?2, ?3, ?4)",
         params![id, content, unit_type, source],
     )?;
+    // F15: materialize frontmatter `refs:` as related_to edges.
+    sync_frontmatter_refs(conn, &id, content)?;
     Ok(id)
 }
 
@@ -766,6 +768,73 @@ pub fn add_link(conn: &Connection, from_id: &str, to_id: &str, relationship: &st
     Ok(())
 }
 
+/// Idempotent version of `add_link` — silently does nothing when the edge
+/// already exists. Used by auto-edge paths (auto_link, sync_frontmatter_refs)
+/// where double-write is expected and not an error. User-initiated
+/// `simaris link` stays strict via `add_link`.
+pub fn ensure_link(
+    conn: &Connection,
+    from_id: &str,
+    to_id: &str,
+    relationship: &str,
+) -> Result<bool> {
+    let changes = conn.execute(
+        "INSERT OR IGNORE INTO links (from_id, to_id, relationship) VALUES (?1, ?2, ?3)",
+        params![from_id, to_id, relationship],
+    )?;
+    Ok(changes > 0)
+}
+
+/// Materialize frontmatter `refs:` entries as `related_to` graph edges on
+/// the given unit (F15).
+///
+/// Each ref is resolved as a UUID or slug. On resolve failure (unknown id
+/// or slug, typo from LLM) we emit a stderr warning and skip — never fail
+/// the enclosing write, to preserve unit integrity. Self-refs are skipped.
+///
+/// Returns `(created, skipped)` counts. `created` counts edges newly
+/// inserted; idempotent re-runs produce zero.
+pub fn sync_frontmatter_refs(
+    conn: &Connection,
+    unit_id: &str,
+    content: &str,
+) -> Result<(usize, usize)> {
+    let refs = crate::frontmatter::extract_refs(content);
+    if refs.is_empty() {
+        return Ok((0, 0));
+    }
+    let mut created = 0;
+    let mut skipped = 0;
+    for entry in refs {
+        // Strip optional `(uuid)` parenthetical hint so slugs with hints
+        // like "verifier (019d93...)" resolve by slug.
+        let token = entry
+            .split_whitespace()
+            .next()
+            .unwrap_or(&entry)
+            .to_string();
+        match resolve_id(conn, &token) {
+            Ok(target) if target == unit_id => {
+                skipped += 1;
+            }
+            Ok(target) => {
+                if ensure_link(conn, unit_id, &target, "related_to")? {
+                    created += 1;
+                } else {
+                    skipped += 1;
+                }
+            }
+            Err(_) => {
+                eprintln!(
+                    "simaris: warning — frontmatter ref `{entry}` does not resolve to a known unit; graph edge skipped"
+                );
+                skipped += 1;
+            }
+        }
+    }
+    Ok((created, skipped))
+}
+
 /// Create `related_to` links between a unit and existing units sharing 2+ tags.
 /// Skips self-links and pairs with any existing link. Returns count of links created.
 pub fn auto_link(conn: &Connection, unit_id: &str) -> Result<usize> {
@@ -829,6 +898,8 @@ pub fn add_unit_full(
         "INSERT INTO units (id, content, type, source, tags) VALUES (?1, ?2, ?3, ?4, ?5)",
         params![id, content, unit_type, source, tags_json],
     )?;
+    // F15: materialize frontmatter `refs:` as related_to edges.
+    sync_frontmatter_refs(conn, &id, content)?;
     Ok(id)
 }
 
@@ -854,6 +925,11 @@ pub fn update_unit(
         "UPDATE units SET content = ?1, type = ?2, source = ?3, tags = ?4, updated = datetime('now') WHERE id = ?5",
         params![new_content, new_type, new_source, new_tags, id],
     )?;
+
+    // F15: materialize frontmatter `refs:` as related_to edges. Runs on
+    // every update (idempotent via INSERT OR IGNORE) so rewrites that only
+    // tweak frontmatter still land fresh edges.
+    sync_frontmatter_refs(conn, id, new_content)?;
 
     get_unit(conn, id)
 }
