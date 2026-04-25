@@ -352,6 +352,12 @@ enum Command {
         /// Narrow `--unstructured` to a single unit type.
         #[arg(long = "type", rename_all = "snake_case")]
         type_filter: Option<UnitType>,
+
+        /// Include units that have an incoming `supersedes` edge. Default
+        /// excludes them — a superseded unit is already obsolete, so
+        /// surfacing it for frontmatter rewrite is wasted pick-quality.
+        #[arg(long)]
+        include_superseded: bool,
     },
 
     /// Manage human-readable slugs pointing at units
@@ -1175,10 +1181,11 @@ fn main() -> Result<()> {
             stale_days,
             unstructured,
             type_filter,
+            include_superseded,
         } => {
             if unstructured {
                 let filter = type_filter.as_ref().map(UnitType::as_str);
-                let rows = db::scan_unstructured(&conn, filter)?;
+                let rows = db::scan_unstructured(&conn, filter, include_superseded)?;
                 display::print_scan_unstructured(&rows, cli.json);
             } else {
                 let result = db::scan(&conn, stale_days)?;

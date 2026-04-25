@@ -1065,22 +1065,40 @@ pub fn scan(conn: &Connection, stale_days: u32) -> Result<ScanResult> {
 pub fn scan_unstructured(
     conn: &Connection,
     type_filter: Option<&str>,
+    include_superseded: bool,
 ) -> Result<Vec<UnstructuredRow>> {
     // Pre-filter: length guard + optional type match + sort by rewrite
     // priority. Mark count comes from a left-join on a grouped subquery so
     // units with zero marks still appear (as 0).
-    let sql = "SELECT u.id, u.content, u.type, u.confidence,
-                      COALESCE(m.n, 0) AS mark_count
-               FROM units u
-               LEFT JOIN (
-                   SELECT unit_id, COUNT(*) AS n FROM marks GROUP BY unit_id
-               ) m ON m.unit_id = u.id
-               WHERE length(u.content) >= 200
-                 AND (?1 IS NULL OR u.type = ?1)
-               ORDER BY (u.type = 'aspect') DESC,
-                        mark_count DESC,
-                        u.confidence DESC,
-                        u.updated DESC";
+    //
+    // Units with an incoming `supersedes` edge are already obsolete — the
+    // superseding unit carries the current content. Default excludes them
+    // from rewrite-priority ranking; `--include-superseded` opts back in
+    // for debugging or completeness audits (F14).
+    let supersede_clause = if include_superseded {
+        ""
+    } else {
+        "AND NOT EXISTS (
+             SELECT 1 FROM links l
+             WHERE l.to_id = u.id AND l.relationship = 'supersedes'
+         )"
+    };
+    let sql = format!(
+        "SELECT u.id, u.content, u.type, u.confidence,
+                COALESCE(m.n, 0) AS mark_count
+         FROM units u
+         LEFT JOIN (
+             SELECT unit_id, COUNT(*) AS n FROM marks GROUP BY unit_id
+         ) m ON m.unit_id = u.id
+         WHERE length(u.content) >= 200
+           AND (?1 IS NULL OR u.type = ?1)
+           {supersede_clause}
+         ORDER BY (u.type = 'aspect') DESC,
+                  mark_count DESC,
+                  u.confidence DESC,
+                  u.updated DESC"
+    );
+    let sql = sql.as_str();
     let mut stmt = conn.prepare(sql)?;
 
     let rows = stmt

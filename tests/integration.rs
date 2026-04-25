@@ -1088,6 +1088,44 @@ fn test_scan_unstructured_json_shape() {
 }
 
 #[test]
+fn test_scan_unstructured_excludes_superseded_by_default() {
+    // F14: units with an incoming `supersedes` edge are already obsolete;
+    // scan --unstructured must drop them from rewrite-priority ranking.
+    let env = TestEnv::new("scan-unstruct-f14-default");
+    let old_out = env.run_ok(&["add", &long_prose("OLD_VERSION"), "--type", "fact"]);
+    let old_id = extract_id(&old_out);
+    let new_out = env.run_ok(&["add", &long_prose("NEW_VERSION"), "--type", "fact"]);
+    let new_id = extract_id(&new_out);
+    // new supersedes old
+    env.run_ok(&["link", &new_id, &old_id, "--rel", "supersedes"]);
+
+    let out = env.run_ok(&["scan", "--unstructured"]);
+    assert!(
+        !out.contains("OLD_VERSION"),
+        "superseded unit must be hidden by default: {out}"
+    );
+    assert!(out.contains("NEW_VERSION"), "current unit surfaces: {out}");
+}
+
+#[test]
+fn test_scan_unstructured_include_superseded_opts_in() {
+    // F14: --include-superseded brings the obsolete units back for audits.
+    let env = TestEnv::new("scan-unstruct-f14-optin");
+    let old_out = env.run_ok(&["add", &long_prose("OLD_AUDIT"), "--type", "fact"]);
+    let old_id = extract_id(&old_out);
+    let new_out = env.run_ok(&["add", &long_prose("NEW_AUDIT"), "--type", "fact"]);
+    let new_id = extract_id(&new_out);
+    env.run_ok(&["link", &new_id, &old_id, "--rel", "supersedes"]);
+
+    let out = env.run_ok(&["scan", "--unstructured", "--include-superseded"]);
+    assert!(
+        out.contains("OLD_AUDIT"),
+        "superseded unit surfaces with opt-in: {out}"
+    );
+    assert!(out.contains("NEW_AUDIT"), "current unit also surfaces: {out}");
+}
+
+#[test]
 fn test_scan_unstructured_unchanged_when_flag_absent() {
     // Regression guard — plain `scan` still produces the standard health
     // report, not the unstructured list, even when unstructured candidates
