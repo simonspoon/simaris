@@ -31,7 +31,10 @@ use crate::frontmatter;
 use crate::size_guard;
 
 /// LLM call timeout — claude is short-lived but unpredictable when API is hot.
-const CLAUDE_TIMEOUT: Duration = Duration::from_secs(60);
+/// Bumped from 60s to 300s after batch-11 fallback rate hit ~30% on large
+/// aspect bodies. Fallback skeleton still applies on timeout, so this only
+/// trades wall-clock per failure for higher LLM-success ratio.
+const CLAUDE_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// RAII cleanup guard for the rewrite temp file.
 struct TempFile {
