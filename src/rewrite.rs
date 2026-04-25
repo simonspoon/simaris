@@ -447,6 +447,7 @@ pub fn build_prompt(unit: &db::Unit) -> String {
          - Body content stays verbatim except: whitespace, list format, markdown fix-ups.\n\
          - NO word add, remove, or reword in body. Preserve every sentence.\n\
          - Frontmatter scalar values you author. Use cavespeak voice (verb+noun, no the/is/that/a, short words). Shell stays normal.\n\
+         - `refs:` MUST be derived only from text that appears verbatim in the body — slugs, UUIDs, or `related to <slug>` phrasing. If the body cites no refs, emit `refs: []`. Do NOT supply refs from your knowledge of the corpus, sibling units, or topic association.\n\
          - Output exactly: YAML frontmatter between `---` fences, blank line, body. No preamble, no markdown code fence around the unit, no trailing commentary.\n\n\
          {shots}\n\
          Now convert this unit:\n\n\
@@ -460,8 +461,22 @@ pub fn build_prompt(unit: &db::Unit) -> String {
 /// `wait()` to reap it so we don't leak zombies. Polling at 100 ms keeps the
 /// CPU cost negligible against a multi-second LLM call.
 fn call_claude(prompt: &str) -> Result<String> {
+    // F17: pass `--settings '{"hooks":{}}'` to disable user-level hooks
+    // for this child process. Without this, the user's UserPromptSubmit
+    // hook (e.g. simaris-procedures.sh) injects unit ID lists into the
+    // LLM's context and the model uses them as plausible-looking refs
+    // in its output — which my F15 hook then materializes as edges.
+    // Empty hook map overrides user-level hooks without touching auth
+    // or other settings (unlike `--bare`, which breaks OAuth).
     let mut child = Command::new("claude")
-        .args(["-p", "--model", &llm_model(), prompt])
+        .args([
+            "-p",
+            "--model",
+            &llm_model(),
+            "--settings",
+            r#"{"hooks":{}}"#,
+            prompt,
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
