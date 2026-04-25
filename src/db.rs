@@ -1142,6 +1142,7 @@ pub fn scan_unstructured(
     conn: &Connection,
     type_filter: Option<&str>,
     include_superseded: bool,
+    include_unschemaed: bool,
 ) -> Result<Vec<UnstructuredRow>> {
     // Pre-filter: length guard + optional type match + sort by rewrite
     // priority. Mark count comes from a left-join on a grouped subquery so
@@ -1159,6 +1160,17 @@ pub fn scan_unstructured(
              WHERE l.to_id = u.id AND l.relationship = 'supersedes'
          )"
     };
+    // `idea` and `preference` carry no frontmatter schema (per
+    // `rewrite::skeleton_for`), so `rewrite --suggest` emits body-only and
+    // the unit can never satisfy the `has_frontmatter` drop signal that
+    // pulls it out of `--unstructured`. Default excludes them so the scan
+    // measures real migration progress; `--include-unschemaed` opts back
+    // in for raw audits (F18).
+    let unschemaed_clause = if include_unschemaed {
+        ""
+    } else {
+        "AND u.type NOT IN ('idea','preference')"
+    };
     let sql = format!(
         "SELECT u.id, u.content, u.type, u.confidence,
                 COALESCE(m.n, 0) AS mark_count
@@ -1169,6 +1181,7 @@ pub fn scan_unstructured(
          WHERE length(u.content) >= 200
            AND (?1 IS NULL OR u.type = ?1)
            {supersede_clause}
+           {unschemaed_clause}
          ORDER BY (u.type = 'aspect') DESC,
                   mark_count DESC,
                   u.confidence DESC,

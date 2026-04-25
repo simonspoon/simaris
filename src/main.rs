@@ -358,6 +358,13 @@ enum Command {
         /// surfacing it for frontmatter rewrite is wasted pick-quality.
         #[arg(long)]
         include_superseded: bool,
+
+        /// Include `idea` and `preference` units. Default excludes them —
+        /// these types carry no frontmatter schema, so `rewrite --suggest`
+        /// emits body-only and the unit cannot satisfy the `has_frontmatter`
+        /// drop signal (F18). Opt back in to audit raw schema-less units.
+        #[arg(long)]
+        include_unschemaed: bool,
     },
 
     /// Manage human-readable slugs pointing at units
@@ -1182,10 +1189,16 @@ fn main() -> Result<()> {
             unstructured,
             type_filter,
             include_superseded,
+            include_unschemaed,
         } => {
             if unstructured {
                 let filter = type_filter.as_ref().map(UnitType::as_str);
-                let rows = db::scan_unstructured(&conn, filter, include_superseded)?;
+                let rows = db::scan_unstructured(
+                    &conn,
+                    filter,
+                    include_superseded,
+                    include_unschemaed,
+                )?;
                 display::print_scan_unstructured(&rows, cli.json);
             } else {
                 let result = db::scan(&conn, stale_days)?;

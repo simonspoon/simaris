@@ -1,6 +1,6 @@
 [package]
 name = "simaris"
-version = "0.3.5"
+version = "0.3.6"
 edition = "2024"
 description = "Knowledge management CLI with SQLite, FTS5, and graph-based linking"
 license = "MIT"
