@@ -432,12 +432,12 @@ pub fn build_prompt(unit: &db::Unit) -> String {
     let schema = schema_doc(&unit.unit_type);
     let shots = few_shot(&unit.unit_type);
     let schema_block = if schema.is_empty() {
-        format!("Type `{}` carries no frontmatter schema. Output body only, lightly formatted, no `---` fences.\n", unit.unit_type)
-    } else {
         format!(
-            "Schema for type `{}`:\n{schema}",
+            "Type `{}` carries no frontmatter schema. Output body only, lightly formatted, no `---` fences.\n",
             unit.unit_type
         )
+    } else {
+        format!("Schema for type `{}`:\n{schema}", unit.unit_type)
     };
 
     format!(
@@ -504,7 +504,10 @@ fn call_claude(prompt: &str) -> Result<String> {
     let err_buf = stderr_handle.join().unwrap_or_default();
 
     if !status.success() {
-        bail!("claude failed: {}", String::from_utf8_lossy(&err_buf).trim());
+        bail!(
+            "claude failed: {}",
+            String::from_utf8_lossy(&err_buf).trim()
+        );
     }
 
     String::from_utf8(out_buf).context("claude stdout not UTF-8")

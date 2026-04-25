@@ -1122,7 +1122,10 @@ fn test_scan_unstructured_include_superseded_opts_in() {
         out.contains("OLD_AUDIT"),
         "superseded unit surfaces with opt-in: {out}"
     );
-    assert!(out.contains("NEW_AUDIT"), "current unit also surfaces: {out}");
+    assert!(
+        out.contains("NEW_AUDIT"),
+        "current unit also surfaces: {out}"
+    );
 }
 
 /// Write `body` to a temp file under `env.dir` and return its path.
@@ -1171,7 +1174,14 @@ fn test_sync_refs_idempotent_on_re_edit() {
     let src_id = extract_id(&out);
 
     // Re-edit same content via --from-file (triggers update_unit path).
-    env.run_ok(&["edit", &src_id, "--from-file", &path, "--source", "second-pass"]);
+    env.run_ok(&[
+        "edit",
+        &src_id,
+        "--from-file",
+        &path,
+        "--source",
+        "second-pass",
+    ]);
 
     // Assert exactly one outgoing related_to edge src→tgt.
     let json = env.run_ok(&["show", &src_id, "--json"]);
@@ -1182,8 +1192,7 @@ fn test_sync_refs_idempotent_on_re_edit() {
     let related_to_tgt: Vec<_> = outgoing
         .iter()
         .filter(|l| {
-            l["relationship"].as_str() == Some("related_to")
-                && l["to_id"].as_str() == Some(&tgt_id)
+            l["relationship"].as_str() == Some("related_to") && l["to_id"].as_str() == Some(&tgt_id)
         })
         .collect();
     assert_eq!(
@@ -1218,9 +1227,8 @@ fn test_sync_refs_accepts_uuid_and_slug_with_hint() {
     let t1_id = extract_id(&t1);
     env.run_ok(&["slug", "set", "t1-slug", &t1_id]);
 
-    let body = format!(
-        "---\nscope: test\nrefs:\n  - t1-slug (019d-hint)\n  - {t1_id}\n---\n\nbody"
-    );
+    let body =
+        format!("---\nscope: test\nrefs:\n  - t1-slug (019d-hint)\n  - {t1_id}\n---\n\nbody");
     let path = write_body(&env, "refs-formats.md", &body);
     let out = env.run_ok(&["add", "--type", "fact", "--from-file", &path]);
     let src_id = extract_id(&out);
@@ -1235,8 +1243,7 @@ fn test_sync_refs_accepts_uuid_and_slug_with_hint() {
     let hits: Vec<_> = outgoing
         .iter()
         .filter(|l| {
-            l["relationship"].as_str() == Some("related_to")
-                && l["to_id"].as_str() == Some(&t1_id)
+            l["relationship"].as_str() == Some("related_to") && l["to_id"].as_str() == Some(&t1_id)
         })
         .collect();
     assert_eq!(
@@ -3120,9 +3127,8 @@ fn test_rewrite_suggest_dry_run_happy_stdout() {
 
     // Stub claude → emits a valid LLM-style rewrite.
     let payload = "---\nrole: \"test role\"\ndispatches_to: []\nhandles_directly: []\nrefs: []\n---\n\n# Test aspect\n\nrewritten body line\n";
-    let stub_body = format!(
-        "#!/bin/sh\ncat <<'__SIMARIS_FIXTURE_END__'\n{payload}__SIMARIS_FIXTURE_END__\n"
-    );
+    let stub_body =
+        format!("#!/bin/sh\ncat <<'__SIMARIS_FIXTURE_END__'\n{payload}__SIMARIS_FIXTURE_END__\n");
     let stub_dir = claude_stub_dir(&env, "happy", &stub_body);
 
     let output = env.run_with_env(
@@ -3132,7 +3138,10 @@ fn test_rewrite_suggest_dry_run_happy_stdout() {
     assert!(output.status.success(), "dry-run happy: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("role:"), "fm in stdout: {stdout}");
-    assert!(stdout.contains("rewritten body"), "body in stdout: {stdout}");
+    assert!(
+        stdout.contains("rewritten body"),
+        "body in stdout: {stdout}"
+    );
 
     // DB unchanged (still prose).
     let raw = env.run_ok(&["show", &id, "--raw"]);
@@ -3232,9 +3241,7 @@ fn test_rewrite_dry_run_without_suggest_errors() {
     assert!(!output.status.success(), "clap requires fail: {output:?}");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("--suggest")
-            || stderr.contains("required")
-            || stderr.contains("requires"),
+        stderr.contains("--suggest") || stderr.contains("required") || stderr.contains("requires"),
         "stderr cites requires: {stderr}"
     );
 }
@@ -3253,9 +3260,8 @@ fn test_rewrite_suggest_editor_buffer_has_original_block() {
     let id = extract_id(&out);
 
     let payload = "---\nrole: \"captured\"\ndispatches_to: []\nhandles_directly: []\nrefs: []\n---\n\n# Captured\n\nLLM draft line\n";
-    let stub_body = format!(
-        "#!/bin/sh\ncat <<'__SIMARIS_FIXTURE_END__'\n{payload}__SIMARIS_FIXTURE_END__\n"
-    );
+    let stub_body =
+        format!("#!/bin/sh\ncat <<'__SIMARIS_FIXTURE_END__'\n{payload}__SIMARIS_FIXTURE_END__\n");
     let stub_dir = claude_stub_dir(&env, "editor-cap", &stub_body);
 
     // Editor copies the seeded buffer to a capture file then exits without
@@ -3276,10 +3282,7 @@ fn test_rewrite_suggest_editor_buffer_has_original_block() {
         seen.contains("# simaris rewrite -- id:"),
         "header present: {seen}"
     );
-    assert!(
-        seen.contains("# ORIGINAL BODY"),
-        "ORIGINAL marker: {seen}"
-    );
+    assert!(seen.contains("# ORIGINAL BODY"), "ORIGINAL marker: {seen}");
     assert!(
         seen.contains("# first line of original"),
         "original l1 prefixed: {seen}"
@@ -3304,9 +3307,8 @@ fn test_rewrite_suggest_editor_save_writes_unit() {
     let id = extract_id(&out);
 
     let payload = "---\nrole: \"upgraded\"\ndispatches_to: []\nhandles_directly: []\nrefs: []\n---\n\n# Upgraded\n\nbody saved\n";
-    let stub_body = format!(
-        "#!/bin/sh\ncat <<'__SIMARIS_FIXTURE_END__'\n{payload}__SIMARIS_FIXTURE_END__\n"
-    );
+    let stub_body =
+        format!("#!/bin/sh\ncat <<'__SIMARIS_FIXTURE_END__'\n{payload}__SIMARIS_FIXTURE_END__\n");
     let stub_dir = claude_stub_dir(&env, "editor-save", &stub_body);
 
     // No-op editor (file already seeded with the LLM draft + header).
