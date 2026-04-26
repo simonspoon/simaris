@@ -427,27 +427,80 @@ Return ONLY JSON (no markdown, no code fences):
 {{"relevant_ids": ["id1", "id2"]}}"#
     );
 
+    // --output-format json wraps the model reply in a structured envelope
+    // {"result": "...", ...}. The envelope itself is always well-formed JSON,
+    // which makes parsing robust against any preamble the model might emit.
+    // The model's reply lives in `.result` and may still arrive with code
+    // fences or surrounding prose — we extract the JSON object below.
+    //
+    // We deliberately do NOT pass --bare here. --bare disables OAuth/keychain
+    // auth, which is how this binary's user authenticates. Falling back to
+    // ANTHROPIC_API_KEY would silently start charging real API spend.
     let output = match Command::new("claude")
-        .args(["-p", "--model", "haiku", &prompt])
+        .args([
+            "-p",
+            "--output-format",
+            "json",
+            "--model",
+            "haiku",
+            &prompt,
+        ])
         .output()
     {
         Ok(o) => o,
-        Err(_) => return (gathered.iter().collect(), true),
+        Err(e) => {
+            eprintln!("[ask] filter_relevance fallback: subprocess spawn failed: {e}");
+            return (gathered.iter().collect(), true);
+        }
     };
 
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!(
+            "[ask] filter_relevance fallback: claude exited {} stderr={}",
+            output.status,
+            stderr.trim()
+        );
         return (gathered.iter().collect(), true);
     }
 
-    let response = String::from_utf8_lossy(&output.stdout);
-    let response = response.trim();
+    let envelope_raw = String::from_utf8_lossy(&output.stdout);
 
-    // Strip markdown code fences if present
-    let json_str = response
+    // Outer envelope: {"result": "<inner content>", ...}. Inner content is the
+    // model's reply — should be JSON {"relevant_ids": [...]} but tolerate fence
+    // wrappers in case the model adds them.
+    #[derive(Deserialize)]
+    struct Envelope {
+        result: String,
+    }
+
+    let envelope: Envelope = match serde_json::from_str(envelope_raw.trim()) {
+        Ok(e) => e,
+        Err(e) => {
+            let preview: String = envelope_raw.chars().take(200).collect();
+            eprintln!(
+                "[ask] filter_relevance fallback: envelope parse failed ({e}); stdout preview: {preview}"
+            );
+            return (gathered.iter().collect(), true);
+        }
+    };
+
+    let inner = envelope.result.trim();
+
+    // The model's reply may include code fences or chat-prose around the JSON.
+    // Step 1: drop common fence wrappers. Step 2: locate the first `{` and the
+    // last `}` and extract that span — survives "Here's the JSON: {...}\nDone"
+    // shaped responses without needing a real parser.
+    let defenced = inner
         .strip_prefix("```json")
-        .or_else(|| response.strip_prefix("```"))
+        .or_else(|| inner.strip_prefix("```"))
         .map(|s| s.strip_suffix("```").unwrap_or(s).trim())
-        .unwrap_or(response);
+        .unwrap_or(inner);
+
+    let json_str = match (defenced.find('{'), defenced.rfind('}')) {
+        (Some(lo), Some(hi)) if hi >= lo => &defenced[lo..=hi],
+        _ => defenced,
+    };
 
     #[derive(Deserialize)]
     struct FilterResponse {
@@ -456,7 +509,13 @@ Return ONLY JSON (no markdown, no code fences):
 
     let parsed: FilterResponse = match serde_json::from_str(json_str) {
         Ok(r) => r,
-        Err(_) => return (gathered.iter().collect(), true),
+        Err(e) => {
+            let preview: String = json_str.chars().take(200).collect();
+            eprintln!(
+                "[ask] filter_relevance fallback: inner parse failed ({e}); inner preview: {preview}"
+            );
+            return (gathered.iter().collect(), true);
+        }
     };
 
     let relevant_set: std::collections::HashSet<String> = parsed.relevant_ids.into_iter().collect();
@@ -468,6 +527,10 @@ Return ONLY JSON (no markdown, no code fences):
 
     // If filter returned nothing relevant, fall back to all
     if filtered.is_empty() {
+        eprintln!(
+            "[ask] filter_relevance fallback: empty relevant_ids (model returned no matches for {} units)",
+            gathered.len()
+        );
         return (gathered.iter().collect(), true);
     }
 
