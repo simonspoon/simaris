@@ -340,6 +340,8 @@ pub fn print_prime(result: &PrimeResult, json: bool) {
         return;
     }
 
+    let mut any_directory = false;
+
     for (i, section) in result.sections.iter().enumerate() {
         if i > 0 {
             println!();
@@ -347,8 +349,52 @@ pub fn print_prime(result: &PrimeResult, json: bool) {
         println!("# {}", section.label);
         for unit in &section.units {
             println!();
-            println!("{}", unit.content);
+            if unit.full {
+                println!("{}", unit.content);
+            } else {
+                any_directory = true;
+                let preview = first_line_preview(&unit.content);
+                let tag_part = if unit.tags.is_empty() {
+                    String::new()
+                } else {
+                    format!(" [{}]", unit.tags.join(", "))
+                };
+                println!("- [{}] {}{}", unit.id, preview, tag_part);
+            }
         }
+    }
+
+    if any_directory {
+        println!();
+        println!("# Loading");
+        println!();
+        println!("Directory entries above are stubs. Load any full body with: `simaris show <id>`");
+    }
+}
+
+/// First non-empty line of a unit's content body (frontmatter skipped),
+/// stripped of leading markdown header marks and trimmed to a max width.
+/// Used for LOD-1 directory previews.
+fn first_line_preview(content: &str) -> String {
+    let body = frontmatter::parse(content).body;
+    let raw = body
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("")
+        .trim_start_matches('#')
+        .trim();
+
+    const MAX: usize = 80;
+    if raw.chars().count() > MAX {
+        let end = raw
+            .char_indices()
+            .nth(MAX)
+            .map(|(i, _)| i)
+            .unwrap_or(raw.len());
+        format!("{}…", &raw[..end])
+    } else {
+        raw.to_string()
     }
 }
 

@@ -210,13 +210,21 @@ enum Command {
     },
 
     /// Assemble a mindset from the knowledge graph for a task
+    ///
+    /// Returns a level-of-detail-1 (LOD-1) primer: a directory of relevant
+    /// units rather than a content dump. Aspects named via `--primary` are
+    /// expanded inline (use this when dispatching as a specific aspect, e.g.
+    /// `simaris prime --primary lotus "..."`). All other units appear as
+    /// directory entries — load full content via `simaris show <id>`.
     Prime {
         /// Task description
         task: String,
 
-        /// Filter strategy for narrowing gathered units
-        #[arg(long, default_value = "standard")]
-        filter: PrimeFilter,
+        /// Aspect ID or slug to expand inline as a full body. Repeatable for
+        /// cross-cutting tasks (e.g. `--primary lotus --primary code-review`).
+        /// Unknown entries are silently ignored.
+        #[arg(long = "primary")]
+        primary: Vec<String>,
     },
 
     /// Ask the knowledge store a question
@@ -506,28 +514,6 @@ impl Relationship {
             Relationship::Supersedes => "supersedes",
             Relationship::SourcedFrom => "sourced_from",
         }
-    }
-}
-
-#[derive(Clone, ValueEnum)]
-#[value(rename_all = "kebab-case")]
-enum PrimeFilter {
-    None,
-    Standard,
-    TagVote,
-}
-
-impl PrimeFilter {
-    fn to_strategy(&self) -> ask::FilterStrategy {
-        match self {
-            PrimeFilter::None => ask::FilterStrategy::None,
-            PrimeFilter::Standard => ask::FilterStrategy::Standard,
-            PrimeFilter::TagVote => ask::FilterStrategy::TagVote,
-        }
-    }
-
-    fn needs_claude(&self) -> bool {
-        matches!(self, PrimeFilter::Standard)
     }
 }
 
@@ -1025,11 +1011,8 @@ fn main() -> Result<()> {
                 success, total_units, failed
             );
         }
-        Command::Prime { task, filter } => {
-            if filter.needs_claude() {
-                digest::check_claude()?;
-            }
-            let result = ask::prime(&conn, &task, filter.to_strategy(), cli.debug)?;
+        Command::Prime { task, primary } => {
+            let result = ask::prime(&conn, &task, &primary, cli.debug)?;
             display::print_prime(&result, cli.json);
         }
         Command::Ask {
@@ -1193,12 +1176,8 @@ fn main() -> Result<()> {
         } => {
             if unstructured {
                 let filter = type_filter.as_ref().map(UnitType::as_str);
-                let rows = db::scan_unstructured(
-                    &conn,
-                    filter,
-                    include_superseded,
-                    include_unschemaed,
-                )?;
+                let rows =
+                    db::scan_unstructured(&conn, filter, include_superseded, include_unschemaed)?;
                 display::print_scan_unstructured(&rows, cli.json);
             } else {
                 let result = db::scan(&conn, stale_days)?;

@@ -5,13 +5,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
-#[derive(Debug, Clone, Copy)]
-pub enum FilterStrategy {
-    None,
-    Standard,
-    TagVote,
-}
-
 #[derive(Debug, Serialize)]
 pub struct PrimeResult {
     pub task: String,
@@ -30,6 +23,9 @@ pub struct PrimeUnit {
     pub id: String,
     pub content: String,
     pub tags: Vec<String>,
+    /// When false, the renderer emits a directory entry (id + first-line + tags)
+    /// instead of the full content. The unit_count remains the same regardless.
+    pub full: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -76,8 +72,6 @@ struct ContextUnit {
     links_from: Vec<LinkInfo>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     is_direct_match: bool,
-    #[serde(skip)]
-    rank: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -305,7 +299,7 @@ fn search_and_expand(
 
     let mut units_by_id: HashMap<String, ContextUnit> = HashMap::new();
 
-    for (rank, unit) in matches.iter().enumerate() {
+    for unit in matches.iter() {
         let linked = db::get_linked_unit_ids(conn, &unit.id)?;
         let mut links_to = vec![];
         let mut links_from = vec![];
@@ -340,7 +334,6 @@ fn search_and_expand(
                 links_to,
                 links_from,
                 is_direct_match: true,
-                rank,
             },
         );
 
@@ -382,7 +375,6 @@ fn search_and_expand(
                         links_to: lt,
                         links_from: lf,
                         is_direct_match: false,
-                        rank: usize::MAX,
                     },
                 );
             }
@@ -406,70 +398,10 @@ fn search_and_expand(
 }
 
 /// Single Haiku call to filter gathered units by relevance to the query.
-/// Returns (filtered_units, fallback_used). On any failure, returns all units unfiltered.
+/// Returns (filtered_units, fallback_used). On any failure, returns all
+/// units unfiltered (fallback=true). Used by `ask`. `prime` no longer calls
+/// this — see prime() docs for why an LOD-1 directory removed the need.
 fn filter_relevance<'a>(query: &str, gathered: &'a [ContextUnit]) -> (Vec<&'a ContextUnit>, bool) {
-    filter_with_strategy(query, gathered, FilterStrategy::Standard)
-}
-
-/// Deterministic filter: identify "theme tags" from the top FTS matches by rank,
-/// then keep only units containing at least one theme tag. No LLM call.
-fn filter_tag_vote(gathered: &[ContextUnit]) -> (Vec<&ContextUnit>, bool) {
-    const TOP_K: usize = 5;
-
-    let mut direct: Vec<&ContextUnit> = gathered.iter().filter(|u| u.is_direct_match).collect();
-    if direct.is_empty() {
-        return (gathered.iter().collect(), false);
-    }
-    direct.sort_by_key(|u| u.rank);
-
-    let anchor: Vec<&&ContextUnit> = direct.iter().take(TOP_K).collect();
-
-    // Count tag frequency across the top-K anchor units
-    let mut tag_counts: HashMap<String, usize> = HashMap::new();
-    for u in &anchor {
-        for tag in &u.tags {
-            *tag_counts.entry(tag.clone()).or_insert(0) += 1;
-        }
-    }
-
-    // Theme tags: the single highest frequency among the anchors.
-    // Ties are broken by including all top-frequency tags.
-    let max_count = tag_counts.values().copied().max().unwrap_or(0);
-    if max_count < 2 {
-        // Too little signal — keep all direct matches
-        return (direct, true);
-    }
-    let theme_tags: HashSet<String> = tag_counts
-        .into_iter()
-        .filter(|(_, count)| *count == max_count)
-        .map(|(tag, _)| tag)
-        .collect();
-
-    let filtered: Vec<&ContextUnit> = gathered
-        .iter()
-        .filter(|u| u.tags.iter().any(|t| theme_tags.contains(t)))
-        .collect();
-
-    if filtered.is_empty() {
-        return (direct, true);
-    }
-
-    (filtered, false)
-}
-
-fn filter_with_strategy<'a>(
-    query: &str,
-    gathered: &'a [ContextUnit],
-    strategy: FilterStrategy,
-) -> (Vec<&'a ContextUnit>, bool) {
-    if matches!(strategy, FilterStrategy::None) {
-        return (gathered.iter().collect(), false);
-    }
-
-    if matches!(strategy, FilterStrategy::TagVote) {
-        return filter_tag_vote(gathered);
-    }
-
     let mut summaries = String::new();
     for unit in gathered {
         let preview: String = unit.content.chars().take(150).collect();
@@ -484,10 +416,8 @@ fn filter_with_strategy<'a>(
         ));
     }
 
-    let prompt = match strategy {
-        FilterStrategy::None | FilterStrategy::TagVote => unreachable!(),
-        FilterStrategy::Standard => format!(
-            r#"You are a relevance filter. Given a query and a list of knowledge units, return ONLY the IDs of units relevant to the query.
+    let prompt = format!(
+        r#"You are a relevance filter. Given a query and a list of knowledge units, return ONLY the IDs of units relevant to the query.
 
 Query: {query}
 
@@ -495,8 +425,7 @@ Units:
 {summaries}
 Return ONLY JSON (no markdown, no code fences):
 {{"relevant_ids": ["id1", "id2"]}}"#
-        ),
-    };
+    );
 
     let output = match Command::new("claude")
         .args(["-p", "--model", "haiku", &prompt])
@@ -597,19 +526,36 @@ Knowledge units:
 }
 
 /// Assemble a mindset from the knowledge graph for a given task.
-/// Searches for relevant units, filters via the given strategy, and groups by type.
+///
+/// Returns a level-of-detail-1 (LOD-1) primer: a directory of relevant units
+/// rather than a content dump. Per-section policy:
+///
+/// - Aspects:     full body if id (or any of its slugs) is in `primary`,
+///   otherwise directory entry (id + first line + tags).
+/// - Procedures:  always directory entry.
+/// - Principles:  always directory entry.
+/// - Preferences: always full (small, structural).
+/// - Context:     always directory entry.
+///
+/// Callers that need a full unit body should run `simaris show <id>` after
+/// reading the directory. The previous LLM relevance filter is intentionally
+/// not used here — directories are cheap; spraying full bodies was the bug.
+///
+/// The `primary` argument accepts unit ids OR slugs; both are resolved against
+/// the slugs table. Unknown entries are silently ignored (caller is free to
+/// pass speculative slugs).
 pub fn prime(
     conn: &Connection,
     task: &str,
-    strategy: FilterStrategy,
+    primary: &[String],
     debug: bool,
 ) -> Result<PrimeResult> {
     let gather = search_and_expand(conn, &[task.to_string()], None, 40)?;
 
     if debug {
         eprintln!(
-            "prime: {} direct, {} expanded, strategy={:?}",
-            gather.direct_count, gather.expansion_count, strategy
+            "prime: {} direct, {} expanded",
+            gather.direct_count, gather.expansion_count
         );
     }
 
@@ -621,13 +567,81 @@ pub fn prime(
         });
     }
 
-    let (filtered, fallback) = filter_with_strategy(task, &gather.units, strategy);
-
-    if debug {
-        eprintln!("prime: {} kept (fallback={})", filtered.len(), fallback);
+    // Resolve `primary` (ids and/or slugs) into a HashSet of canonical unit ids.
+    let mut primary_ids: HashSet<String> = HashSet::new();
+    for needle in primary {
+        match db::resolve_id(conn, needle) {
+            Ok(id) => {
+                primary_ids.insert(id);
+            }
+            Err(_) => {
+                if debug {
+                    eprintln!("prime: --primary '{needle}' not found, ignoring");
+                }
+            }
+        }
     }
 
-    // Group by type into ordered sections
+    if debug {
+        eprintln!(
+            "prime: {} primary id(s) resolved from {} requested",
+            primary_ids.len(),
+            primary.len()
+        );
+    }
+
+    // Inject any primary aspects that the search/expand step missed. Callers
+    // pass --primary to get a specific aspect's body inline; if that aspect
+    // doesn't share theme tags or 1-hop links with the task, gather won't
+    // surface it on its own. Fetch directly so the contract holds: "if you
+    // named it, you get it full."
+    let gathered_ids: HashSet<String> = gather.units.iter().map(|u| u.id.clone()).collect();
+    let mut injected: Vec<ContextUnit> = Vec::new();
+    for pid in &primary_ids {
+        if gathered_ids.contains(pid) {
+            continue;
+        }
+        match db::get_unit(conn, pid) {
+            Ok(unit) => {
+                if unit.unit_type == "aspect" {
+                    injected.push(ContextUnit {
+                        id: unit.id,
+                        content: unit.content,
+                        unit_type: unit.unit_type,
+                        tags: unit.tags,
+                        source: unit.source,
+                        links_to: vec![],
+                        links_from: vec![],
+                        is_direct_match: true,
+                    });
+                } else if debug {
+                    eprintln!(
+                        "prime: --primary '{pid}' is not an aspect (type={}), ignoring",
+                        unit.unit_type
+                    );
+                }
+            }
+            Err(_) => {
+                if debug {
+                    eprintln!("prime: --primary '{pid}' resolved but get_unit failed");
+                }
+            }
+        }
+    }
+
+    // Group by type into ordered sections. `full` is decided per-type:
+    //   aspect      → full only if id in primary set
+    //   preference  → always full (small, structural)
+    //   anything    → directory entry
+    //
+    // Per-section directory cap. Graph expansion in search_and_expand is
+    // unbounded, so a popular task can pull hundreds of 1-hop neighbours.
+    // For an LOD-1 directory that's noise — top SECTION_CAP per section,
+    // ranked by gather order (direct matches first, then by id), is the
+    // useful set. Aspects in `primary_ids` are always kept regardless of
+    // cap so an explicit caller request never gets dropped.
+    const SECTION_CAP: usize = 20;
+
     let section_order: &[(&str, &[&str])] = &[
         ("Aspects", &["aspect"]),
         ("Procedures", &["procedure"]),
@@ -638,15 +652,30 @@ pub fn prime(
 
     let mut sections = Vec::new();
     for (label, types) in section_order {
-        let units: Vec<PrimeUnit> = filtered
-            .iter()
-            .filter(|u| types.contains(&u.unit_type.as_str()))
-            .map(|u| PrimeUnit {
+        let mut kept = 0usize;
+        let mut units: Vec<PrimeUnit> = Vec::new();
+        // Iterate injected primary aspects first so they always appear at
+        // the top of the section regardless of the per-section cap.
+        let combined = injected.iter().chain(gather.units.iter());
+        for u in combined.filter(|u| types.contains(&u.unit_type.as_str())) {
+            let is_primary_aspect = u.unit_type.as_str() == "aspect" && primary_ids.contains(&u.id);
+            if !is_primary_aspect && kept >= SECTION_CAP {
+                continue;
+            }
+
+            let full = match u.unit_type.as_str() {
+                "aspect" => primary_ids.contains(&u.id),
+                "preference" => true,
+                _ => false,
+            };
+            units.push(PrimeUnit {
                 id: u.id.clone(),
                 content: u.content.clone(),
                 tags: u.tags.clone(),
-            })
-            .collect();
+                full,
+            });
+            kept += 1;
+        }
         if !units.is_empty() {
             sections.push(PrimeSection {
                 label: label.to_string(),
