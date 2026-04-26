@@ -74,8 +74,25 @@ Content to process:
 Return ONLY valid JSON. No other text."#
     );
 
+    // --output-format json wraps the model reply in a structured envelope
+    // {"result": "...", ...}. The envelope itself is always well-formed JSON,
+    // which makes parsing robust against any preamble the UserPromptSubmit
+    // hook injects into stdout (e.g. "## Simaris procedures..."). The model's
+    // reply lives in `.result` and may still arrive with code fences or
+    // surrounding prose — we extract the JSON object below.
+    //
+    // We deliberately do NOT pass --bare here. --bare disables OAuth/keychain
+    // auth, which is how this binary's user authenticates. Falling back to
+    // ANTHROPIC_API_KEY would silently start charging real API spend.
     let output = Command::new("claude")
-        .args(["-p", "--model", &model(), &prompt])
+        .args([
+            "-p",
+            "--output-format",
+            "json",
+            "--model",
+            &model(),
+            &prompt,
+        ])
         .output()
         .context("Failed to run claude CLI")?;
 
@@ -84,15 +101,37 @@ Return ONLY valid JSON. No other text."#
         anyhow::bail!("claude CLI failed: {stderr}");
     }
 
-    let response = String::from_utf8_lossy(&output.stdout);
-    let response = response.trim();
+    let envelope_raw = String::from_utf8_lossy(&output.stdout);
 
-    // Strip markdown code fences if present
-    let json_str = response
+    // Outer envelope: {"result": "<inner content>", ...}. Inner content is the
+    // model's reply — should be JSON {"units": [...]} but tolerate fence
+    // wrappers and surrounding prose.
+    #[derive(Deserialize)]
+    struct Envelope {
+        result: String,
+    }
+
+    let envelope: Envelope = serde_json::from_str(envelope_raw.trim())
+        .with_context(|| {
+            let preview: String = envelope_raw.chars().take(200).collect();
+            format!("Failed to parse claude --output-format json envelope; stdout preview: {preview}")
+        })?;
+
+    let inner = envelope.result.trim();
+
+    // Step 1: drop common fence wrappers. Step 2: locate the first `{` and the
+    // last `}` and extract that span — survives "Here's the JSON: {...}\nDone"
+    // shaped responses without needing a real parser.
+    let defenced = inner
         .strip_prefix("```json")
-        .or_else(|| response.strip_prefix("```"))
+        .or_else(|| inner.strip_prefix("```"))
         .map(|s| s.strip_suffix("```").unwrap_or(s).trim())
-        .unwrap_or(response);
+        .unwrap_or(inner);
+
+    let json_str = match (defenced.find('{'), defenced.rfind('}')) {
+        (Some(lo), Some(hi)) if hi >= lo => &defenced[lo..=hi],
+        _ => defenced,
+    };
 
     let result: DigestResult = serde_json::from_str(json_str)
         .with_context(|| format!("Failed to parse LLM response: {json_str}"))?;
