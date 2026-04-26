@@ -3326,3 +3326,203 @@ fn test_rewrite_suggest_editor_save_writes_unit() {
     assert!(raw.contains("role: \"upgraded\""), "fm written: {raw}");
     assert!(raw.contains("body saved"), "body written: {raw}");
 }
+
+// ----------------------------------------------------------------------------
+// `simaris prime` — LOD-1 directory + `--primary` aspect injection (v0.3.7)
+// ----------------------------------------------------------------------------
+
+#[test]
+fn test_prime_empty_store_returns_no_sections() {
+    // Fresh DB: search-and-expand returns nothing, prime short-circuits with
+    // an empty section list. JSON shape must still be well-formed.
+    let env = TestEnv::new("prime-empty");
+    let out = env.run_ok(&["--json", "prime", "anything goes here"]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(parsed["task"], "anything goes here");
+    assert!(
+        parsed["sections"].as_array().expect("sections array").is_empty(),
+        "empty store yields no sections, got: {out}"
+    );
+    assert_eq!(parsed["unit_count"], 0, "got: {out}");
+}
+
+#[test]
+fn test_prime_lod1_default_returns_directory_entries() {
+    // Default LOD-1 contract: procedure / principle / fact-lesson-idea
+    // surface as directory entries (full=false). Body bodies stay out.
+    let env = TestEnv::new("prime-lod1-default");
+    env.run_ok(&["add", "octopus tentacle procedure body", "--type", "procedure"]);
+    env.run_ok(&["add", "octopus principle text body", "--type", "principle"]);
+    env.run_ok(&["add", "octopus context fact body", "--type", "fact"]);
+
+    let out = env.run_ok(&["--json", "prime", "octopus"]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let sections = parsed["sections"].as_array().expect("sections array");
+
+    let labels: Vec<String> = sections
+        .iter()
+        .map(|s| s["label"].as_str().unwrap().to_string())
+        .collect();
+    assert!(labels.contains(&"Procedures".to_string()), "got: {out}");
+    assert!(labels.contains(&"Principles".to_string()), "got: {out}");
+    assert!(labels.contains(&"Context".to_string()), "got: {out}");
+
+    for s in sections {
+        for u in s["units"].as_array().unwrap() {
+            assert_eq!(
+                u["full"], false,
+                "default LOD-1 unit must be a directory entry: section={} unit={}",
+                s["label"], u
+            );
+        }
+    }
+}
+
+#[test]
+fn test_prime_preferences_always_full_body() {
+    // Preferences are small + structural — prime always emits full bodies
+    // for them, regardless of `--primary`.
+    let env = TestEnv::new("prime-preferences-full");
+    env.run_ok(&["add", "octopus preference body content", "--type", "preference"]);
+
+    let out = env.run_ok(&["--json", "prime", "octopus"]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let pref_section = parsed["sections"]
+        .as_array()
+        .expect("sections array")
+        .iter()
+        .find(|s| s["label"] == "Preferences")
+        .unwrap_or_else(|| panic!("Preferences section missing: {out}"));
+
+    let units = pref_section["units"].as_array().unwrap();
+    assert!(!units.is_empty(), "preference unit present: {out}");
+    for u in units {
+        assert_eq!(
+            u["full"], true,
+            "preference must always be full=true: {u}"
+        );
+    }
+}
+
+#[test]
+fn test_prime_aspect_default_is_directory_entry() {
+    // Without `--primary`, an aspect surfaced via search lands as a directory
+    // entry (full=false) — callers haven't asked for the body inline.
+    let env = TestEnv::new("prime-aspect-default");
+    env.run_ok(&["add", "octopus aspect body content", "--type", "aspect"]);
+
+    let out = env.run_ok(&["--json", "prime", "octopus"]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let aspects = parsed["sections"]
+        .as_array()
+        .expect("sections array")
+        .iter()
+        .find(|s| s["label"] == "Aspects")
+        .unwrap_or_else(|| panic!("Aspects section missing: {out}"));
+
+    for u in aspects["units"].as_array().unwrap() {
+        assert_eq!(
+            u["full"], false,
+            "default aspect must be directory entry: {u}"
+        );
+    }
+}
+
+#[test]
+fn test_prime_primary_by_id_expands_aspect_to_full() {
+    // `--primary <uuid>` resolves to the unit id and flips `full` to true
+    // for that aspect only.
+    let env = TestEnv::new("prime-primary-by-id");
+    let add = env.run_ok(&["add", "octopus aspect body to expand", "--type", "aspect"]);
+    let id = extract_id(&add);
+
+    let out = env.run_ok(&["--json", "prime", "octopus", "--primary", &id]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let aspects = parsed["sections"]
+        .as_array()
+        .expect("sections array")
+        .iter()
+        .find(|s| s["label"] == "Aspects")
+        .unwrap_or_else(|| panic!("Aspects section missing: {out}"));
+
+    let unit = aspects["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["id"] == id)
+        .unwrap_or_else(|| panic!("primary aspect missing from output: {out}"));
+    assert_eq!(
+        unit["full"], true,
+        "primary aspect (by id) must be full=true: {unit}"
+    );
+}
+
+#[test]
+fn test_prime_primary_by_slug_expands_aspect_to_full() {
+    // `--primary` also accepts slugs — main.rs forwards the raw string,
+    // ask::prime resolves via db::resolve_id which checks the slugs table.
+    let env = TestEnv::new("prime-primary-by-slug");
+    let add = env.run_ok(&["add", "octopus aspect referenced by slug", "--type", "aspect"]);
+    let id = extract_id(&add);
+    env.run_ok(&["slug", "set", "my-aspect", &id]);
+
+    let out = env.run_ok(&["--json", "prime", "octopus", "--primary", "my-aspect"]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let aspects = parsed["sections"]
+        .as_array()
+        .expect("sections array")
+        .iter()
+        .find(|s| s["label"] == "Aspects")
+        .unwrap_or_else(|| panic!("Aspects section missing: {out}"));
+
+    let unit = aspects["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["id"] == id)
+        .unwrap_or_else(|| panic!("aspect resolved by slug missing from output: {out}"));
+    assert_eq!(
+        unit["full"], true,
+        "primary aspect (by slug) must be full=true: {unit}"
+    );
+}
+
+#[test]
+fn test_prime_primary_aspect_injected_when_not_in_gather() {
+    // Aspect with no FTS overlap with the task wouldn't reach Prime via
+    // search/expand. The injection path in ask::prime fetches it directly
+    // when the caller passes `--primary` — contract is "name it, get it".
+    let env = TestEnv::new("prime-primary-inject");
+
+    // Seed at least one matching unit so prime() doesn't short-circuit on
+    // empty gather (the early-return predates the inject step by design).
+    env.run_ok(&["add", "octopus procedure body content", "--type", "procedure"]);
+
+    // Aspect body shares no terms with "octopus" → not in gather.
+    let add = env.run_ok(&["add", "zebra horse antelope unrelated body", "--type", "aspect"]);
+    let id = extract_id(&add);
+
+    let out = env.run_ok(&["--json", "prime", "octopus", "--primary", &id]);
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let aspects = parsed["sections"]
+        .as_array()
+        .expect("sections array")
+        .iter()
+        .find(|s| s["label"] == "Aspects")
+        .unwrap_or_else(|| panic!("Aspects section missing — inject failed: {out}"));
+
+    let unit = aspects["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["id"] == id)
+        .unwrap_or_else(|| panic!("injected aspect missing from output: {out}"));
+    assert_eq!(
+        unit["full"], true,
+        "injected primary aspect must be full=true: {unit}"
+    );
+    assert!(
+        unit["content"].as_str().unwrap().contains("zebra"),
+        "injected aspect carries its body: {unit}"
+    );
+}

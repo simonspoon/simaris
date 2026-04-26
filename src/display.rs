@@ -654,4 +654,22 @@ mod tests {
         assert_eq!(out.chars().count(), 123);
         assert!(out.ends_with("..."));
     }
+
+    #[test]
+    fn first_line_preview_skips_frontmatter() {
+        // LOD-1 directory entries strip the YAML frontmatter so callers
+        // see the body's first non-empty line, not `---` and not the first
+        // frontmatter key.
+        let with_fm = "---\nrole: \"r\"\n---\n\nfirst body line\n\nsecond para\n";
+        assert_eq!(first_line_preview(with_fm), "first body line");
+
+        // Markdown header marks are stripped from the preview.
+        let heading_first = "---\ntags: [x]\n---\n\n# Body Heading\n\npara\n";
+        assert_eq!(first_line_preview(heading_first), "Body Heading");
+
+        // No frontmatter — first non-empty line still wins, leading
+        // whitespace trimmed.
+        let plain = "\n\n  plain start\nrest\n";
+        assert_eq!(first_line_preview(plain), "plain start");
+    }
 }
