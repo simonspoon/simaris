@@ -12,3 +12,4 @@ Knowledge unit storage and retrieval system. SQLite-backed knowledge graph with 
 | Architecture | [dev/architecture.md](dev/architecture.md) | Understanding how modules connect, data flows, or LLM integration |
 | Data model | [dev/data-model.md](dev/data-model.md) | Working with the SQLite schema, modifying structs, or debugging storage |
 | Contributing | [dev/contributing.md](dev/contributing.md) | Setting up a dev environment, running tests, or adding a new command |
+| simaris-server (launchd) | [simaris-server.md](simaris-server.md) | Running the admin dashboard as a background macOS service |
