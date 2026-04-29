@@ -1,18 +1,19 @@
 # simaris
 
-Rust CLI knowledge management system. Stores typed knowledge units in SQLite with FTS5 search, graph-based linking, confidence scoring via marks, and LLM-powered digest/synthesis via Claude CLI.
+Rust CLI knowledge management system. Stores typed knowledge units in SQLite with FTS5 search, graph-based linking, confidence scoring via marks, and LLM-powered digest/synthesis via Claude CLI. Ships with `simaris-server`, an HTTP admin dashboard.
 
 ## Build and Run
 
 | Command | Purpose |
 |---------|---------|
-| `cargo build` | Debug build |
-| `cargo build --release` | Release build |
+| `cargo build` | Debug build (workspace) |
+| `cargo build --release` | Release build (workspace) |
 | `cargo test` | Run all tests |
 | `cargo test test_name` | Run a single test |
-| `cargo install --path .` | Install binary |
+| `cargo install --path .` | Install `simaris` CLI |
+| `cargo install --path ./simaris-server` | Install `simaris-server` admin dashboard |
 
-Binary: `./target/release/simaris`
+Binaries: `./target/release/simaris`, `./target/release/simaris-server`
 
 ## Environment
 
@@ -23,6 +24,8 @@ Binary: `./target/release/simaris`
 | `SIMARIS_MODEL` | Override LLM model for digest/ask | `sonnet` |
 | `SIMARIS_WARN_BYTES` | Warn threshold — body above this triggers a stderr warning citing `split-ruleset` at `add`/`edit` time | `2048` (placeholder; Story 4 calibrates) |
 | `SIMARIS_HARD_BYTES` | Hard threshold — body above this rejects the write (exit non-zero) unless `--force` or tag `flow`/`--flow` | `8192` (placeholder; Story 4 calibrates) |
+| `SIMARIS_BIN` | Path to `simaris` binary used by `simaris-server` | `simaris` (resolved via `PATH`) |
+| `SIMARIS_WEB_DIR` | Path to `web/` assets served by `simaris-server` | workspace-root `web/` |
 
 Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 
@@ -35,13 +38,20 @@ Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/main.rs` | 444 | CLI entry, clap derive command parsing, dispatch |
-| `src/db.rs` | 1528 | SQLite schema, migrations, CRUD, backup/restore, scan |
-| `src/ask.rs` | 500 | FTS5 search, graph expansion, relevance filter, LLM synthesis |
-| `src/digest.rs` | 120 | LLM classification of inbox items into typed units |
-| `src/display.rs` | 275 | Text and JSON output formatting |
-| `src/size_guard.rs` | ~100 | Write-time body-size thresholds + warnings (`add`/`edit`) |
-| `tests/integration.rs` | 1800+ | End-to-end CLI tests via subprocess |
+| `src/main.rs` | 1363 | CLI entry, clap derive command parsing, dispatch |
+| `src/db.rs` | 3353 | SQLite schema, migrations, CRUD, backup/restore, scan |
+| `src/ask.rs` | 770 | FTS5 search, graph expansion, relevance filter, LLM synthesis |
+| `src/digest.rs` | 159 | LLM classification of inbox items into typed units |
+| `src/display.rs` | 761 | Text and JSON output formatting |
+| `src/emit.rs` | ~250 | Build-artifact emission (claude-code aspects, etc.) |
+| `src/rewrite.rs` | ~400 | `$EDITOR` rewrite flow with type-aware skeletons + LLM pre-fill |
+| `src/frontmatter.rs` | ~600 | YAML frontmatter parse/write + `refs:` graph materialization |
+| `src/size_guard.rs` | 143 | Write-time body-size thresholds + warnings (`add`/`edit`) |
+| `tests/integration.rs` | 4000+ | End-to-end CLI tests via subprocess |
+| `simaris-server/src/main.rs` | 96 | Axum HTTP entry, route mount, static `web/` serve |
+| `simaris-server/src/cli.rs` | 56 | Shells out to `simaris` CLI for all data ops |
+| `simaris-server/src/routes/` | ~320 | `/api/stats`, `/api/search`, `/api/units/:id` (get/edit/clone/archive/unarchive) |
+| `web/` | -- | Static dashboard + units page (vanilla JS + ECharts) |
 
 ## Architecture
 
@@ -64,12 +74,14 @@ Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 
 ### Schema (5 tables)
 
-- `units` -- TEXT primary key (UUIDv7), content, type, source, confidence, verified, tags (JSON), conditions (JSON), timestamps
+- `units` -- TEXT primary key (UUIDv7), content, type, source, confidence, verified, archived (soft-delete flag), tags (JSON), conditions (JSON), timestamps
 - `links` -- composite PK (from_id, to_id, relationship), foreign keys to units with CASCADE delete
 - `inbox` -- TEXT primary key (UUIDv7), content, source, timestamp
 - `marks` -- TEXT primary key (UUIDv7), unit_id FK, kind, timestamp
 - `slugs` -- TEXT primary key (slug), unit_id FK to units with CASCADE delete, created timestamp; indexed on unit_id for reverse lookup
 - `units_fts` -- FTS5 virtual table synced via triggers (uuid, content, type, tags, source)
+
+Default views (`list`, `search`, `ask`, `prime`, `scan`, `emit`) hide archived units. Pass `--include-archived` to fold them back in.
 
 ### Data Flow
 
@@ -78,15 +90,18 @@ Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 3. `add` creates typed units directly (bypasses inbox)
 4. `promote` converts an inbox item to a typed unit
 5. `link` creates graph edges between units
-5b. `add` and `digest` auto-link new units to existing units sharing 2+ tags via `related_to`
+5b. `add`, `digest`, and `clone` auto-link new units to existing units sharing 2+ tags via `related_to`
 6. `mark` records feedback, adjusts unit confidence
 7. `edit` updates content, type, source, or tags on existing units
-8. `ask` searches FTS5, expands via graph links, optionally synthesizes via LLM
-9. `scan` finds low-confidence, stale, orphaned, or contradicted units
+8. `archive` / `unarchive` soft-delete and restore units (reversible; preserves links + FTS rows)
+9. `clone` copies a unit (content/type/source/tags) into a fresh UUIDv7 — confidence + verified reset; links + marks not copied
+10. `ask` searches FTS5, expands via graph links, optionally synthesizes via LLM
+11. `scan` finds low-confidence, stale, orphaned, or contradicted units
+12. `stats` aggregates dashboard metrics in a single SQL pass (totals, by-type, by-tag, confidence histogram, marks)
 
 ## Conventions
 
-- Rust edition 2024
+- Rust edition 2024, workspace resolver 3
 - UUIDv7 for all entity IDs (units, inbox items, marks, links use composite key)
 - All commands support `--json` for machine-readable output
 - `--debug` flag traces internal processing (used in `ask`)
@@ -104,9 +119,14 @@ simaris link <from_id> <to_id> --rel <relationship>
 simaris drop <content> [--source <source>]
 simaris promote <id> --type <type>
 simaris inbox
-simaris list [--type <type>]
-simaris search <query> [--type <type>]
-simaris ask <query> [--synthesize] [--type <type>]
+simaris list [--type <type>] [--include-archived]
+simaris search <query> [--type <type>] [--include-archived]
+simaris ask <query> [--synthesize] [--type <type>] [--include-archived]
+simaris prime <task> [--filter <strategy>] [--primary <id|slug>]... [--include-archived]
+simaris stats [--top <n>] [--include-archived]
+simaris archive <id>
+simaris unarchive <id>
+simaris clone <id> [--type <type>] [--source <source>] [--tags <tags>]
 simaris digest
 simaris delete <id>
 simaris mark <id> --kind <kind>
@@ -115,8 +135,13 @@ simaris slug unset <slug>
 simaris slug list
 simaris emit --target <target> --type <type>
 simaris scan [--stale-days <days>]
+simaris rewrite <id> [--suggest]
 simaris backup
 simaris restore [<filename>]
 ```
 
 Global flags: `--json`, `--debug`
+
+## simaris-server (admin dashboard)
+
+HTTP admin UI for the knowledge store. Binds `0.0.0.0:3535`. JSON API under `/api`, static files from `web/`. All data and mutations shell out to the `simaris` CLI — no direct SQLite access. See [docs/simaris-server.md](docs/simaris-server.md) for launchd setup.

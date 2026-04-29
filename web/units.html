@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>simaris admin — units</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <nav class="nav">
+      <span class="nav__brand">simaris</span>
+      <div class="nav__tabs">
+        <a class="nav__tab" href="/">Dashboard</a>
+        <a class="nav__tab nav__tab--active" href="/units.html">Units</a>
+      </div>
+    </nav>
+
+    <main class="main">
+      <div class="dashboard__header">
+        <h1>Units</h1>
+        <div class="dashboard__controls">
+          <span class="search-meta" id="search-meta"></span>
+        </div>
+      </div>
+
+      <form id="search-form" class="search-form" autocomplete="off">
+        <input
+          type="text"
+          name="q"
+          id="search-q"
+          placeholder="search units…"
+          class="search-form__q"
+        />
+        <select name="type" id="search-type" class="search-form__type">
+          <option value="">all types</option>
+        </select>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            id="search-include-archived"
+            name="include_archived"
+          />
+          <span>include archived</span>
+        </label>
+        <button type="submit" class="btn">Search</button>
+      </form>
+
+      <div class="results">
+        <table class="results__table" id="results-table">
+          <thead>
+            <tr>
+              <th class="results__col-id">id</th>
+              <th class="results__col-type">type</th>
+              <th class="results__col-tags">tags</th>
+              <th class="results__col-conf">conf</th>
+              <th class="results__col-snippet">snippet</th>
+              <th class="results__col-actions">actions</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+        <div id="results-empty" class="results__empty" hidden>
+          no matches
+        </div>
+      </div>
+    </main>
+
+    <dialog id="unit-modal" class="modal">
+      <header class="modal__header">
+        <span class="modal__id" id="modal-id">…</span>
+        <button
+          type="button"
+          class="modal__close"
+          id="modal-close"
+          aria-label="close"
+        >
+          ×
+        </button>
+      </header>
+
+      <section class="modal__body" id="modal-view">
+        <dl class="modal__meta">
+          <dt>type</dt><dd id="modal-type">—</dd>
+          <dt>tags</dt><dd id="modal-tags">—</dd>
+          <dt>source</dt><dd id="modal-source">—</dd>
+          <dt>confidence</dt><dd id="modal-confidence">—</dd>
+          <dt>archived</dt><dd id="modal-archived">—</dd>
+          <dt>updated</dt><dd id="modal-updated">—</dd>
+        </dl>
+        <h3 class="modal__section-title">Content</h3>
+        <pre id="modal-content" class="modal__content"></pre>
+        <h3 class="modal__section-title">Links</h3>
+        <ul id="modal-links" class="modal__links"></ul>
+        <div class="modal__actions">
+          <button type="button" class="btn" id="action-edit">Edit</button>
+          <button type="button" class="btn" id="action-clone">Clone</button>
+          <button type="button" class="btn" id="action-archive">Archive</button>
+        </div>
+      </section>
+
+      <section class="modal__body" id="modal-edit" hidden>
+        <form id="edit-form" class="edit-form">
+          <label class="edit-form__field">
+            <span>Content</span>
+            <textarea name="content" rows="14"></textarea>
+          </label>
+          <div class="edit-form__row">
+            <label class="edit-form__field">
+              <span>Type</span>
+              <select name="type" id="edit-type"></select>
+            </label>
+            <label class="edit-form__field">
+              <span>Tags (comma-separated)</span>
+              <input type="text" name="tags" />
+            </label>
+          </div>
+          <label class="edit-form__field">
+            <span>Source</span>
+            <input type="text" name="source" />
+          </label>
+          <div class="modal__actions">
+            <button type="submit" class="btn btn--primary">Save</button>
+            <button type="button" class="btn" id="edit-cancel">Cancel</button>
+          </div>
+        </form>
+      </section>
+    </dialog>
+
+    <div id="toast" class="toast" hidden></div>
+    <div id="status" class="status">ready.</div>
+
+    <script type="module" src="/units.js"></script>
+  </body>
+</html>

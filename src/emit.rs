@@ -102,7 +102,9 @@ pub fn emit_claude_code_aspects(conn: &Connection, target_dir: &Path) -> Result<
     fs::create_dir_all(target_dir)
         .with_context(|| format!("Failed to create {}", target_dir.display()))?;
 
-    let aspects = db::list_units(conn, Some("aspect"))?;
+    // Archived aspects must not emit — the `claude` agent dir is a publish
+    // surface, not a soft-delete museum.
+    let aspects = db::list_units(conn, Some("aspect"), false)?;
 
     let mut written: Vec<String> = Vec::new();
     let mut skipped_uuids: Vec<String> = Vec::new();

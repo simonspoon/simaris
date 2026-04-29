@@ -1332,7 +1332,7 @@ fn test_migration_runs_on_first_command() {
     let version: i32 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 3, "expected user_version=3, got {version}");
+    assert_eq!(version, 4, "expected user_version=4, got {version}");
 
     let slugs_present: i64 = conn
         .query_row(
@@ -1429,7 +1429,7 @@ fn test_existing_v2_db_upgrades_on_launch() {
     let version: i32 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 3);
+    assert_eq!(version, 4);
 
     let slugs_present: i64 = conn
         .query_row(
@@ -1439,6 +1439,25 @@ fn test_existing_v2_db_upgrades_on_launch() {
         )
         .unwrap();
     assert_eq!(slugs_present, 1);
+
+    // Two-step migration: v2→v3 added slugs, v3→v4 added archived. Both
+    // must have run and the seeded row must survive the column add.
+    let archived_present: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM pragma_table_info('units') WHERE name='archived'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(archived_present, 1);
+    let seeded_archived: i64 = conn
+        .query_row(
+            "SELECT archived FROM units WHERE id='0193-seed-unit-aaaa-aaaaaaaaaaaa'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(seeded_archived, 0, "seeded row must default to archived=0");
 
     let seeded: i64 = conn
         .query_row(
@@ -3340,7 +3359,10 @@ fn test_prime_empty_store_returns_no_sections() {
     let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
     assert_eq!(parsed["task"], "anything goes here");
     assert!(
-        parsed["sections"].as_array().expect("sections array").is_empty(),
+        parsed["sections"]
+            .as_array()
+            .expect("sections array")
+            .is_empty(),
         "empty store yields no sections, got: {out}"
     );
     assert_eq!(parsed["unit_count"], 0, "got: {out}");
@@ -3351,7 +3373,12 @@ fn test_prime_lod1_default_returns_directory_entries() {
     // Default LOD-1 contract: procedure / principle / fact-lesson-idea
     // surface as directory entries (full=false). Body bodies stay out.
     let env = TestEnv::new("prime-lod1-default");
-    env.run_ok(&["add", "octopus tentacle procedure body", "--type", "procedure"]);
+    env.run_ok(&[
+        "add",
+        "octopus tentacle procedure body",
+        "--type",
+        "procedure",
+    ]);
     env.run_ok(&["add", "octopus principle text body", "--type", "principle"]);
     env.run_ok(&["add", "octopus context fact body", "--type", "fact"]);
 
@@ -3383,7 +3410,12 @@ fn test_prime_preferences_always_full_body() {
     // Preferences are small + structural — prime always emits full bodies
     // for them, regardless of `--primary`.
     let env = TestEnv::new("prime-preferences-full");
-    env.run_ok(&["add", "octopus preference body content", "--type", "preference"]);
+    env.run_ok(&[
+        "add",
+        "octopus preference body content",
+        "--type",
+        "preference",
+    ]);
 
     let out = env.run_ok(&["--json", "prime", "octopus"]);
     let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
@@ -3397,10 +3429,7 @@ fn test_prime_preferences_always_full_body() {
     let units = pref_section["units"].as_array().unwrap();
     assert!(!units.is_empty(), "preference unit present: {out}");
     for u in units {
-        assert_eq!(
-            u["full"], true,
-            "preference must always be full=true: {u}"
-        );
+        assert_eq!(u["full"], true, "preference must always be full=true: {u}");
     }
 }
 
@@ -3462,7 +3491,12 @@ fn test_prime_primary_by_slug_expands_aspect_to_full() {
     // `--primary` also accepts slugs — main.rs forwards the raw string,
     // ask::prime resolves via db::resolve_id which checks the slugs table.
     let env = TestEnv::new("prime-primary-by-slug");
-    let add = env.run_ok(&["add", "octopus aspect referenced by slug", "--type", "aspect"]);
+    let add = env.run_ok(&[
+        "add",
+        "octopus aspect referenced by slug",
+        "--type",
+        "aspect",
+    ]);
     let id = extract_id(&add);
     env.run_ok(&["slug", "set", "my-aspect", &id]);
 
@@ -3496,10 +3530,20 @@ fn test_prime_primary_aspect_injected_when_not_in_gather() {
 
     // Seed at least one matching unit so prime() doesn't short-circuit on
     // empty gather (the early-return predates the inject step by design).
-    env.run_ok(&["add", "octopus procedure body content", "--type", "procedure"]);
+    env.run_ok(&[
+        "add",
+        "octopus procedure body content",
+        "--type",
+        "procedure",
+    ]);
 
     // Aspect body shares no terms with "octopus" → not in gather.
-    let add = env.run_ok(&["add", "zebra horse antelope unrelated body", "--type", "aspect"]);
+    let add = env.run_ok(&[
+        "add",
+        "zebra horse antelope unrelated body",
+        "--type",
+        "aspect",
+    ]);
     let id = extract_id(&add);
 
     let out = env.run_ok(&["--json", "prime", "octopus", "--primary", &id]);
@@ -3525,4 +3569,492 @@ fn test_prime_primary_aspect_injected_when_not_in_gather() {
         unit["content"].as_str().unwrap().contains("zebra"),
         "injected aspect carries its body: {unit}"
     );
+}
+
+#[test]
+fn test_archive_hides_unit_from_default_views() {
+    let env = TestEnv::new("archivehide");
+
+    let live_out = env.run_ok(&["add", "live unit body uniqueA", "--type", "fact"]);
+    let live_id = extract_id(&live_out);
+    let dead_out = env.run_ok(&["add", "dead unit body uniqueB", "--type", "fact"]);
+    let dead_id = extract_id(&dead_out);
+
+    // Archive one of them.
+    let arch_out = env.run_ok(&["archive", &dead_id]);
+    assert!(
+        arch_out.contains("Archived unit"),
+        "archive should print confirmation: {arch_out}"
+    );
+
+    // Default list omits the archived row.
+    let list_default = env.run_ok(&["list"]);
+    assert!(
+        list_default.contains("live unit body"),
+        "default list shows live unit: {list_default}"
+    );
+    assert!(
+        !list_default.contains("dead unit body"),
+        "default list hides archived unit: {list_default}"
+    );
+
+    // --include-archived surfaces it with a marker.
+    let list_inc = env.run_ok(&["list", "--include-archived"]);
+    assert!(
+        list_inc.contains("dead unit body"),
+        "--include-archived list shows archived unit: {list_inc}"
+    );
+    assert!(
+        list_inc.contains("[archived]"),
+        "archived row should be visually marked: {list_inc}"
+    );
+
+    // Default search also hides; --include-archived restores.
+    let search_default = env.run_ok(&["search", "uniqueB"]);
+    assert!(
+        !search_default.contains("dead unit body"),
+        "default search hides archived unit: {search_default}"
+    );
+    let search_inc = env.run_ok(&["search", "uniqueB", "--include-archived"]);
+    assert!(
+        search_inc.contains("dead unit body"),
+        "--include-archived search restores archived unit: {search_inc}"
+    );
+
+    // Show always works on archived units.
+    let show_out = env.run_ok(&["show", &dead_id]);
+    assert!(
+        show_out.contains("dead unit body"),
+        "show works on archived unit: {show_out}"
+    );
+    assert!(
+        show_out.contains("[archived]"),
+        "show surfaces archived state: {show_out}"
+    );
+
+    // Unarchive restores the unit to default views.
+    let unarch_out = env.run_ok(&["unarchive", &dead_id]);
+    assert!(
+        unarch_out.contains("Unarchived unit"),
+        "unarchive prints confirmation: {unarch_out}"
+    );
+    let list_after = env.run_ok(&["list"]);
+    assert!(
+        list_after.contains("dead unit body"),
+        "unarchived unit reappears in default list: {list_after}"
+    );
+
+    // Sanity: live unit untouched throughout.
+    let _ = live_id;
+}
+
+#[test]
+fn test_archive_unarchive_idempotent_and_unknown() {
+    let env = TestEnv::new("archiveidem");
+    let out = env.run_ok(&["add", "subject", "--type", "fact"]);
+    let id = extract_id(&out);
+
+    // Double-archive succeeds (idempotent).
+    env.run_ok(&["archive", &id]);
+    env.run_ok(&["archive", &id]);
+
+    // Double-unarchive succeeds (idempotent).
+    env.run_ok(&["unarchive", &id]);
+    env.run_ok(&["unarchive", &id]);
+
+    // Unknown ID: archive/unarchive must error.
+    let bad = env.run(&["archive", "no-such-unit"]);
+    assert!(
+        !bad.status.success(),
+        "archive on unknown id must fail: {:?}",
+        bad
+    );
+    let bad = env.run(&["unarchive", "no-such-unit"]);
+    assert!(
+        !bad.status.success(),
+        "unarchive on unknown id must fail: {:?}",
+        bad
+    );
+}
+
+#[test]
+fn test_stats_json_shape_and_counts() {
+    let env = TestEnv::new("stats");
+
+    // Seed: 3 facts (one shared tag), 1 procedure, 1 idea, 1 inbox drop,
+    // 1 mark, one supersedes edge, one archived unit.
+    let f1 = extract_id(&env.run_ok(&[
+        "add",
+        "fact one body",
+        "--type",
+        "fact",
+        "--tags",
+        "rust,cli",
+    ]));
+    let f2 = extract_id(&env.run_ok(&["add", "fact two body", "--type", "fact", "--tags", "rust"]));
+    let f3 = extract_id(&env.run_ok(&["add", "fact three body", "--type", "fact"]));
+    let _p1 = extract_id(&env.run_ok(&[
+        "add",
+        "procedure body that is long enough to satisfy the size warning baseline because procedures need verifiable steps and trigger context",
+        "--type",
+        "procedure",
+        "--trigger",
+        "on event",
+        "--check",
+        "verify outcome",
+    ]));
+    let _i1 = extract_id(&env.run_ok(&["add", "idea body", "--type", "idea", "--tags", "rust"]));
+    env.run_ok(&["drop", "raw inbox content"]);
+    env.run_ok(&["mark", &f1, "--kind", "used"]);
+    env.run_ok(&["link", &f2, &f1, "--rel", "supersedes"]);
+    let archived =
+        extract_id(&env.run_ok(&["add", "to be archived", "--type", "fact", "--tags", "tmp"]));
+    env.run_ok(&["archive", &archived]);
+
+    // Default: live-only view.
+    let raw = env.run_ok(&["stats", "--json"]);
+    let stats: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON: {raw}");
+
+    assert_eq!(stats["include_archived"], false);
+    // 3 facts + 1 procedure + 1 idea = 5 live; archived not counted.
+    assert_eq!(stats["total"], 5, "live total mismatch: {stats}");
+    assert_eq!(
+        stats["archived_count"], 1,
+        "archived count mismatch: {stats}"
+    );
+    assert_eq!(stats["inbox_size"], 1);
+
+    // by_type: archived (a fact) excluded → fact == 3.
+    assert_eq!(stats["by_type"]["fact"], 3);
+    assert_eq!(stats["by_type"]["procedure"], 1);
+    assert_eq!(stats["by_type"]["idea"], 1);
+    assert!(
+        stats["by_type"].get("aspect").is_none(),
+        "no aspect units seeded"
+    );
+
+    // marks: one `used` mark, no others.
+    assert_eq!(stats["marks"]["used"], 1);
+    assert!(stats["marks"].get("wrong").is_none() || stats["marks"]["wrong"] == 0);
+
+    // superseded_count: f1 has one incoming `supersedes` link (from f2).
+    assert_eq!(stats["superseded_count"], 1);
+
+    // by_tag: `rust` appears on 2 live units (f1 + f2 + idea), but archived
+    // tmp tag is excluded. The procedure has no tags.
+    let top = stats["by_tag"]["top"].as_array().expect("top is array");
+    let rust_count = top
+        .iter()
+        .find(|t| t["tag"] == "rust")
+        .map(|t| t["count"].as_u64().unwrap_or(0))
+        .unwrap_or(0);
+    assert_eq!(rust_count, 3, "rust tag should be on f1, f2, idea: {stats}");
+    let tmp_in_top = top.iter().any(|t| t["tag"] == "tmp");
+    assert!(!tmp_in_top, "archived `tmp` tag must be excluded: {stats}");
+
+    // confidence histogram: all newly-added units default to confidence 1.0.
+    let conf = &stats["confidence"];
+    assert_eq!(
+        conf["verified"].as_u64().unwrap(),
+        5,
+        "all 5 live units default to ≥0.95: {stats}"
+    );
+    assert_eq!(conf["low"].as_u64().unwrap(), 0);
+    assert_eq!(conf["medium"].as_u64().unwrap(), 0);
+    assert_eq!(conf["high"].as_u64().unwrap(), 0);
+
+    // by_type.fact must agree with `simaris list --type fact --json | jq length`.
+    let list_facts = env.run_ok(&["list", "--type", "fact", "--json"]);
+    let list_facts: Vec<serde_json::Value> = serde_json::from_str(&list_facts).expect("valid JSON");
+    assert_eq!(stats["by_type"]["fact"], list_facts.len() as u64);
+
+    // --include-archived rolls the archived fact back in.
+    let raw_inc = env.run_ok(&["stats", "--json", "--include-archived"]);
+    let stats_inc: serde_json::Value = serde_json::from_str(&raw_inc).expect("valid JSON");
+    assert_eq!(stats_inc["include_archived"], true);
+    assert_eq!(stats_inc["total"], 6);
+    assert_eq!(stats_inc["by_type"]["fact"], 4);
+    let top_inc = stats_inc["by_tag"]["top"].as_array().unwrap();
+    let tmp_in_top_inc = top_inc.iter().any(|t| t["tag"] == "tmp");
+    assert!(
+        tmp_in_top_inc,
+        "archived `tmp` tag must surface with --include-archived"
+    );
+
+    // archived_count is identical regardless of --include-archived.
+    assert_eq!(stats_inc["archived_count"], 1);
+
+    // sanity-touch other ids so unused-binding warnings don't fire.
+    let _ = (f3,);
+}
+
+#[test]
+fn test_stats_top_flag_caps_tag_list() {
+    let env = TestEnv::new("statstop");
+    // Seed 5 distinct tags across 5 units.
+    for tag in ["a", "b", "c", "d", "e"] {
+        env.run_ok(&[
+            "add",
+            &format!("body {tag}"),
+            "--type",
+            "fact",
+            "--tags",
+            tag,
+        ]);
+    }
+    let raw = env.run_ok(&["stats", "--json", "--top", "2"]);
+    let stats: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+    let top = stats["by_tag"]["top"].as_array().expect("array");
+    assert_eq!(top.len(), 2, "--top 2 caps the list: {stats}");
+    // total_unique still reflects the full count.
+    assert_eq!(stats["by_tag"]["total_unique"], 5);
+}
+
+#[test]
+fn test_stats_text_output_renders() {
+    let env = TestEnv::new("statstext");
+    env.run_ok(&["add", "lone fact", "--type", "fact"]);
+    let out = env.run_ok(&["stats"]);
+    assert!(out.contains("simaris stats"), "header present: {out}");
+    assert!(out.contains("total:"), "total row present: {out}");
+    assert!(out.contains("by type:"), "by type section: {out}");
+    assert!(out.contains("confidence:"), "confidence section: {out}");
+}
+
+#[test]
+fn test_stats_empty_db() {
+    // Fresh DB with zero units must produce a valid (zero-filled) shape.
+    let env = TestEnv::new("statsempty");
+    let raw = env.run_ok(&["stats", "--json"]);
+    let stats: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON: {raw}");
+    assert_eq!(stats["total"], 0);
+    assert_eq!(stats["archived_count"], 0);
+    assert_eq!(stats["inbox_size"], 0);
+    assert_eq!(stats["superseded_count"], 0);
+    assert_eq!(stats["by_tag"]["total_unique"], 0);
+    assert_eq!(stats["by_tag"]["top"].as_array().unwrap().len(), 0);
+    // Histogram zero-filled, not null.
+    assert_eq!(stats["confidence"]["low"], 0);
+    assert_eq!(stats["confidence"]["medium"], 0);
+    assert_eq!(stats["confidence"]["high"], 0);
+    assert_eq!(stats["confidence"]["verified"], 0);
+}
+
+// `clone` returns a tag list of strings from a `simaris show --json` payload.
+fn show_tags(env: &TestEnv, id: &str) -> Vec<String> {
+    let raw = env.run_ok(&["show", id, "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+    v["unit"]["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t.as_str().unwrap().to_string())
+        .collect()
+}
+
+// Robust id extractor for `add` / `clone` text output. Handles the auto-link
+// trailing line ("  auto-linked to N existing unit(s)") which breaks the
+// generic `extract_id` helper that assumes a single-line response.
+fn extract_first_line_id(output: &str) -> String {
+    let first = output.lines().next().expect("non-empty output");
+    first.split_whitespace().last().unwrap().to_string()
+}
+
+#[test]
+fn test_clone_basic_copies_fields_and_resets_confidence() {
+    let env = TestEnv::new("clonebasic");
+
+    // Source with marks lowering confidence — clone must reset to default.
+    let src = extract_id(&env.run_ok(&[
+        "add",
+        "source body",
+        "--type",
+        "fact",
+        "--source",
+        "manual",
+        "--tags",
+        "rust,cli",
+    ]));
+    env.run_ok(&["mark", &src, "--kind", "wrong"]); // -0.2 → 0.8
+
+    let out = env.run_ok(&["clone", &src]);
+    assert!(out.starts_with("Cloned "), "text output shape: {out}");
+    let new_id = extract_first_line_id(&out);
+    assert_uuid_format(&new_id);
+    assert_ne!(new_id, src, "clone must mint fresh UUID");
+
+    // New unit: same content/type/source/tags.
+    let new_raw = env.run_ok(&["show", &new_id, "--json"]);
+    let new_v: serde_json::Value = serde_json::from_str(&new_raw).expect("valid JSON");
+    assert_eq!(new_v["unit"]["content"], "source body");
+    assert_eq!(new_v["unit"]["type"], "fact");
+    assert_eq!(new_v["unit"]["source"], "manual");
+    let new_tags = show_tags(&env, &new_id);
+    assert!(new_tags.contains(&"rust".to_string()));
+    assert!(new_tags.contains(&"cli".to_string()));
+
+    // Confidence reset to system default; verified false.
+    assert_eq!(new_v["unit"]["confidence"], 1.0);
+    assert_eq!(new_v["unit"]["verified"], false);
+
+    // Source unit is untouched (still 0.8 confidence after the `wrong` mark).
+    let src_raw = env.run_ok(&["show", &src, "--json"]);
+    let src_v: serde_json::Value = serde_json::from_str(&src_raw).expect("valid JSON");
+    assert_eq!(src_v["unit"]["content"], "source body");
+    assert_eq!(src_v["unit"]["type"], "fact");
+    let src_conf = src_v["unit"]["confidence"].as_f64().unwrap();
+    assert!(
+        (src_conf - 0.8).abs() < 1e-9,
+        "source confidence unchanged: got {src_conf}"
+    );
+}
+
+#[test]
+fn test_clone_with_overrides() {
+    let env = TestEnv::new("cloneoverride");
+    let src = extract_id(&env.run_ok(&[
+        "add",
+        "body x",
+        "--type",
+        "fact",
+        "--source",
+        "orig",
+        "--tags",
+        "alpha,beta",
+    ]));
+
+    let out = env.run_ok(&[
+        "clone", &src, "--type", "idea", "--source", "fork", "--tags", "gamma",
+    ]);
+    let new_id = extract_first_line_id(&out);
+
+    let new_raw = env.run_ok(&["show", &new_id, "--json"]);
+    let new_v: serde_json::Value = serde_json::from_str(&new_raw).expect("valid JSON");
+    assert_eq!(new_v["unit"]["type"], "idea");
+    assert_eq!(new_v["unit"]["source"], "fork");
+    assert_eq!(new_v["unit"]["content"], "body x", "body unchanged");
+    assert_eq!(show_tags(&env, &new_id), vec!["gamma".to_string()]);
+}
+
+#[test]
+fn test_clone_does_not_copy_links_or_marks_and_auto_links() {
+    let env = TestEnv::new("clonenolinks");
+
+    // Three units sharing tags so auto-link will fire on the clone:
+    //   a (rust,cli), b (rust,cli), c (rust,cli)
+    // `add` prints an extra "auto-linked to N" line when the new unit shares
+    // 2+ tags with existing ones — use the first-line extractor.
+    let a = extract_first_line_id(&env.run_ok(&[
+        "add",
+        "alpha body",
+        "--type",
+        "fact",
+        "--tags",
+        "rust,cli",
+    ]));
+    let b = extract_first_line_id(&env.run_ok(&[
+        "add",
+        "beta body",
+        "--type",
+        "fact",
+        "--tags",
+        "rust,cli",
+    ]));
+    let _c = extract_first_line_id(&env.run_ok(&[
+        "add",
+        "gamma body",
+        "--type",
+        "fact",
+        "--tags",
+        "rust,cli",
+    ]));
+
+    // Give `a` an explicit outgoing link + a mark so we can verify those
+    // do NOT carry over to the clone.
+    env.run_ok(&["link", &a, &b, "--rel", "supersedes"]);
+    env.run_ok(&["mark", &a, "--kind", "used"]);
+
+    let out = env.run_ok(&["clone", &a]);
+    let new_id = extract_first_line_id(&out);
+
+    // Mark must not have been copied — confidence at default (1.0), not
+    // bumped by `used`.
+    let new_raw = env.run_ok(&["show", &new_id, "--json"]);
+    let new_v: serde_json::Value = serde_json::from_str(&new_raw).expect("valid JSON");
+    assert_eq!(new_v["unit"]["confidence"], 1.0);
+
+    // The explicit `supersedes` link from a→b must not appear on the clone.
+    let outgoing = new_v["links"]["outgoing"].as_array().unwrap();
+    let has_supersedes = outgoing
+        .iter()
+        .any(|l| l["relationship"] == "supersedes" && l["to_id"] == b);
+    assert!(
+        !has_supersedes,
+        "explicit links must not be copied to clone: {outgoing:?}"
+    );
+
+    // But auto-link fires — clone shares 2+ tags with a, b, c → at least one
+    // related_to edge from the clone.
+    let related_count = outgoing
+        .iter()
+        .filter(|l| l["relationship"] == "related_to")
+        .count();
+    assert!(
+        related_count >= 2,
+        "auto-link must fire (≥2 related_to edges expected): {outgoing:?}"
+    );
+
+    // Source unit `a` still has its supersedes edge to b.
+    let src_raw = env.run_ok(&["show", &a, "--json"]);
+    let src_v: serde_json::Value = serde_json::from_str(&src_raw).expect("valid JSON");
+    let src_outgoing = src_v["links"]["outgoing"].as_array().unwrap();
+    let src_has_supersedes = src_outgoing
+        .iter()
+        .any(|l| l["relationship"] == "supersedes" && l["to_id"] == b);
+    assert!(
+        src_has_supersedes,
+        "source unit links must remain intact: {src_outgoing:?}"
+    );
+}
+
+#[test]
+fn test_clone_json_output_shape() {
+    let env = TestEnv::new("clonejson");
+    let src = extract_id(&env.run_ok(&["add", "body", "--type", "fact"]));
+
+    let raw = env.run_ok(&["--json", "clone", &src]);
+    let v: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON: {raw}");
+    let new_id = v["id"].as_str().expect("id field").to_string();
+    let from_id = v["from"].as_str().expect("from field");
+    assert_uuid_format(&new_id);
+    assert_eq!(from_id, src);
+    assert_ne!(new_id, src);
+}
+
+#[test]
+fn test_clone_unknown_id_errors() {
+    let env = TestEnv::new("clonebadid");
+    let out = env.run(&["clone", "no-such-id"]);
+    assert!(!out.status.success(), "must fail on unknown id");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("No unit or slug matches"),
+        "stderr should mention resolution failure: {stderr}"
+    );
+}
+
+#[test]
+fn test_clone_resolves_slug() {
+    let env = TestEnv::new("cloneslug");
+    let src = extract_id(&env.run_ok(&["add", "slugged body", "--type", "fact"]));
+    env.run_ok(&["slug", "set", "myslug", &src]);
+
+    let out = env.run_ok(&["clone", "myslug"]);
+    let new_id = extract_first_line_id(&out);
+    assert_uuid_format(&new_id);
+    assert_ne!(new_id, src);
+
+    let new_raw = env.run_ok(&["show", &new_id, "--json"]);
+    let new_v: serde_json::Value = serde_json::from_str(&new_raw).expect("valid JSON");
+    assert_eq!(new_v["unit"]["content"], "slugged body");
 }

@@ -8,6 +8,7 @@ Knowledge unit storage. All commands support `--json` for machine-readable outpu
 |------|-------------|
 | `--json` | Output as JSON instead of human-readable text. Available on every command. |
 | `--debug` | Show debug trace of internal processing. Prints phase-by-phase diagnostics to stderr. Available on every command but only produces output for `ask`. |
+| `--include-archived` | Include archived (soft-deleted) units in results. Recognized by `list`, `search`, `ask`, `prime`, and `stats`. |
 
 ## Environment Variables
 
@@ -15,6 +16,8 @@ Knowledge unit storage. All commands support `--json` for machine-readable outpu
 |----------|-------------|---------|
 | `SIMARIS_HOME` | Override the data directory path. | `~/.simaris` |
 | `SIMARIS_ENV` | Set to `dev` to use `$SIMARIS_HOME/dev` as the data directory. | (unset) |
+| `SIMARIS_BIN` | Path to the `simaris` binary used by `simaris-server` to shell out for data ops. | `simaris` (resolved via `PATH`) |
+| `SIMARIS_WEB_DIR` | Path to `web/` static assets served by `simaris-server`. | workspace-root `web/` |
 | `SIMARIS_MODEL` | LLM model for `ask --synthesize` and `digest`. | `sonnet` |
 
 ---
@@ -847,6 +850,153 @@ simaris restore sanctuary-20260409-120000.db
 ```
 
 ---
+## stats
+
+Aggregate metrics for the admin dashboard, computed in a single SQL pass.
+
+```
+simaris stats [--top <N>] [--include-archived]
+```
+
+### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `--top` | usize | no | `50` | Cap the per-tag breakdown at this many tags (most frequent first). `total_unique` still reports the full distinct-tag count. |
+| `--include-archived` | flag | no | -- | Include archived units in `total`, `by_type`, `by_tag`, `confidence`, and `superseded_count`. `inbox_size`, `marks`, and `archived_count` are global regardless. |
+
+### JSON output
+
+```json
+{
+  "total": 1234,
+  "by_type": { "fact": 412, "procedure": 198, "...": 0 },
+  "by_tag": { "top": [{ "tag": "rust", "count": 87 }], "total_unique": 304 },
+  "confidence": { "low": 12, "medium": 88, "high": 410, "verified": 724 },
+  "inbox_size": 4,
+  "marks": { "used": 502, "helpful": 188, "outdated": 9, "wrong": 2 },
+  "superseded_count": 17,
+  "archived_count": 31,
+  "include_archived": false
+}
+```
+
+`confidence` buckets: `low` (<0.6), `medium` (0.6-<0.8), `high` (0.8-<0.95), `verified` (≥0.95).
+
+### Example
+
+```
+simaris stats --json
+simaris stats --top 10 --include-archived
+```
+
+---
+
+## archive
+
+Soft-delete a unit. Reversible via `unarchive`. Preserves the row in `units`, all incoming/outgoing links, and the FTS index — `unarchive` cleanly restores the unit to every default surface.
+
+Archived units are hidden from `list`, `search`, `ask`, `prime`, `scan`, and `emit` unless `--include-archived` is passed.
+
+```
+simaris archive <ID>
+```
+
+### Arguments
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `ID` | string | yes | Unit ID or slug. |
+
+### Output
+
+```
+Archived 019660a3-7b2e-7000-8000-1a2b3c4d5e6f
+```
+
+### JSON output
+
+```json
+{ "archived": "019660a3-7b2e-7000-8000-1a2b3c4d5e6f" }
+```
+
+### Example
+
+```
+simaris archive 019660a3
+simaris archive my-stale-procedure --json
+```
+
+---
+
+## unarchive
+
+Reverse of `archive`. Restores a soft-deleted unit to all default views.
+
+```
+simaris unarchive <ID>
+```
+
+### Arguments
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `ID` | string | yes | Unit ID or slug. |
+
+### Output
+
+```
+Unarchived 019660a3-7b2e-7000-8000-1a2b3c4d5e6f
+```
+
+### JSON output
+
+```json
+{ "unarchived": "019660a3-7b2e-7000-8000-1a2b3c4d5e6f" }
+```
+
+---
+
+## clone
+
+Copy a unit into a fresh UUIDv7. Content, type, source, and tags are copied from the source unit; confidence resets to 1.0 and `verified` resets to false (a clone is unverified by definition). Links and marks are NOT copied. Auto-link runs against the new unit (`related_to` on 2+ tag overlap), matching `add`. Frontmatter `refs:` are re-materialized as `related_to` edges from the new unit.
+
+```
+simaris clone <ID> [--type <TYPE>] [--source <SOURCE>] [--tags <TAGS>]
+```
+
+### Arguments
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `ID` | string | yes | Source unit ID or slug. |
+| `--type` | UnitType | no | Override the cloned unit's type (default: same as source). |
+| `--source` | string | no | Override the cloned unit's source (default: same as source). |
+| `--tags` | string | no | Override the cloned unit's tags, comma-separated. Empty string clears tags. Default: same as source. |
+
+### Output
+
+```
+Cloned 019660a3-7b2e-7000-8000-1a2b3c4d5e6f -> 0196b021-9c4f-7000-8000-aa11bb22cc33
+  auto-linked to 3 existing unit(s)
+```
+
+### JSON output
+
+```json
+{ "id": "0196b021-9c4f-7000-8000-aa11bb22cc33", "from": "019660a3-7b2e-7000-8000-1a2b3c4d5e6f" }
+```
+
+### Example
+
+```
+simaris clone 019660a3
+simaris clone canonical-procedure --tags "rust,toolchain,2024"
+simaris clone 019660a3 --type principle --source design-doc
+```
+
+---
+
 
 ## Data Types Reference
 
@@ -862,6 +1012,7 @@ simaris restore sanctuary-20260409-120000.db
 | `verified` | bool | Whether the unit has been verified. |
 | `tags` | string[] | Associated tags. |
 | `conditions` | object | Conditions under which the unit applies. |
+| `archived` | bool | Whether the unit is soft-deleted. Default views (`list`, `search`, `ask`, `prime`, `scan`, `emit`) hide archived units; pass `--include-archived` to fold them in. Reverse via `unarchive`. |
 | `created` | string | ISO 8601 creation timestamp. |
 | `updated` | string | ISO 8601 last-updated timestamp. |
 

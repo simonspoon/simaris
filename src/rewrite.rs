@@ -729,6 +729,7 @@ mod tests {
             conditions: serde_json::Value::Null,
             created: "2026-01-01".to_string(),
             updated: "2026-01-01".to_string(),
+            archived: false,
         }
     }
 

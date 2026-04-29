@@ -94,11 +94,12 @@ pub fn ask(
     synthesize: bool,
     debug: bool,
     type_filter: Option<&str>,
+    include_archived: bool,
 ) -> Result<AskResult> {
     // Phase 1: FTS5 search + 1-hop graph expansion
     let fts_query = sanitize_fts_query(query);
     let search_queries = vec![query.to_string()];
-    let gather = search_and_expand(conn, &search_queries, type_filter, 15)?;
+    let gather = search_and_expand(conn, &search_queries, type_filter, 15, include_archived)?;
     let gathered = gather.units;
     let matches_per_query = gather.matches_per_query;
 
@@ -265,12 +266,16 @@ struct GatherResult {
     expansion_count: usize,
 }
 
-/// FTS5 search using query terms + 1-hop link expansion.
+/// FTS5 search using query terms + 1-hop link expansion. Archived units are
+/// excluded from primary FTS hits unless `include_archived` is true; graph
+/// expansion also drops archived neighbours so a soft-deleted unit can't
+/// re-surface via a link from a live one.
 fn search_and_expand(
     conn: &Connection,
     search_queries: &[String],
     type_filter: Option<&str>,
     cap: usize,
+    include_archived: bool,
 ) -> Result<GatherResult> {
     // Run each search query and collect unique matches
     let mut seen_ids = std::collections::HashSet::new();
@@ -283,7 +288,8 @@ fn search_and_expand(
             matches_per_query.insert(sq.clone(), 0);
             continue;
         }
-        let results = db::search_units(conn, &fts_query, type_filter).unwrap_or_default();
+        let results =
+            db::search_units(conn, &fts_query, type_filter, include_archived).unwrap_or_default();
         let mut count = 0;
         for unit in results {
             if seen_ids.insert(unit.id.clone()) {
@@ -343,6 +349,11 @@ fn search_and_expand(
                 continue;
             }
             if let Ok(linked_unit) = db::get_unit(conn, linked_id) {
+                // Archived neighbours stay invisible in default views even
+                // when reached via a live unit's outgoing link.
+                if linked_unit.archived && !include_archived {
+                    continue;
+                }
                 let linked_links = db::get_linked_unit_ids(conn, linked_id)?;
                 let mut lt = vec![];
                 let mut lf = vec![];
@@ -437,14 +448,7 @@ Return ONLY JSON (no markdown, no code fences):
     // auth, which is how this binary's user authenticates. Falling back to
     // ANTHROPIC_API_KEY would silently start charging real API spend.
     let output = match Command::new("claude")
-        .args([
-            "-p",
-            "--output-format",
-            "json",
-            "--model",
-            "haiku",
-            &prompt,
-        ])
+        .args(["-p", "--output-format", "json", "--model", "haiku", &prompt])
         .output()
     {
         Ok(o) => o,
@@ -612,8 +616,9 @@ pub fn prime(
     task: &str,
     primary: &[String],
     debug: bool,
+    include_archived: bool,
 ) -> Result<PrimeResult> {
-    let gather = search_and_expand(conn, &[task.to_string()], None, 40)?;
+    let gather = search_and_expand(conn, &[task.to_string()], None, 40, include_archived)?;
 
     if debug {
         eprintln!(
@@ -666,6 +671,14 @@ pub fn prime(
         }
         match db::get_unit(conn, pid) {
             Ok(unit) => {
+                // Archived primary aspects must not bypass the default
+                // hide-archived behaviour just because they were named.
+                if unit.archived && !include_archived {
+                    if debug {
+                        eprintln!("prime: --primary '{pid}' is archived, ignoring");
+                    }
+                    continue;
+                }
                 if unit.unit_type == "aspect" {
                     injected.push(ContextUnit {
                         id: unit.id,

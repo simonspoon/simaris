@@ -111,11 +111,10 @@ Return ONLY valid JSON. No other text."#
         result: String,
     }
 
-    let envelope: Envelope = serde_json::from_str(envelope_raw.trim())
-        .with_context(|| {
-            let preview: String = envelope_raw.chars().take(200).collect();
-            format!("Failed to parse claude --output-format json envelope; stdout preview: {preview}")
-        })?;
+    let envelope: Envelope = serde_json::from_str(envelope_raw.trim()).with_context(|| {
+        let preview: String = envelope_raw.chars().take(200).collect();
+        format!("Failed to parse claude --output-format json envelope; stdout preview: {preview}")
+    })?;
 
     let inner = envelope.result.trim();
 

@@ -17,6 +17,13 @@ pub struct Unit {
     pub conditions: serde_json::Value,
     pub created: String,
     pub updated: String,
+    /// Soft-delete flag — true when the unit is archived. Default views
+    /// (`list`, `search`, `ask`, `prime`, `scan`, `emit`) exclude archived
+    /// units; pass `--include-archived` to opt them back in. Archive does
+    /// not break links or remove FTS rows, so an unarchive cleanly restores
+    /// the unit to all surfaces.
+    #[serde(default)]
+    pub archived: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -72,6 +79,50 @@ pub struct UnstructuredRow {
 /// payload, so skip. Matches the spec in frontmatter-p2.
 pub const UNSTRUCTURED_MIN_BYTES: usize = 200;
 
+/// Aggregate metrics for the dashboard. Computed in SQL — no client-side
+/// fetch-all. Default view excludes archived units from `total`, `by_type`,
+/// `by_tag`, `confidence`, and `superseded_count`; pass `include_archived=true`
+/// to fold them in. `inbox_size`, `marks`, and `archived_count` are global
+/// (archive-agnostic) — they describe the store as a whole.
+#[derive(Debug, Serialize)]
+pub struct Stats {
+    pub total: u64,
+    pub by_type: std::collections::BTreeMap<String, u64>,
+    pub by_tag: TagStats,
+    pub confidence: ConfidenceHistogram,
+    pub inbox_size: u64,
+    pub marks: std::collections::BTreeMap<String, u64>,
+    pub superseded_count: u64,
+    pub archived_count: u64,
+    pub include_archived: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TagStats {
+    pub top: Vec<TagCount>,
+    pub total_unique: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TagCount {
+    pub tag: String,
+    pub count: u64,
+}
+
+/// Confidence histogram buckets. Boundaries chosen to match the
+/// LOW_CONFIDENCE_THRESHOLD (0.6) and the practical "verified" line (≥0.95).
+#[derive(Debug, Serialize)]
+pub struct ConfidenceHistogram {
+    /// confidence < 0.6 (low — surfaced by `scan` low-confidence)
+    pub low: u64,
+    /// 0.6 ≤ confidence < 0.8
+    pub medium: u64,
+    /// 0.8 ≤ confidence < 0.95
+    pub high: u64,
+    /// confidence ≥ 0.95
+    pub verified: u64,
+}
+
 pub fn data_dir() -> PathBuf {
     let base = if let Ok(dir) = std::env::var("SIMARIS_HOME") {
         PathBuf::from(dir)
@@ -120,6 +171,10 @@ pub fn connect() -> Result<Connection> {
     }
     if user_version == 2 {
         migrate_add_slugs(&conn)?;
+        user_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    }
+    if user_version == 3 {
+        migrate_add_archived(&conn)?;
     }
 
     initialize(&conn)?;
@@ -499,6 +554,43 @@ fn migrate_add_slugs(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Migration v3→v4: Add `archived` column to `units` for soft-delete.
+/// Pure additive — `ALTER TABLE ADD COLUMN` keeps existing rows untouched
+/// (default 0), and FTS triggers don't reference `archived`, so no rebuild
+/// or trigger churn. Idempotent: re-running on a v4 DB short-circuits via
+/// `user_version` check upstream; the column-presence guard below also
+/// makes it safe to call directly in tests.
+fn migrate_add_archived(conn: &Connection) -> Result<()> {
+    // Guard: if the column already exists (e.g. fresh install via initialize,
+    // or a re-run on an already-migrated DB) skip the ALTER and just keep
+    // user_version aligned.
+    let has_archived: bool = conn.query_row(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info('units') WHERE name = 'archived'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    // Pure additive ALTER ADD COLUMN with a NOT NULL DEFAULT is atomic and
+    // can't lose data — skip create_backup. Avoids a same-second timestamp
+    // collision with the v2→v3 migration when an upgrade jumps two versions
+    // on a single launch.
+    let tx = conn.unchecked_transaction()?;
+
+    if !has_archived {
+        tx.execute_batch(
+            "ALTER TABLE units
+             ADD COLUMN archived INTEGER NOT NULL DEFAULT 0
+                 CHECK(archived IN (0,1));",
+        )?;
+    }
+
+    tx.execute_batch("PRAGMA user_version = 4;")?;
+
+    tx.commit()?;
+
+    Ok(())
+}
+
 fn initialize(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS units (
@@ -511,7 +603,8 @@ fn initialize(conn: &Connection) -> Result<()> {
             tags        TEXT NOT NULL DEFAULT '[]',
             conditions  TEXT NOT NULL DEFAULT '{}',
             created     TEXT NOT NULL DEFAULT (datetime('now')),
-            updated     TEXT NOT NULL DEFAULT (datetime('now'))
+            updated     TEXT NOT NULL DEFAULT (datetime('now')),
+            archived    INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1))
         );
 
         CREATE TABLE IF NOT EXISTS links (
@@ -583,8 +676,8 @@ fn initialize(conn: &Connection) -> Result<()> {
 
     // Ensure user_version is set for fresh installs
     let user_version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if user_version < 3 {
-        conn.execute_batch("PRAGMA user_version = 3;")?;
+    if user_version < 4 {
+        conn.execute_batch("PRAGMA user_version = 4;")?;
     }
 
     Ok(())
@@ -594,6 +687,7 @@ fn row_to_unit(row: &rusqlite::Row) -> rusqlite::Result<Unit> {
     let tags_str: String = row.get(6)?;
     let conditions_str: String = row.get(7)?;
     let verified_int: i32 = row.get(5)?;
+    let archived_int: i32 = row.get(10)?;
     Ok(Unit {
         id: row.get(0)?,
         content: row.get(1)?,
@@ -606,6 +700,7 @@ fn row_to_unit(row: &rusqlite::Row) -> rusqlite::Result<Unit> {
             .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
         created: row.get(8)?,
         updated: row.get(9)?,
+        archived: archived_int != 0,
     })
 }
 
@@ -623,7 +718,7 @@ pub fn add_unit(conn: &Connection, content: &str, unit_type: &str, source: &str)
 pub fn get_unit(conn: &Connection, id: &str) -> Result<Unit> {
     let unit = conn
         .query_row(
-            "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
+            "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated, archived
              FROM units WHERE id = ?1",
             params![id],
             row_to_unit,
@@ -632,21 +727,37 @@ pub fn get_unit(conn: &Connection, id: &str) -> Result<Unit> {
     Ok(unit)
 }
 
-pub fn list_units(conn: &Connection, type_filter: Option<&str>) -> Result<Vec<Unit>> {
+/// List units, optionally filtered by type. By default excludes archived
+/// units (soft-deleted). Pass `include_archived=true` to surface them
+/// alongside live units.
+pub fn list_units(
+    conn: &Connection,
+    type_filter: Option<&str>,
+    include_archived: bool,
+) -> Result<Vec<Unit>> {
+    let archive_clause = if include_archived {
+        ""
+    } else {
+        "AND archived = 0"
+    };
     let units = match type_filter {
         Some(t) => {
-            let mut stmt = conn.prepare(
-                "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
-                 FROM units WHERE type = ?1 ORDER BY created DESC",
-            )?;
+            let sql = format!(
+                "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated, archived
+                 FROM units WHERE type = ?1 {archive_clause} ORDER BY created DESC"
+            );
+            let mut stmt = conn.prepare(&sql)?;
             stmt.query_map(params![t], row_to_unit)?
                 .collect::<Result<Vec<_>, _>>()?
         }
         None => {
-            let mut stmt = conn.prepare(
-                "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
-                 FROM units ORDER BY created DESC",
-            )?;
+            // The leading `WHERE 1=1` keeps the AND-prefix uniform between
+            // branches; SQLite optimizes the constant predicate away.
+            let sql = format!(
+                "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated, archived
+                 FROM units WHERE 1=1 {archive_clause} ORDER BY created DESC"
+            );
+            let mut stmt = conn.prepare(&sql)?;
             stmt.query_map([], row_to_unit)?
                 .collect::<Result<Vec<_>, _>>()?
         }
@@ -679,32 +790,43 @@ fn sanitize_fts_query(query: &str) -> String {
     terms.join(" OR ")
 }
 
+/// FTS5 search across units. By default excludes archived units; the
+/// archived predicate is applied at the SELECT level (after the FTS join)
+/// so the FTS index itself stays in sync with the full unit set.
 pub fn search_units(
     conn: &Connection,
     query: &str,
     type_filter: Option<&str>,
+    include_archived: bool,
 ) -> Result<Vec<Unit>> {
     let sanitized = sanitize_fts_query(query);
+    let archive_clause = if include_archived {
+        ""
+    } else {
+        "AND u.archived = 0"
+    };
     let units = match type_filter {
         Some(t) => {
-            let mut stmt = conn.prepare(
-                "SELECT u.id, u.content, u.type, u.source, u.confidence, u.verified, u.tags, u.conditions, u.created, u.updated
+            let sql = format!(
+                "SELECT u.id, u.content, u.type, u.source, u.confidence, u.verified, u.tags, u.conditions, u.created, u.updated, u.archived
                  FROM units_fts f
                  JOIN units u ON u.id = f.uuid
-                 WHERE units_fts MATCH ?1 AND u.type = ?2
-                 ORDER BY rank",
-            )?;
+                 WHERE units_fts MATCH ?1 AND u.type = ?2 {archive_clause}
+                 ORDER BY rank"
+            );
+            let mut stmt = conn.prepare(&sql)?;
             stmt.query_map(params![sanitized, t], row_to_unit)?
                 .collect::<Result<Vec<_>, _>>()?
         }
         None => {
-            let mut stmt = conn.prepare(
-                "SELECT u.id, u.content, u.type, u.source, u.confidence, u.verified, u.tags, u.conditions, u.created, u.updated
+            let sql = format!(
+                "SELECT u.id, u.content, u.type, u.source, u.confidence, u.verified, u.tags, u.conditions, u.created, u.updated, u.archived
                  FROM units_fts f
                  JOIN units u ON u.id = f.uuid
-                 WHERE units_fts MATCH ?1
-                 ORDER BY rank",
-            )?;
+                 WHERE units_fts MATCH ?1 {archive_clause}
+                 ORDER BY rank"
+            );
+            let mut stmt = conn.prepare(&sql)?;
             stmt.query_map(params![sanitized], row_to_unit)?
                 .collect::<Result<Vec<_>, _>>()?
         }
@@ -845,7 +967,11 @@ pub fn auto_link(conn: &Connection, unit_id: &str) -> Result<usize> {
 
     let unit_tags: Vec<String> = unit.tags.iter().map(|t| t.to_lowercase()).collect();
 
-    let mut stmt = conn.prepare("SELECT id, tags FROM units WHERE id != ?1 AND tags != '[]'")?;
+    // Exclude archived candidates from auto-link — soft-deleted units
+    // shouldn't pull new edges, and a freshly-added unit shouldn't be
+    // anchored to retired knowledge.
+    let mut stmt = conn
+        .prepare("SELECT id, tags FROM units WHERE id != ?1 AND tags != '[]' AND archived = 0")?;
     let candidates: Vec<(String, Vec<String>)> = stmt
         .query_map(params![unit_id], |row| {
             let id: String = row.get(0)?;
@@ -936,6 +1062,37 @@ pub fn update_unit(
 
 pub fn delete_unit(conn: &Connection, id: &str) -> Result<()> {
     let changes = conn.execute("DELETE FROM units WHERE id = ?1", params![id])?;
+    if changes == 0 {
+        anyhow::bail!("Unit not found: {id}");
+    }
+    Ok(())
+}
+
+/// Mark a unit as archived (soft-delete). Sets `archived=1` and bumps
+/// `updated`. Idempotent — re-archiving an already-archived unit succeeds
+/// silently. Errors only if the unit doesn't exist.
+///
+/// Archived units stay in the `units` table and the `units_fts` index, so
+/// links and FTS rows survive intact and `unarchive_unit` cleanly restores
+/// the unit to default views.
+pub fn archive_unit(conn: &Connection, id: &str) -> Result<()> {
+    let changes = conn.execute(
+        "UPDATE units SET archived = 1, updated = datetime('now') WHERE id = ?1",
+        params![id],
+    )?;
+    if changes == 0 {
+        anyhow::bail!("Unit not found: {id}");
+    }
+    Ok(())
+}
+
+/// Reverse of `archive_unit` — clears the archived flag. Idempotent on a
+/// live unit. Errors only if the unit doesn't exist.
+pub fn unarchive_unit(conn: &Connection, id: &str) -> Result<()> {
+    let changes = conn.execute(
+        "UPDATE units SET archived = 0, updated = datetime('now') WHERE id = ?1",
+        params![id],
+    )?;
     if changes == 0 {
         anyhow::bail!("Unit not found: {id}");
     }
@@ -1056,10 +1213,11 @@ pub fn add_mark(conn: &Connection, unit_id: &str, kind: &str, delta: f64) -> Res
 }
 
 pub fn scan(conn: &Connection, stale_days: u32) -> Result<ScanResult> {
-    // Low confidence
+    // Low confidence — archived units are out of consideration, they are
+    // already retired so resurrecting them as "low confidence" is noise.
     let mut stmt = conn.prepare(
-        "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
-         FROM units WHERE confidence < ?1",
+        "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated, archived
+         FROM units WHERE confidence < ?1 AND archived = 0",
     )?;
     let low_confidence = stmt
         .query_map(params![LOW_CONFIDENCE_THRESHOLD], row_to_unit)?
@@ -1067,21 +1225,24 @@ pub fn scan(conn: &Connection, stale_days: u32) -> Result<ScanResult> {
 
     // Negative marks (units with wrong or outdated marks in marks table)
     let mut stmt = conn.prepare(
-        "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
+        "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated, archived
          FROM units u
-         WHERE EXISTS (SELECT 1 FROM marks WHERE unit_id = u.id AND kind IN ('wrong', 'outdated'))",
+         WHERE archived = 0
+           AND EXISTS (SELECT 1 FROM marks WHERE unit_id = u.id AND kind IN ('wrong', 'outdated'))",
     )?;
     let negative_marks = stmt
         .query_map([], row_to_unit)?
         .collect::<Result<Vec<_>, _>>()?;
 
-    // Contradictions (dedup via from_id < to_id)
+    // Contradictions (dedup via from_id < to_id) — drop pairs where either
+    // side is archived, since the contradiction is moot once retired.
     let mut stmt = conn.prepare(
         "SELECT l.from_id, u1.content, l.to_id, u2.content
          FROM links l
          JOIN units u1 ON u1.id = l.from_id
          JOIN units u2 ON u2.id = l.to_id
-         WHERE l.relationship = 'contradicts' AND l.from_id < l.to_id",
+         WHERE l.relationship = 'contradicts' AND l.from_id < l.to_id
+           AND u1.archived = 0 AND u2.archived = 0",
     )?;
     let contradictions = stmt
         .query_map([], |row| {
@@ -1096,9 +1257,10 @@ pub fn scan(conn: &Connection, stale_days: u32) -> Result<ScanResult> {
 
     // Orphans (no links in either direction)
     let mut stmt = conn.prepare(
-        "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
+        "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated, archived
          FROM units u
-         WHERE NOT EXISTS (SELECT 1 FROM links WHERE from_id = u.id)
+         WHERE archived = 0
+           AND NOT EXISTS (SELECT 1 FROM links WHERE from_id = u.id)
            AND NOT EXISTS (SELECT 1 FROM links WHERE to_id = u.id)",
     )?;
     let orphans = stmt
@@ -1108,9 +1270,10 @@ pub fn scan(conn: &Connection, stale_days: u32) -> Result<ScanResult> {
     // Stale (old and never marked)
     let stale_modifier = format!("-{stale_days} days");
     let mut stmt = conn.prepare(
-        "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated
+        "SELECT id, content, type, source, confidence, verified, tags, conditions, created, updated, archived
          FROM units u
-         WHERE created < datetime('now', ?1)
+         WHERE archived = 0
+           AND created < datetime('now', ?1)
            AND NOT EXISTS (SELECT 1 FROM marks WHERE unit_id = u.id)",
     )?;
     let stale = stmt
@@ -1179,6 +1342,7 @@ pub fn scan_unstructured(
              SELECT unit_id, COUNT(*) AS n FROM marks GROUP BY unit_id
          ) m ON m.unit_id = u.id
          WHERE length(u.content) >= 200
+           AND u.archived = 0
            AND (?1 IS NULL OR u.type = ?1)
            {supersede_clause}
            {unschemaed_clause}
@@ -1228,6 +1392,173 @@ pub fn scan_unstructured(
         });
     }
     Ok(out)
+}
+
+/// Aggregate metrics for the dashboard. All counts computed in SQL.
+///
+/// `top_tags` caps the per-tag breakdown — typical dashboard usage wants the
+/// 50 most-frequent tags, not the long tail. `total_unique` reports the full
+/// distinct-tag count regardless of `top_tags`.
+///
+/// `include_archived = false` (default): `total`, `by_type`, `by_tag`,
+/// `confidence`, and `superseded_count` filter out archived units, matching
+/// the default view of `list` / `search` / `ask`. `archived_count`,
+/// `inbox_size`, and `marks` are always reported in full — they describe
+/// the store as a whole, not the live working set.
+pub fn stats(conn: &Connection, top_tags: usize, include_archived: bool) -> Result<Stats> {
+    let archive_filter = if include_archived {
+        ""
+    } else {
+        " WHERE archived = 0"
+    };
+
+    // total
+    let total: i64 = conn.query_row(
+        &format!("SELECT COUNT(*) FROM units{archive_filter}"),
+        [],
+        |row| row.get(0),
+    )?;
+
+    // by_type
+    let mut by_type: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    {
+        let sql =
+            format!("SELECT type, COUNT(*) FROM units{archive_filter} GROUP BY type ORDER BY type");
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |row| {
+            let t: String = row.get(0)?;
+            let n: i64 = row.get(1)?;
+            Ok((t, n))
+        })?;
+        for r in rows {
+            let (t, n) = r?;
+            by_type.insert(t, n.max(0) as u64);
+        }
+    }
+
+    // by_tag — unpack JSON arrays via json_each, group by tag value.
+    // Cap the result list at `top_tags`; report total distinct count separately.
+    // The `WHERE` joins archive filter via subquery to keep json_each happy.
+    let unit_filter = if include_archived {
+        ""
+    } else {
+        " AND u.archived = 0"
+    };
+    let top: Vec<TagCount> = {
+        let sql = format!(
+            "SELECT j.value, COUNT(*) AS n
+             FROM units u, json_each(u.tags) j
+             WHERE 1=1{unit_filter}
+             GROUP BY j.value
+             ORDER BY n DESC, j.value ASC
+             LIMIT ?1"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        stmt.query_map(params![top_tags as i64], |row| {
+            let tag: String = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            Ok(TagCount {
+                tag,
+                count: count.max(0) as u64,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?
+    };
+    let total_unique: i64 = conn.query_row(
+        &format!(
+            "SELECT COUNT(DISTINCT j.value)
+             FROM units u, json_each(u.tags) j
+             WHERE 1=1{unit_filter}"
+        ),
+        [],
+        |row| row.get(0),
+    )?;
+    let by_tag = TagStats {
+        top,
+        total_unique: total_unique.max(0) as u64,
+    };
+
+    // Confidence histogram via a single CASE — one scan beats four queries.
+    let confidence = {
+        let sql = format!(
+            "SELECT
+                SUM(CASE WHEN confidence < 0.6 THEN 1 ELSE 0 END) AS low,
+                SUM(CASE WHEN confidence >= 0.6 AND confidence < 0.8 THEN 1 ELSE 0 END) AS medium,
+                SUM(CASE WHEN confidence >= 0.8 AND confidence < 0.95 THEN 1 ELSE 0 END) AS high,
+                SUM(CASE WHEN confidence >= 0.95 THEN 1 ELSE 0 END) AS verified
+             FROM units{archive_filter}"
+        );
+        conn.query_row(&sql, [], |row| {
+            // SUM over an empty set returns NULL — coerce to 0.
+            let low: Option<i64> = row.get(0)?;
+            let medium: Option<i64> = row.get(1)?;
+            let high: Option<i64> = row.get(2)?;
+            let verified: Option<i64> = row.get(3)?;
+            Ok(ConfidenceHistogram {
+                low: low.unwrap_or(0).max(0) as u64,
+                medium: medium.unwrap_or(0).max(0) as u64,
+                high: high.unwrap_or(0).max(0) as u64,
+                verified: verified.unwrap_or(0).max(0) as u64,
+            })
+        })?
+    };
+
+    // inbox_size — independent of archive flag (inbox is pre-classification).
+    let inbox_size: i64 = conn.query_row("SELECT COUNT(*) FROM inbox", [], |row| row.get(0))?;
+
+    // marks by kind — global, not filtered by archive (a mark on an archived
+    // unit is still a recorded data point).
+    let mut marks: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    {
+        let mut stmt = conn.prepare("SELECT kind, COUNT(*) FROM marks GROUP BY kind")?;
+        let rows = stmt.query_map([], |row| {
+            let kind: String = row.get(0)?;
+            let n: i64 = row.get(1)?;
+            Ok((kind, n))
+        })?;
+        for r in rows {
+            let (kind, n) = r?;
+            marks.insert(kind, n.max(0) as u64);
+        }
+    }
+
+    // superseded_count — distinct units with an incoming `supersedes` edge.
+    // Default excludes archived target units (consistent with the rest of
+    // the live-only view).
+    let superseded_count: i64 = if include_archived {
+        conn.query_row(
+            "SELECT COUNT(DISTINCT to_id) FROM links WHERE relationship = 'supersedes'",
+            [],
+            |row| row.get(0),
+        )?
+    } else {
+        conn.query_row(
+            "SELECT COUNT(DISTINCT l.to_id)
+             FROM links l
+             JOIN units u ON u.id = l.to_id
+             WHERE l.relationship = 'supersedes' AND u.archived = 0",
+            [],
+            |row| row.get(0),
+        )?
+    };
+
+    // archived_count — always the raw count, independent of include_archived.
+    let archived_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM units WHERE archived = 1", [], |row| {
+            row.get(0)
+        })?;
+
+    Ok(Stats {
+        total: total.max(0) as u64,
+        by_type,
+        by_tag,
+        confidence,
+        inbox_size: inbox_size.max(0) as u64,
+        marks,
+        superseded_count: superseded_count.max(0) as u64,
+        archived_count: archived_count.max(0) as u64,
+        include_archived,
+    })
 }
 
 pub fn drop_item(conn: &Connection, content: &str, source: &str) -> Result<String> {
@@ -1629,7 +1960,7 @@ mod tests {
         add_unit(&conn, "fact one", "fact", "test").unwrap();
         add_unit(&conn, "procedure one", "procedure", "test").unwrap();
         add_unit(&conn, "principle one", "principle", "test").unwrap();
-        let units = list_units(&conn, None).unwrap();
+        let units = list_units(&conn, None, false).unwrap();
         assert_eq!(units.len(), 3);
     }
 
@@ -1639,7 +1970,7 @@ mod tests {
         add_unit(&conn, "fact one", "fact", "test").unwrap();
         add_unit(&conn, "fact two", "fact", "test").unwrap();
         add_unit(&conn, "procedure one", "procedure", "test").unwrap();
-        let units = list_units(&conn, Some("fact")).unwrap();
+        let units = list_units(&conn, Some("fact"), false).unwrap();
         assert_eq!(units.len(), 2);
         assert!(units.iter().all(|u| u.unit_type == "fact"));
     }
@@ -1647,7 +1978,7 @@ mod tests {
     #[test]
     fn test_list_empty() {
         let conn = memory_db();
-        let units = list_units(&conn, None).unwrap();
+        let units = list_units(&conn, None, false).unwrap();
         assert!(units.is_empty());
     }
 
@@ -1656,7 +1987,7 @@ mod tests {
         let conn = memory_db();
         add_unit(&conn, "caching improves performance", "fact", "test").unwrap();
         add_unit(&conn, "deploy with cargo install", "procedure", "test").unwrap();
-        let units = search_units(&conn, "caching", None).unwrap();
+        let units = search_units(&conn, "caching", None, false).unwrap();
         assert_eq!(units.len(), 1);
         assert_eq!(units[0].content, "caching improves performance");
     }
@@ -1665,7 +1996,7 @@ mod tests {
     fn test_search_no_match() {
         let conn = memory_db();
         add_unit(&conn, "some content here", "fact", "test").unwrap();
-        let units = search_units(&conn, "nonexistent", None).unwrap();
+        let units = search_units(&conn, "nonexistent", None, false).unwrap();
         assert!(units.is_empty());
     }
 
@@ -1708,7 +2039,7 @@ mod tests {
     fn test_fts_sync_after_add() {
         let conn = memory_db();
         add_unit(&conn, "unique searchable content", "fact", "test").unwrap();
-        let units = search_units(&conn, "searchable", None).unwrap();
+        let units = search_units(&conn, "searchable", None, false).unwrap();
         assert_eq!(units.len(), 1);
         assert_eq!(units[0].content, "unique searchable content");
     }
@@ -1718,7 +2049,7 @@ mod tests {
         let conn = memory_db();
         add_unit(&conn, "deploy with cargo install", "procedure", "test").unwrap();
         add_unit(&conn, "cargo is a fast build tool", "fact", "test").unwrap();
-        let units = search_units(&conn, "cargo", Some("procedure")).unwrap();
+        let units = search_units(&conn, "cargo", Some("procedure"), false).unwrap();
         assert_eq!(units.len(), 1);
         assert_eq!(units[0].unit_type, "procedure");
     }
@@ -1728,7 +2059,7 @@ mod tests {
         let conn = memory_db();
         add_unit(&conn, "deploy with cargo install", "procedure", "test").unwrap();
         add_unit(&conn, "cargo is a fast build tool", "fact", "test").unwrap();
-        let units = search_units(&conn, "cargo", None).unwrap();
+        let units = search_units(&conn, "cargo", None, false).unwrap();
         assert_eq!(units.len(), 2);
     }
 
@@ -2016,7 +2347,7 @@ mod tests {
         let version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
     }
 
     #[test]
@@ -2371,8 +2702,15 @@ mod tests {
         conn
     }
 
+    /// Serialize migration tests that mutate the global `SIMARIS_HOME` env
+    /// var. cargo test runs in parallel; without this lock two migration
+    /// tests race on the same env var, producing a `create_backup` collision
+    /// when their VACUUM INTO targets land on the same per-second timestamp.
+    static MIGRATION_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_migrate_add_slugs_from_v2() {
+        let _env_lock = MIGRATION_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // Isolate the backup write that migrate_add_slugs performs via create_backup.
         let temp = std::env::temp_dir().join(format!(
             "simaris-migrate-v2-{}-{}",
@@ -2380,8 +2718,9 @@ mod tests {
             uuid::Uuid::now_v7()
         ));
         std::fs::create_dir_all(&temp).unwrap();
-        // SAFETY: no other unit test sets SIMARIS_HOME, and no other unit test
-        // exercises create_backup / data_dir during its run.
+        // SAFETY: MIGRATION_ENV_LOCK serializes every test that touches
+        // SIMARIS_HOME / data_dir, so no other thread reads the var while
+        // we own the guard.
         unsafe {
             std::env::set_var("SIMARIS_HOME", &temp);
         }
@@ -2463,6 +2802,248 @@ mod tests {
             .query_row("SELECT count(*) FROM marks", [], |row| row.get(0))
             .unwrap();
         assert_eq!(marks_count, 1);
+    }
+
+    /// Build an in-memory DB pinned at user_version=3 (the pre-archived state).
+    /// Schema mirrors what `initialize()` produced before the archived column
+    /// was added.
+    fn v3_memory_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        conn.execute_batch(
+            "CREATE TABLE units (
+                id          TEXT PRIMARY KEY,
+                content     TEXT NOT NULL,
+                type        TEXT NOT NULL CHECK(type IN ('fact','procedure','principle','preference','lesson','idea','aspect')),
+                source      TEXT NOT NULL DEFAULT 'inbox',
+                confidence  REAL NOT NULL DEFAULT 1.0,
+                verified    INTEGER NOT NULL DEFAULT 0,
+                tags        TEXT NOT NULL DEFAULT '[]',
+                conditions  TEXT NOT NULL DEFAULT '{}',
+                created     TEXT NOT NULL DEFAULT (datetime('now')),
+                updated     TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE links (
+                from_id      TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+                to_id        TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+                relationship TEXT NOT NULL CHECK(relationship IN (
+                                 'related_to','part_of','depends_on',
+                                 'contradicts','supersedes','sourced_from')),
+                PRIMARY KEY (from_id, to_id, relationship)
+            );
+            CREATE INDEX idx_links_to ON links(to_id);
+            CREATE TABLE inbox (
+                id      TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                source  TEXT NOT NULL DEFAULT 'cli',
+                created TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE marks (
+                id       TEXT PRIMARY KEY,
+                unit_id  TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+                kind     TEXT NOT NULL CHECK(kind IN ('used','wrong','outdated','helpful')),
+                created  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_marks_unit ON marks(unit_id);
+            CREATE TABLE slugs (
+                slug     TEXT PRIMARY KEY,
+                unit_id  TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+                created  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_slugs_unit ON slugs(unit_id);
+            CREATE VIRTUAL TABLE units_fts USING fts5(uuid, content, type, tags, source);
+            CREATE TRIGGER units_ai AFTER INSERT ON units BEGIN
+                INSERT INTO units_fts(uuid, content, type, tags, source)
+                VALUES (new.id, new.content, new.type, new.tags, new.source);
+            END;
+            CREATE TRIGGER units_ad AFTER DELETE ON units BEGIN
+                DELETE FROM units_fts WHERE uuid = old.id;
+            END;
+            CREATE TRIGGER units_au AFTER UPDATE ON units BEGIN
+                DELETE FROM units_fts WHERE uuid = old.id;
+                INSERT INTO units_fts(uuid, content, type, tags, source)
+                VALUES (new.id, new.content, new.type, new.tags, new.source);
+            END;
+            PRAGMA user_version = 3;",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_migrate_add_archived_from_v3() {
+        // No SIMARIS_HOME juggling needed: migrate_add_archived skips the
+        // backup step (additive ADD COLUMN is atomic), so this test runs
+        // fully in-memory and parallel-safe.
+        let conn = v3_memory_db();
+
+        // Sanity: archived column not present, user_version=3.
+        let pre_version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(pre_version, 3);
+        let pre_archived: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('units') WHERE name='archived'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(pre_archived, 0);
+
+        // Seed pre-migration rows directly via raw SQL (since add_unit's
+        // SELECT references archived which doesn't exist yet).
+        let u1 = Uuid::now_v7().to_string();
+        conn.execute(
+            "INSERT INTO units (id, content, type, source) VALUES (?1, ?2, ?3, ?4)",
+            params![u1, "seed one", "fact", "test"],
+        )
+        .unwrap();
+
+        // Run the migration.
+        migrate_add_archived(&conn).unwrap();
+
+        // user_version advanced.
+        let post_version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(post_version, 4);
+
+        // archived column present and defaulted to 0 for the seed row.
+        let archived_for_seed: i32 = conn
+            .query_row(
+                "SELECT archived FROM units WHERE id = ?1",
+                params![u1],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(archived_for_seed, 0);
+
+        // Idempotency: re-running on a v4 DB is a no-op (returns Ok).
+        migrate_add_archived(&conn).unwrap();
+        let still_v4: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(still_v4, 4);
+    }
+
+    #[test]
+    fn test_archive_and_unarchive_roundtrip() {
+        let conn = memory_db();
+        let id = add_unit(&conn, "live unit", "fact", "test").unwrap();
+
+        // Default: not archived.
+        let unit = get_unit(&conn, &id).unwrap();
+        assert!(!unit.archived);
+
+        archive_unit(&conn, &id).unwrap();
+        let unit = get_unit(&conn, &id).unwrap();
+        assert!(unit.archived);
+
+        // Idempotent re-archive.
+        archive_unit(&conn, &id).unwrap();
+        assert!(get_unit(&conn, &id).unwrap().archived);
+
+        unarchive_unit(&conn, &id).unwrap();
+        assert!(!get_unit(&conn, &id).unwrap().archived);
+    }
+
+    #[test]
+    fn test_archive_unknown_unit_errors() {
+        let conn = memory_db();
+        assert!(archive_unit(&conn, "no-such-unit").is_err());
+        assert!(unarchive_unit(&conn, "no-such-unit").is_err());
+    }
+
+    #[test]
+    fn test_list_units_excludes_archived_by_default() {
+        let conn = memory_db();
+        let live = add_unit(&conn, "live", "fact", "test").unwrap();
+        let dead = add_unit(&conn, "dead", "fact", "test").unwrap();
+        archive_unit(&conn, &dead).unwrap();
+
+        let default = list_units(&conn, None, false).unwrap();
+        assert_eq!(default.len(), 1);
+        assert_eq!(default[0].id, live);
+
+        let with_archived = list_units(&conn, None, true).unwrap();
+        assert_eq!(with_archived.len(), 2);
+    }
+
+    #[test]
+    fn test_search_units_excludes_archived_by_default() {
+        let conn = memory_db();
+        let live = add_unit(&conn, "uniqueterm one", "fact", "test").unwrap();
+        let dead = add_unit(&conn, "uniqueterm two", "fact", "test").unwrap();
+        archive_unit(&conn, &dead).unwrap();
+
+        let default = search_units(&conn, "uniqueterm", None, false).unwrap();
+        assert_eq!(default.len(), 1);
+        assert_eq!(default[0].id, live);
+
+        // FTS row for the archived unit still exists — flipping the flag
+        // resurrects it without any reindex.
+        let with_archived = search_units(&conn, "uniqueterm", None, true).unwrap();
+        assert_eq!(with_archived.len(), 2);
+    }
+
+    #[test]
+    fn test_get_unit_returns_archived() {
+        // Direct lookup ignores the archived flag — `simaris show` must keep
+        // working on archived units so callers can inspect or unarchive.
+        let conn = memory_db();
+        let id = add_unit(&conn, "soon-dead", "fact", "test").unwrap();
+        archive_unit(&conn, &id).unwrap();
+        let unit = get_unit(&conn, &id).unwrap();
+        assert!(unit.archived);
+        assert_eq!(unit.id, id);
+    }
+
+    #[test]
+    fn test_scan_excludes_archived() {
+        let conn = memory_db();
+        // Archived low-confidence unit: should NOT show up in scan.
+        let dead = add_unit(&conn, "shaky", "fact", "test").unwrap();
+        conn.execute(
+            "UPDATE units SET confidence = 0.3 WHERE id = ?1",
+            params![dead],
+        )
+        .unwrap();
+        archive_unit(&conn, &dead).unwrap();
+
+        let result = scan(&conn, 90).unwrap();
+        assert!(
+            result.low_confidence.iter().all(|u| u.id != dead),
+            "archived unit must not appear in scan low_confidence"
+        );
+    }
+
+    #[test]
+    fn test_auto_link_skips_archived_candidates() {
+        let conn = memory_db();
+        let live = add_unit_full(
+            &conn,
+            "live unit",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+        archive_unit(&conn, &live).unwrap();
+
+        let fresh = add_unit_full(
+            &conn,
+            "fresh unit",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+        let count = auto_link(&conn, &fresh).unwrap();
+        assert_eq!(
+            count, 0,
+            "auto_link must not create edges to archived candidates"
+        );
     }
 
     mod slug {

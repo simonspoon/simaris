@@ -172,6 +172,10 @@ enum Command {
         /// Emit full unit bodies (default: lean id/type/slug/headline/tags/source/confidence)
         #[arg(long)]
         full: bool,
+
+        /// Include archived units (default: hidden)
+        #[arg(long)]
+        include_archived: bool,
     },
 
     /// Search knowledge units
@@ -186,6 +190,66 @@ enum Command {
         /// Emit full unit bodies (default: lean id/type/slug/headline/tags/source/confidence)
         #[arg(long)]
         full: bool,
+
+        /// Include archived units (default: hidden)
+        #[arg(long)]
+        include_archived: bool,
+    },
+
+    /// Aggregate metrics for the dashboard (single fast query)
+    ///
+    /// Computes counts entirely in SQL: total units, by-type, by-tag (top N),
+    /// confidence histogram, inbox size, mark counts, superseded count,
+    /// archived count. Default view excludes archived units; pass
+    /// `--include-archived` to fold them in.
+    Stats {
+        /// Cap the per-tag breakdown at this many tags (most-frequent first).
+        /// `total_unique` still reports the full distinct-tag count.
+        #[arg(long, default_value_t = 50)]
+        top: usize,
+
+        /// Include archived units in `total`, `by_type`, `by_tag`,
+        /// `confidence`, and `superseded_count` (default: hidden).
+        #[arg(long)]
+        include_archived: bool,
+    },
+
+    /// Archive a unit (soft-delete — reversible via `unarchive`)
+    Archive {
+        /// Unit ID or slug
+        id: String,
+    },
+
+    /// Clone a unit into a fresh UUIDv7
+    ///
+    /// Copies content, type, source, and tags from the source unit. Confidence
+    /// resets to the system default (1.0) and `verified` resets to false —
+    /// a clone is unverified by definition. Links and marks are NOT copied.
+    /// Auto-link runs against the new unit (related_to on 2+ tag overlap),
+    /// matching `add`. Frontmatter `refs:` are re-materialized as related_to
+    /// edges from the new unit.
+    Clone {
+        /// Source unit id or slug
+        id: String,
+
+        /// Override the cloned unit's type (default: same as source)
+        #[arg(long, rename_all = "snake_case")]
+        r#type: Option<UnitType>,
+
+        /// Override the cloned unit's source (default: same as source)
+        #[arg(long)]
+        source: Option<String>,
+
+        /// Override the cloned unit's tags, comma-separated
+        /// (default: same as source; empty string clears tags)
+        #[arg(long)]
+        tags: Option<String>,
+    },
+
+    /// Unarchive a unit (reverse of `archive`)
+    Unarchive {
+        /// Unit ID or slug
+        id: String,
     },
 
     /// Create a backup of the knowledge store
@@ -225,6 +289,10 @@ enum Command {
         /// Unknown entries are silently ignored.
         #[arg(long = "primary")]
         primary: Vec<String>,
+
+        /// Include archived units in the primer (default: hidden)
+        #[arg(long)]
+        include_archived: bool,
     },
 
     /// Ask the knowledge store a question
@@ -239,6 +307,10 @@ enum Command {
         /// Filter by type
         #[arg(long, rename_all = "snake_case")]
         r#type: Option<UnitType>,
+
+        /// Include archived units in FTS results (default: hidden)
+        #[arg(long)]
+        include_archived: bool,
     },
 
     /// Edit a knowledge unit
@@ -923,9 +995,13 @@ fn main() -> Result<()> {
             let items = db::list_inbox(&conn)?;
             display::print_inbox(&items, cli.json);
         }
-        Command::List { r#type, full } => {
+        Command::List {
+            r#type,
+            full,
+            include_archived,
+        } => {
             let filter = r#type.as_ref().map(|t| t.as_str());
-            let units = db::list_units(&conn, filter)?;
+            let units = db::list_units(&conn, filter, include_archived)?;
             if full {
                 display::print_units(&units, cli.json);
             } else {
@@ -937,15 +1013,64 @@ fn main() -> Result<()> {
             query,
             r#type,
             full,
+            include_archived,
         } => {
             let filter = r#type.as_ref().map(|t| t.as_str());
-            let units = db::search_units(&conn, &query, filter)?;
+            let units = db::search_units(&conn, &query, filter, include_archived)?;
             if full {
                 display::print_units(&units, cli.json);
             } else {
                 let slug_map = build_slug_map(&conn, &units)?;
                 display::print_units_lean(&units, &slug_map, cli.json);
             }
+        }
+        Command::Stats {
+            top,
+            include_archived,
+        } => {
+            let stats = db::stats(&conn, top, include_archived)?;
+            display::print_stats(&stats, cli.json);
+        }
+        Command::Archive { id } => {
+            let id = db::resolve_id(&conn, &id)?;
+            db::archive_unit(&conn, &id)?;
+            display::print_archived(&id, cli.json);
+        }
+        Command::Clone {
+            id,
+            r#type,
+            source,
+            tags,
+        } => {
+            let src_id = db::resolve_id(&conn, &id)?;
+            let original = db::get_unit(&conn, &src_id)?;
+
+            let new_type = r#type
+                .as_ref()
+                .map(|t| t.as_str().to_string())
+                .unwrap_or_else(|| original.unit_type.clone());
+            let new_source = source.unwrap_or_else(|| original.source.clone());
+            let new_tags: Vec<String> = match tags {
+                Some(t) => t
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect(),
+                None => original.tags.clone(),
+            };
+
+            let new_id =
+                db::add_unit_full(&conn, &original.content, &new_type, &new_source, &new_tags)?;
+            display::print_cloned(&src_id, &new_id, cli.json);
+            let linked = db::auto_link(&conn, &new_id)?;
+            if linked > 0 && !cli.json {
+                println!("  auto-linked to {linked} existing unit(s)");
+            }
+        }
+        Command::Unarchive { id } => {
+            let id = db::resolve_id(&conn, &id)?;
+            db::unarchive_unit(&conn, &id)?;
+            display::print_unarchived(&id, cli.json);
         }
         Command::Backup => {
             let path = db::create_backup(&conn)?;
@@ -1011,20 +1136,32 @@ fn main() -> Result<()> {
                 success, total_units, failed
             );
         }
-        Command::Prime { task, primary } => {
-            let result = ask::prime(&conn, &task, &primary, cli.debug)?;
+        Command::Prime {
+            task,
+            primary,
+            include_archived,
+        } => {
+            let result = ask::prime(&conn, &task, &primary, cli.debug, include_archived)?;
             display::print_prime(&result, cli.json);
         }
         Command::Ask {
             query,
             synthesize,
             r#type,
+            include_archived,
         } => {
             if synthesize {
                 digest::check_claude()?;
             }
             let filter = r#type.as_ref().map(|t| t.as_str());
-            let result = ask::ask(&conn, &query, synthesize, cli.debug, filter)?;
+            let result = ask::ask(
+                &conn,
+                &query,
+                synthesize,
+                cli.debug,
+                filter,
+                include_archived,
+            )?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&result).unwrap());
             } else if let Some(ref response) = result.response {

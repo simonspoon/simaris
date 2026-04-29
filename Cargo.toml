@@ -1,3 +1,7 @@
+[workspace]
+members = ["simaris-server"]
+resolver = "3"
+
 [package]
 name = "simaris"
 version = "0.3.8"

@@ -1,5 +1,5 @@
 use crate::ask::PrimeResult;
-use crate::db::{InboxItem, Link, ScanResult, SlugRow, Unit, UnstructuredRow};
+use crate::db::{InboxItem, Link, ScanResult, SlugRow, Stats, Unit, UnstructuredRow};
 use crate::emit::EmitResult;
 use crate::frontmatter;
 use serde::Serialize;
@@ -81,6 +81,11 @@ struct LeanUnit<'a> {
     tags: &'a [String],
     source: &'a str,
     confidence: f64,
+    /// Surfaced only when an archived unit is present in the result set
+    /// (i.e. caller passed `--include-archived`). Skipped from JSON when
+    /// false to keep payloads compact for the common live-only case.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    archived: bool,
 }
 
 pub fn print_units_lean(units: &[Unit], slug_map: &[Option<String>], json: bool) {
@@ -96,6 +101,7 @@ pub fn print_units_lean(units: &[Unit], slug_map: &[Option<String>], json: bool)
                 tags: &u.tags,
                 source: &u.source,
                 confidence: u.confidence,
+                archived: u.archived,
             })
             .collect();
         println!("{}", serde_json::to_string_pretty(&rows).unwrap());
@@ -109,8 +115,12 @@ pub fn print_units_lean(units: &[Unit], slug_map: &[Option<String>], json: bool)
             } else {
                 format!("  [{}]", unit.tags.join(", "))
             };
+            // Archived rows lead with a `[archived]` marker so the soft-
+            // deleted state is obvious in `--include-archived` listings.
+            let archived_marker = if unit.archived { "[archived] " } else { "" };
             println!(
-                "[{}] {} ({}) {}  {}  conf={:.2}{}",
+                "{}[{}] {} ({}) {}  {}  conf={:.2}{}",
+                archived_marker,
                 short_id(&unit.id),
                 unit.unit_type,
                 unit.source,
@@ -159,8 +169,10 @@ pub fn print_unit(
             }
         }
         println!(
-            "confidence: {}  verified: {}",
-            unit.confidence, unit.verified
+            "confidence: {}  verified: {}{}",
+            unit.confidence,
+            unit.verified,
+            if unit.archived { "  [archived]" } else { "" }
         );
         if !unit.tags.is_empty() {
             println!("tags: {}", unit.tags.join(", "));
@@ -193,11 +205,85 @@ pub fn print_added(id: &str, json: bool) {
     }
 }
 
+pub fn print_cloned(from_id: &str, new_id: &str, json: bool) {
+    if json {
+        println!("{}", serde_json::json!({ "id": new_id, "from": from_id }));
+    } else {
+        println!("Cloned {from_id} -> {new_id}");
+    }
+}
+
 pub fn print_deleted(id: &str, json: bool) {
     if json {
         println!("{}", serde_json::json!({ "deleted": id }));
     } else {
         println!("Deleted unit {id}");
+    }
+}
+
+pub fn print_archived(id: &str, json: bool) {
+    if json {
+        println!("{}", serde_json::json!({ "archived": id }));
+    } else {
+        println!("Archived unit {id}");
+    }
+}
+
+pub fn print_unarchived(id: &str, json: bool) {
+    if json {
+        println!("{}", serde_json::json!({ "unarchived": id }));
+    } else {
+        println!("Unarchived unit {id}");
+    }
+}
+
+pub fn print_stats(stats: &Stats, json: bool) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(stats).unwrap());
+        return;
+    }
+    let scope = if stats.include_archived {
+        "all units (including archived)"
+    } else {
+        "live units (archived excluded)"
+    };
+    println!("simaris stats — {scope}");
+    println!("  total:            {}", stats.total);
+    println!("  archived:         {}", stats.archived_count);
+    println!("  inbox:            {}", stats.inbox_size);
+    println!("  superseded:       {}", stats.superseded_count);
+    println!("\nby type:");
+    if stats.by_type.is_empty() {
+        println!("  (none)");
+    } else {
+        for (t, n) in &stats.by_type {
+            println!("  {t:<12} {n}");
+        }
+    }
+    println!("\nconfidence:");
+    println!("  low      (<0.60): {}", stats.confidence.low);
+    println!("  medium   (<0.80): {}", stats.confidence.medium);
+    println!("  high     (<0.95): {}", stats.confidence.high);
+    println!("  verified (≥0.95): {}", stats.confidence.verified);
+    println!("\nmarks:");
+    if stats.marks.is_empty() {
+        println!("  (none)");
+    } else {
+        for (kind, n) in &stats.marks {
+            println!("  {kind:<10} {n}");
+        }
+    }
+    println!(
+        "\ntags ({} unique, top {}):",
+        stats.by_tag.total_unique,
+        stats.by_tag.top.len()
+    );
+    if stats.by_tag.top.is_empty() {
+        println!("  (none)");
+    } else {
+        for tc in &stats.by_tag.top {
+            println!("  {:<24} {}", tc.tag, tc.count);
+        }
     }
 }
 

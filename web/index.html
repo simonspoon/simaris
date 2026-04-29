@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>simaris admin — dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <!--
+      ECharts pinned via jsdelivr CDN. Mitigation for offline use:
+      vendor echarts.min.js into web/vendor/ and swap the src.
+    -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  </head>
+  <body>
+    <nav class="nav">
+      <span class="nav__brand">simaris</span>
+      <div class="nav__tabs">
+        <a class="nav__tab nav__tab--active" href="/">Dashboard</a>
+        <a class="nav__tab" href="/units.html">Units</a>
+      </div>
+    </nav>
+
+    <main class="main">
+      <div class="dashboard__header">
+        <h1>Dashboard</h1>
+        <div class="dashboard__controls">
+          <label class="toggle">
+            <input type="checkbox" id="hide-superseded" />
+            <span>Hide superseded</span>
+          </label>
+          <button type="button" id="refresh-now" class="btn">Refresh</button>
+        </div>
+      </div>
+
+      <section class="tiles" aria-label="key metrics">
+        <div class="tile">
+          <div class="tile__label">Total units</div>
+          <div class="tile__value" id="tile-total">—</div>
+          <div class="tile__sub" id="tile-total-sub"></div>
+        </div>
+        <div class="tile">
+          <div class="tile__label">Archived</div>
+          <div class="tile__value" id="tile-archived">—</div>
+        </div>
+        <div class="tile">
+          <div class="tile__label">Superseded</div>
+          <div class="tile__value" id="tile-superseded">—</div>
+        </div>
+        <div class="tile">
+          <div class="tile__label">Inbox</div>
+          <div class="tile__value" id="tile-inbox">—</div>
+        </div>
+      </section>
+
+      <section class="charts">
+        <div class="chart-card">
+          <h2 class="chart-card__title">Units by type</h2>
+          <div class="chart" id="chart-types"></div>
+        </div>
+        <div class="chart-card">
+          <h2 class="chart-card__title">Top tags</h2>
+          <div class="chart" id="chart-tags"></div>
+        </div>
+        <div class="chart-card chart-card--wide">
+          <h2 class="chart-card__title">Confidence distribution</h2>
+          <div class="chart" id="chart-confidence"></div>
+        </div>
+      </section>
+    </main>
+
+    <div id="status" class="status">ready.</div>
+
+    <script type="module" src="/dashboard.js"></script>
+  </body>
+</html>

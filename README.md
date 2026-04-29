@@ -63,13 +63,20 @@ simaris ask "What do I know about Rust editions?" --synthesize
 | `drop <content>` | Capture raw input to the inbox |
 | `promote <id> --type <type>` | Convert an inbox item to a typed unit |
 | `inbox` | List pending inbox items |
-| `list [--type <type>]` | List knowledge units |
-| `search <query> [--type <type>]` | Full-text search across units |
-| `ask <query> [--synthesize] [--type <type>]` | Query with optional LLM synthesis |
-| `prime <task> [--filter <strategy>]` | Assemble a task-focused mindset grouped by unit type |
+| `list [--type <type>] [--include-archived]` | List knowledge units |
+| `search <query> [--type <type>] [--include-archived]` | Full-text search across units |
+| `ask <query> [--synthesize] [--type <type>] [--include-archived]` | Query with optional LLM synthesis |
+| `prime <task> [--filter <strategy>] [--primary <id\|slug>]...` | Assemble a task-focused mindset grouped by unit type |
+| `stats [--top <n>] [--include-archived]` | Aggregate metrics for the admin dashboard |
+| `archive <id>` | Soft-delete a unit (reversible via `unarchive`) |
+| `unarchive <id>` | Restore an archived unit |
+| `clone <id> [--type] [--source] [--tags]` | Copy a unit into a fresh UUIDv7 |
 | `digest` | Classify inbox items via LLM into typed units |
 | `mark <id> --kind <kind>` | Record feedback on a unit |
 | `delete <id>` | Delete a knowledge unit |
+| `slug set\|unset\|list` | Manage human-readable slugs that resolve to unit IDs |
+| `emit --target <target> --type <type>` | Emit typed units as build artifacts |
+| `rewrite <id> [--suggest]` | Edit a unit in `$EDITOR` with type-aware skeleton or LLM pre-fill |
 | `scan [--stale-days <days>]` | Find low-confidence, stale, or orphaned units |
 | `backup` | Create a database backup |
 | `restore [<filename>]` | Restore from backup (no args = list backups) |
@@ -124,21 +131,39 @@ Data lives at `~/.simaris/sanctuary.db`. The `claude` CLI is required for `diges
 ## Architecture
 
 ```
-src/main.rs         CLI entry point (clap), command dispatch
+src/main.rs         CLI entry, clap derive command parsing, dispatch
 src/db.rs           SQLite schema, migrations, CRUD, backup/restore, scan
 src/ask.rs          FTS5 search, graph expansion, relevance filter, LLM synthesis
 src/digest.rs       LLM classification of inbox items into typed units
 src/display.rs      Text and JSON output formatting
+src/emit.rs         Build-artifact emission (claude-code aspects, etc.)
+src/rewrite.rs      $EDITOR rewrite flow with type-aware skeletons + LLM pre-fill
+src/frontmatter.rs  YAML frontmatter parse/write + refs: graph materialization
+src/size_guard.rs   Write-time body-size thresholds + warnings
 tests/integration.rs  End-to-end CLI tests via subprocess
+simaris-server/     Axum HTTP admin dashboard (separate workspace member)
+web/                Static dashboard + units page (vanilla JS + ECharts)
 ```
 
 ### Schema
 
-- **units** -- UUIDv7 primary key, content, type, source, confidence, tags (JSON), timestamps
+- **units** -- UUIDv7 primary key, content, type, source, confidence, verified, archived, tags (JSON), timestamps
 - **links** -- Composite key (from_id, to_id, relationship), CASCADE delete
 - **inbox** -- UUIDv7 primary key, content, source, timestamp
 - **marks** -- UUIDv7 primary key, unit_id FK, kind, timestamp
+- **slugs** -- TEXT primary key, unit_id FK, CASCADE delete
 - **units_fts** -- FTS5 virtual table synced via triggers
+
+Default views (`list`, `search`, `ask`, `prime`, `scan`, `emit`) hide archived units. Pass `--include-archived` to fold them back in.
+
+## Admin Dashboard (simaris-server)
+
+`simaris-server` is an HTTP admin UI for the knowledge store. It binds `0.0.0.0:3535`, mounts a JSON API under `/api`, and serves a static SPA from `web/`. All data and mutations shell out to the `simaris` CLI — no direct SQLite access. See [docs/simaris-server.md](docs/simaris-server.md) for launchd setup on macOS.
+
+```bash
+cargo install --path ./simaris-server
+simaris-server   # http://localhost:3535
+```
 
 ## License
 
