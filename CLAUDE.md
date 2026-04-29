@@ -25,7 +25,6 @@ Binaries: `./target/release/simaris`, `./target/release/simaris-server`
 | `SIMARIS_WARN_BYTES` | Warn threshold — body above this triggers a stderr warning citing `split-ruleset` at `add`/`edit` time | `2048` (placeholder; Story 4 calibrates) |
 | `SIMARIS_HARD_BYTES` | Hard threshold — body above this rejects the write (exit non-zero) unless `--force` or tag `flow`/`--flow` | `8192` (placeholder; Story 4 calibrates) |
 | `SIMARIS_BIN` | Path to `simaris` binary used by `simaris-server` | `simaris` (resolved via `PATH`) |
-| `SIMARIS_WEB_DIR` | Path to `web/` assets served by `simaris-server` | workspace-root `web/` |
 
 Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 
@@ -48,10 +47,10 @@ Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 | `src/frontmatter.rs` | ~600 | YAML frontmatter parse/write + `refs:` graph materialization |
 | `src/size_guard.rs` | 143 | Write-time body-size thresholds + warnings (`add`/`edit`) |
 | `tests/integration.rs` | 4000+ | End-to-end CLI tests via subprocess |
-| `simaris-server/src/main.rs` | 96 | Axum HTTP entry, route mount, static `web/` serve |
+| `simaris-server/src/main.rs` | ~115 | Axum HTTP entry, route mount, embedded `web/` static serve via rust_embed |
 | `simaris-server/src/cli.rs` | 56 | Shells out to `simaris` CLI for all data ops |
 | `simaris-server/src/routes/` | ~320 | `/api/stats`, `/api/search`, `/api/units/:id` (get/edit/clone/archive/unarchive) |
-| `web/` | -- | Static dashboard + units page (vanilla JS + ECharts) |
+| `web/` | -- | Static dashboard + units page (vanilla JS + ECharts), embedded into `simaris-server` at build time |
 
 ## Architecture
 
@@ -144,4 +143,4 @@ Global flags: `--json`, `--debug`
 
 ## simaris-server (admin dashboard)
 
-HTTP admin UI for the knowledge store. Binds `0.0.0.0:3535`. JSON API under `/api`, static files from `web/`. All data and mutations shell out to the `simaris` CLI — no direct SQLite access. See [docs/simaris-server.md](docs/simaris-server.md) for launchd setup.
+HTTP admin UI for the knowledge store. Binds `0.0.0.0:3535`. JSON API under `/api`, static UI assets from `web/` are embedded into the binary at build time via `rust_embed`. All data and mutations shell out to the `simaris` CLI — no direct SQLite access. See [docs/simaris-server.md](docs/simaris-server.md) for launchd setup.
