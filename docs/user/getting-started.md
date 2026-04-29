@@ -169,34 +169,11 @@ simaris edit 019682c1-a2b3-7cde-8f00-3a4b5c6d7e8f --tags "rust,formatting,commit
 simaris edit 019682c1-a2b3-7cde-8f00-3a4b5c6d7e8f --content "Run cargo fmt && cargo test before committing"
 ```
 
-## LLM-Powered Features
+## Querying the Store
 
-These features require the `claude` CLI to be installed and available on your PATH.
+### Ask -- FTS5 search + 1-hop graph expansion
 
-### Digest -- batch classify the inbox
-
-Instead of promoting items one by one, `digest` sends all inbox items through an LLM to automatically classify and split them into typed knowledge units:
-
-```
-simaris digest
-```
-
-```
-Processing 2 inbox item(s)...
-
-[019682a3-b1c4-7def-8a00-1e2f3a4b5c6d] Rust's borrow checker prevents data ra...
-    -> unit 019682d1-f0a1-7bcd-8e00-4a5b6c7d8e9f (fact) [rust, memory-safety]
-[019682a4-c2d5-7ef0-8b00-2c3d4e5f6a7b] TOML supports inline tables...
-    -> unit 019682d2-a1b2-7cde-9f00-5b6c7d8e9f0a (fact) [toml, config]
-
-Digested: 2 items -> 2 units, Skipped: 0
-```
-
-A single inbox item can produce multiple units if the LLM determines it contains several distinct pieces of knowledge.
-
-### Ask -- query with synthesis
-
-Without `--synthesize`, `ask` returns matching units from the store:
+`ask` returns matching units from the store. It runs a full-text search and pulls in 1-hop linked units so related context surfaces alongside direct hits.
 
 ```
 simaris ask "How does Rust handle memory safety?"
@@ -209,22 +186,10 @@ Found 1 relevant unit(s):
   Rust's borrow checker prevents data races at compile time
 ```
 
-With `--synthesize`, the LLM reads matching units and composes an answer grounded in your knowledge:
-
-```
-simaris ask "How does Rust handle memory safety?" --synthesize
-```
-
-```
-Rust handles memory safety primarily through its borrow checker, which
-enforces ownership rules at compile time. This prevents data races and
-use-after-free bugs without requiring a garbage collector.
-```
-
 Filter results by type:
 
 ```
-simaris ask "coding standards" --type procedure --synthesize
+simaris ask "coding standards" --type procedure
 ```
 
 ## Health Maintenance
@@ -334,7 +299,6 @@ simaris search "rust" --json
 |----------|---------|---------|
 | `SIMARIS_HOME` | Override the data directory | `~/.simaris` |
 | `SIMARIS_ENV` | Set to `dev` to use a separate `dev/` subdirectory within the data dir | (unset -- uses production) |
-| `SIMARIS_MODEL` | LLM model for `digest` and `ask --synthesize` | `sonnet` |
 
 Example -- run against a dev database:
 

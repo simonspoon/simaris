@@ -3,7 +3,6 @@
 ## Prerequisites
 
 - **Rust** (edition 2024) -- install via [rustup](https://rustup.rs/)
-- **`claude` CLI** -- required for LLM features (`digest`, `ask --synthesize`)
 
 ## Build
 
@@ -178,8 +177,7 @@ src/
   main.rs    -- CLI definition (Cli, Command, enums) and dispatch
   db.rs      -- SQLite schema, all database operations, unit tests
   display.rs -- Output formatting (human-readable + JSON)
-  ask.rs     -- Ask command: query expansion, search, LLM synthesis
-  digest.rs  -- Digest command: LLM-based inbox classification
+  ask.rs     -- Ask command: FTS5 search + 1-hop graph expansion
 tests/
   integration.rs -- End-to-end CLI tests via TestEnv
 ```

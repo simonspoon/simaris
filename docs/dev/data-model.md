@@ -219,7 +219,7 @@ Constrained at the SQL layer via CHECK on `links.relationship`. Valid values:
 | Value | Meaning |
 |---|---|
 | `related_to` | General association |
-| `part_of` | Child-to-parent containment (used by digest to link sub-units to overview) |
+| `part_of` | Child-to-parent containment |
 | `depends_on` | Prerequisite relationship |
 | `contradicts` | Conflicting information |
 | `supersedes` | Replacement/update relationship |

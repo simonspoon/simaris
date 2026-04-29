@@ -18,7 +18,6 @@ Knowledge unit storage. All commands support `--json` for machine-readable outpu
 | `SIMARIS_ENV` | Set to `dev` to use `$SIMARIS_HOME/dev` as the data directory. | (unset) |
 | `SIMARIS_BIN` | Path to the `simaris` binary used by `simaris-server` to shell out for data ops. | `simaris` (resolved via `PATH`) |
 | `SIMARIS_WEB_DIR` | Path to `web/` static assets served by `simaris-server`. | workspace-root `web/` |
-| `SIMARIS_MODEL` | LLM model for `ask --synthesize` and `digest`. | `sonnet` |
 
 ---
 
@@ -430,12 +429,10 @@ simaris search "git workflow" --type lesson --json
 
 ## ask
 
-Query the knowledge store with LLM-powered retrieval. Performs FTS5 search, 1-hop graph expansion to pull in linked units, relevance filtering (via Haiku), and optional synthesis (via Sonnet or `SIMARIS_MODEL`).
-
-Requires the `claude` CLI to be installed and available on PATH.
+Query the knowledge store. Performs FTS5 search and 1-hop graph expansion to pull in linked units. Returns matched units only — no LLM call.
 
 ```
-simaris ask <QUERY> [--synthesize] [--type <TYPE>] [--debug]
+simaris ask <QUERY> [--type <TYPE>] [--debug]
 ```
 
 ### Arguments
@@ -443,17 +440,15 @@ simaris ask <QUERY> [--synthesize] [--type <TYPE>] [--debug]
 | Argument | Type | Required | Default | Description |
 |----------|------|----------|---------|-------------|
 | `QUERY` | string | yes | -- | Your question or context. |
-| `--synthesize` | flag | no | false | Run LLM synthesis on results. Without this flag, returns matched units only. |
 | `--type` | UnitType | no | -- | Filter search results to a specific unit type. |
 | `--debug` | flag | no | false | Print phase-by-phase trace to stderr. |
 
 ### Pipeline
 
-1. **Phase 1 -- FTS5 Search + Graph Expansion**: Runs a full-text search (up to 15 direct matches), then fetches all 1-hop linked units.
-2. **Phase 2 -- Relevance Filter**: Sends unit summaries to Haiku to select only relevant units. Falls back to all units on failure.
-3. **Phase 3 -- Synthesis** (only with `--synthesize`): Sends relevant units to Sonnet (or `SIMARIS_MODEL`) to produce a synthesized response.
+1. **FTS5 Search**: Runs a full-text search (up to 15 direct matches).
+2. **Graph Expansion**: For each match, fetches all 1-hop linked units (incoming + outgoing).
 
-### Output (without --synthesize)
+### Output
 
 ```
 Found 3 relevant unit(s):
@@ -463,10 +458,6 @@ Found 3 relevant unit(s):
   Links: 019660a4-... Overview of Rust 2024 changes (related_to)
 ```
 
-### Output (with --synthesize)
-
-Prints the synthesized response text directly.
-
 ### Debug output (stderr)
 
 ```
@@ -475,15 +466,7 @@ Prints the synthesized response text directly.
 |  fts_query: "\"async\" OR \"traits\""
 |  "async traits" -> 3 matches
 |  deduplicated: 3 unique units
-|  1-hop expansion: +2 linked units -> 5 total
-|
-+-- PHASE 2: Relevance Filter (haiku)
-|  input: 5 units
-|  kept: 3 units
-|  fallback: false
-|
-+-- PHASE 3: Synthesis (sonnet)
-   units_used: 3
+\-- 1-hop expansion: +2 linked units -> 5 total
 ```
 
 ### JSON output
@@ -509,28 +492,24 @@ Prints the synthesized response text directly.
     }
   ],
   "units_used": ["019660a3-7b2e-7000-8000-1a2b3c4d5e6f"],
-  "response": "Synthesized text here (only present with --synthesize)",
   "debug": {
     "fts_query": "\"async\" OR \"traits\"",
     "matches_per_query": {"async traits": 3},
     "total_gathered": 5,
-    "filter_kept": 3,
-    "filter_total": 5,
-    "filter_fallback": false,
     "units_in_result": 3
   }
 }
 ```
 
-The `response` field is omitted when `--synthesize` is not used. The `debug` field is omitted when `--debug` is not used.
+The `debug` field is omitted when `--debug` is not used.
 
 ### Example
 
 ```
 simaris ask "how do I release a homebrew formula"
-simaris ask "git workflow conventions" --synthesize
+simaris ask "git workflow conventions"
 simaris ask "testing patterns" --type procedure --json
-simaris ask "deployment steps" --synthesize --debug
+simaris ask "deployment steps" --debug
 ```
 
 ---
@@ -554,11 +533,11 @@ simaris prime <TASK> [--filter <FILTER>]
 
 ### FilterStrategy values
 
-| Strategy | Description | Requires `claude` CLI |
-|----------|-------------|-----------------------|
-| `none` | Return all gathered units without filtering. | no |
-| `standard` | LLM-backed relevance filter via Haiku. Falls back to unfiltered on error. | yes |
-| `tag-vote` | Rank units by tag overlap with task keywords; keep the top-scoring set. | no |
+| Strategy | Description |
+|----------|-------------|
+| `none` | Return all gathered units without filtering. |
+| `standard` | Tag-overlap relevance filter (alias for `tag-vote`). |
+| `tag-vote` | Rank units by tag overlap with task keywords; keep the top-scoring set. |
 
 ### Output
 
@@ -612,41 +591,6 @@ simaris prime "implement a new CLI command"
 simaris prime "debug a flaky test" --filter tag-vote
 simaris prime "review this PR" --filter none --json
 ```
-
----
-
-## digest
-
-Process all pending inbox items through LLM classification. Each inbox item is broken into discrete typed knowledge units (3-8 per item) and promoted into the store. The first unit extracted from each item is an overview summary.
-
-Requires the `claude` CLI to be installed and available on PATH. Uses the model specified by `SIMARIS_MODEL` (default: `sonnet`).
-
-```
-simaris digest
-```
-
-Takes no arguments.
-
-### Output
-
-```
-Processing 2 inbox item(s)...
-
-[019660a3-7b2e-...] Investigate whether tokio runtime is needed...
-  * -> unit 019660a5-... (fact) [rust, tokio, async]
-    -> unit 019660a6-... (procedure) [rust, async, migration]
-
-[019660a4-8c3f-...] New crate for structured logging...
-    -> unit 019660a7-... (fact) [logging, tracing]
-
-Digested: 2 items -> 3 units, Skipped: 0
-```
-
-Lines marked with `*` are overview units. If the inbox is empty, prints `Inbox is empty. Nothing to digest.`
-
-### JSON output
-
-The `digest` command does not currently support `--json` output. Progress is printed to stdout.
 
 ---
 

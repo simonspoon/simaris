@@ -1,6 +1,5 @@
 mod ask;
 mod db;
-mod digest;
 mod display;
 mod emit;
 mod frontmatter;
@@ -261,9 +260,6 @@ enum Command {
         filename: Option<String>,
     },
 
-    /// Digest inbox items through LLM classification
-    Digest,
-
     /// Record feedback on a knowledge unit
     Mark {
         /// Unit ID to mark
@@ -299,10 +295,6 @@ enum Command {
     Ask {
         /// Your question or context
         query: String,
-
-        /// Run LLM synthesis on results (default: return matched units only)
-        #[arg(long)]
-        synthesize: bool,
 
         /// Filter by type
         #[arg(long, rename_all = "snake_case")]
@@ -440,9 +432,9 @@ enum Command {
         include_superseded: bool,
 
         /// Include `idea` and `preference` units. Default excludes them —
-        /// these types carry no frontmatter schema, so `rewrite --suggest`
-        /// emits body-only and the unit cannot satisfy the `has_frontmatter`
-        /// drop signal (F18). Opt back in to audit raw schema-less units.
+        /// these types carry no frontmatter schema and cannot satisfy the
+        /// `has_frontmatter` drop signal (F18). Opt back in to audit raw
+        /// schema-less units.
         #[arg(long)]
         include_unschemaed: bool,
     },
@@ -464,32 +456,14 @@ enum Command {
         r#type: EmitType,
     },
 
-    /// Rewrite a unit in `$EDITOR` with a type-aware skeleton (P3a) or LLM
-    /// pre-fill (P3b via `--suggest`).
+    /// Rewrite a unit in `$EDITOR` with a type-aware skeleton.
     Rewrite {
         /// Unit id or slug
         id: String,
 
         /// Open buffer with skeleton only, no existing body
-        #[arg(long, conflicts_with = "suggest")]
-        template_only: bool,
-
-        /// Pre-fill the editor buffer with an LLM-drafted unit (P3b)
         #[arg(long)]
-        suggest: bool,
-
-        /// Print the LLM draft to stdout instead of opening the editor.
-        /// Only valid with `--suggest`. No DB change.
-        #[arg(long, requires = "suggest")]
-        dry_run: bool,
-
-        /// Override hard size threshold on the LLM draft (still warns)
-        #[arg(long, requires = "suggest")]
-        force: bool,
-
-        /// Treat LLM-drafted body as a flow sequence — bypass size warning
-        #[arg(long, requires = "suggest")]
-        flow: bool,
+        template_only: bool,
     },
 }
 
@@ -1081,61 +1055,6 @@ fn main() -> Result<()> {
             let confidence = db::add_mark(&conn, &id, kind.as_str(), kind.delta())?;
             display::print_marked(&id, kind.as_str(), confidence, cli.json);
         }
-        Command::Digest => {
-            let items = db::list_inbox(&conn)?;
-            if items.is_empty() {
-                println!("Inbox is empty. Nothing to digest.");
-                return Ok(());
-            }
-            digest::check_claude()?;
-            println!("Processing {} inbox item(s)...\n", items.len());
-            let mut success = 0;
-            let mut failed = 0;
-            let mut total_units = 0;
-            for item in &items {
-                println!(
-                    "[{}] {}...",
-                    item.id,
-                    &item.content.chars().take(50).collect::<String>()
-                );
-                match digest::classify(&item.content) {
-                    Ok(result) => {
-                        match db::digest_inbox_item_multi(
-                            &conn,
-                            &item.id,
-                            &result.units,
-                            &item.source,
-                        ) {
-                            Ok(ids) => {
-                                for (id, unit) in ids.iter().zip(result.units.iter()) {
-                                    let marker = if unit.is_overview { "*" } else { " " };
-                                    println!(
-                                        "  {marker} -> unit {} ({}) [{}]",
-                                        id,
-                                        unit.unit_type,
-                                        unit.tags.join(", ")
-                                    );
-                                }
-                                total_units += ids.len();
-                                success += 1;
-                            }
-                            Err(e) => {
-                                println!("  DB ERROR: {e}");
-                                failed += 1;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        println!("  SKIP: {e}");
-                        failed += 1;
-                    }
-                }
-            }
-            println!(
-                "\nDigested: {} items -> {} units, Skipped: {}",
-                success, total_units, failed
-            );
-        }
         Command::Prime {
             task,
             primary,
@@ -1146,26 +1065,13 @@ fn main() -> Result<()> {
         }
         Command::Ask {
             query,
-            synthesize,
             r#type,
             include_archived,
         } => {
-            if synthesize {
-                digest::check_claude()?;
-            }
             let filter = r#type.as_ref().map(|t| t.as_str());
-            let result = ask::ask(
-                &conn,
-                &query,
-                synthesize,
-                cli.debug,
-                filter,
-                include_archived,
-            )?;
+            let result = ask::ask(&conn, &query, cli.debug, filter, include_archived)?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&result).unwrap());
-            } else if let Some(ref response) = result.response {
-                println!("{}", response);
             } else if result.units.is_empty() {
                 println!("No knowledge found for that query.");
             } else {
@@ -1342,19 +1248,8 @@ fn main() -> Result<()> {
             let result = emit::emit_claude_code_aspects(&conn, &target_dir)?;
             display::print_emit_result(&result, &target_dir, cli.json);
         }
-        Command::Rewrite {
-            id,
-            template_only,
-            suggest,
-            dry_run,
-            force,
-            flow,
-        } => {
-            if suggest {
-                rewrite::run_suggest(&conn, &id, dry_run, force, flow)?;
-            } else {
-                rewrite::run(&conn, &id, template_only)?;
-            }
+        Command::Rewrite { id, template_only } => {
+            rewrite::run(&conn, &id, template_only)?;
         }
         Command::Restore { .. } => unreachable!(),
     }

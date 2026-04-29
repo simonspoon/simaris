@@ -85,7 +85,6 @@ Empirically validate the ruleset and derive size-budget numbers before story 3 t
 - No fixed N-tier model for `show` — rejected during discovery in favor of graph decomposition
 - No auto-split at write time — author always decides atomicity
 - No auto-retrofit of existing big units — retrofit handled manually or via dream-loop over time
-- No changes to `ask --synthesize` (already LOD by nature via LLM)
 - No schema change to unit body storage (`content` column unchanged)
 - No changes to `simaris show` default behavior
 

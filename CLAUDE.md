@@ -1,6 +1,6 @@
 # simaris
 
-Rust CLI knowledge management system. Stores typed knowledge units in SQLite with FTS5 search, graph-based linking, confidence scoring via marks, and LLM-powered digest/synthesis via Claude CLI. Ships with `simaris-server`, an HTTP admin dashboard.
+Rust CLI knowledge management system. Stores typed knowledge units in SQLite with FTS5 search, graph-based linking, and confidence scoring via marks. Ships with `simaris-server`, an HTTP admin dashboard.
 
 ## Build and Run
 
@@ -21,7 +21,6 @@ Binaries: `./target/release/simaris`, `./target/release/simaris-server`
 |----------|---------|---------|
 | `SIMARIS_HOME` | Override data directory | `~/.simaris/` |
 | `SIMARIS_ENV=dev` | Isolate to dev database | `~/.simaris/dev/sanctuary.db` |
-| `SIMARIS_MODEL` | Override LLM model for digest/ask | `sonnet` |
 | `SIMARIS_WARN_BYTES` | Warn threshold — body above this triggers a stderr warning citing `split-ruleset` at `add`/`edit` time | `2048` (placeholder; Story 4 calibrates) |
 | `SIMARIS_HARD_BYTES` | Hard threshold — body above this rejects the write (exit non-zero) unless `--force` or tag `flow`/`--flow` | `8192` (placeholder; Story 4 calibrates) |
 | `SIMARIS_BIN` | Path to `simaris` binary used by `simaris-server` | `simaris` (resolved via `PATH`) |
@@ -30,23 +29,21 @@ Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 
 ## External Dependencies
 
-- `claude` CLI required for `digest` and `ask --synthesize` commands
 - SQLite is bundled via rusqlite (no system SQLite needed)
 
 ## Source Layout
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/main.rs` | 1363 | CLI entry, clap derive command parsing, dispatch |
-| `src/db.rs` | 3353 | SQLite schema, migrations, CRUD, backup/restore, scan |
-| `src/ask.rs` | 770 | FTS5 search, graph expansion, relevance filter, LLM synthesis |
-| `src/digest.rs` | 159 | LLM classification of inbox items into typed units |
-| `src/display.rs` | 761 | Text and JSON output formatting |
-| `src/emit.rs` | ~250 | Build-artifact emission (claude-code aspects, etc.) |
-| `src/rewrite.rs` | ~400 | `$EDITOR` rewrite flow with type-aware skeletons + LLM pre-fill |
-| `src/frontmatter.rs` | ~600 | YAML frontmatter parse/write + `refs:` graph materialization |
-| `src/size_guard.rs` | 143 | Write-time body-size thresholds + warnings (`add`/`edit`) |
-| `tests/integration.rs` | 4000+ | End-to-end CLI tests via subprocess |
+| File | Purpose |
+|------|---------|
+| `src/main.rs` | CLI entry, clap derive command parsing, dispatch |
+| `src/db.rs` | SQLite schema, migrations, CRUD, backup/restore, scan |
+| `src/ask.rs` | FTS5 search + 1-hop graph expansion (`ask`, `prime`) |
+| `src/display.rs` | Text and JSON output formatting |
+| `src/emit.rs` | Build-artifact emission (claude-code aspects, etc.) |
+| `src/rewrite.rs` | `$EDITOR` rewrite flow with type-aware skeletons |
+| `src/frontmatter.rs` | YAML frontmatter parse/write + `refs:` graph materialization |
+| `src/size_guard.rs` | Write-time body-size thresholds + warnings (`add`/`edit`) |
+| `tests/integration.rs` | End-to-end CLI tests via subprocess |
 | `simaris-server/src/main.rs` | ~115 | Axum HTTP entry, route mount, embedded `web/` static serve via rust_embed |
 | `simaris-server/src/cli.rs` | 56 | Shells out to `simaris` CLI for all data ops |
 | `simaris-server/src/routes/` | ~320 | `/api/stats`, `/api/search`, `/api/units/:id` (get/edit/clone/archive/unarchive) |
@@ -85,16 +82,15 @@ Default views (`list`, `search`, `ask`, `prime`, `scan`, `emit`) hide archived u
 ### Data Flow
 
 1. Raw input enters via `drop` -> inbox table
-2. `digest` classifies inbox items via LLM -> typed units (with overview unit first)
-3. `add` creates typed units directly (bypasses inbox)
-4. `promote` converts an inbox item to a typed unit
-5. `link` creates graph edges between units
-5b. `add`, `digest`, and `clone` auto-link new units to existing units sharing 2+ tags via `related_to`
+2. `add` creates typed units directly (bypasses inbox)
+3. `promote` converts an inbox item to a typed unit
+4. `link` creates graph edges between units
+5. `add` and `clone` auto-link new units to existing units sharing 2+ tags via `related_to`
 6. `mark` records feedback, adjusts unit confidence
 7. `edit` updates content, type, source, or tags on existing units
 8. `archive` / `unarchive` soft-delete and restore units (reversible; preserves links + FTS rows)
 9. `clone` copies a unit (content/type/source/tags) into a fresh UUIDv7 — confidence + verified reset; links + marks not copied
-10. `ask` searches FTS5, expands via graph links, optionally synthesizes via LLM
+10. `ask` searches FTS5 and expands via 1-hop graph links
 11. `scan` finds low-confidence, stale, orphaned, or contradicted units
 12. `stats` aggregates dashboard metrics in a single SQL pass (totals, by-type, by-tag, confidence histogram, marks)
 
@@ -120,13 +116,12 @@ simaris promote <id> --type <type>
 simaris inbox
 simaris list [--type <type>] [--include-archived]
 simaris search <query> [--type <type>] [--include-archived]
-simaris ask <query> [--synthesize] [--type <type>] [--include-archived]
+simaris ask <query> [--type <type>] [--include-archived]
 simaris prime <task> [--filter <strategy>] [--primary <id|slug>]... [--include-archived]
 simaris stats [--top <n>] [--include-archived]
 simaris archive <id>
 simaris unarchive <id>
 simaris clone <id> [--type <type>] [--source <source>] [--tags <tags>]
-simaris digest
 simaris delete <id>
 simaris mark <id> --kind <kind>
 simaris slug set <slug> <id>
@@ -134,7 +129,7 @@ simaris slug unset <slug>
 simaris slug list
 simaris emit --target <target> --type <type>
 simaris scan [--stale-days <days>]
-simaris rewrite <id> [--suggest]
+simaris rewrite <id> [--template-only]
 simaris backup
 simaris restore [<filename>]
 ```

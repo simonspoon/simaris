@@ -1,9 +1,8 @@
 use crate::db;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::process::Command;
 
 #[derive(Debug, Serialize)]
 pub struct PrimeResult {
@@ -34,8 +33,6 @@ pub struct AskResult {
     pub units: Vec<MatchedUnit>,
     pub units_used: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub response: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub debug: Option<DebugTrace>,
 }
 
@@ -59,9 +56,6 @@ pub struct DebugTrace {
     pub fts_query: String,
     pub matches_per_query: HashMap<String, usize>,
     pub total_gathered: usize,
-    pub filter_kept: usize,
-    pub filter_total: usize,
-    pub filter_fallback: bool,
     pub units_in_result: usize,
 }
 
@@ -91,11 +85,10 @@ fn content_preview(content: &str) -> String {
     first_line.chars().take(80).collect()
 }
 
-/// Main entry point: search the knowledge graph and optionally synthesize a response.
+/// Main entry point: search the knowledge graph and return matched units.
 pub fn ask(
     conn: &Connection,
     query: &str,
-    synthesize: bool,
     debug: bool,
     type_filter: Option<&str>,
     include_archived: bool,
@@ -120,11 +113,10 @@ pub fn ask(
             gather.direct_count
         );
         eprintln!(
-            "\u{2502}  1-hop expansion: +{} linked units \u{2192} {} total",
+            "\u{2514}\u{2500}  1-hop expansion: +{} linked units \u{2192} {} total",
             gather.expansion_count,
             gathered.len()
         );
-        eprintln!("\u{2502}");
     }
 
     if gathered.is_empty() {
@@ -132,15 +124,11 @@ pub fn ask(
             query: query.to_string(),
             units: vec![],
             units_used: vec![],
-            response: None,
             debug: if debug {
                 Some(DebugTrace {
                     fts_query,
                     matches_per_query,
                     total_gathered: 0,
-                    filter_kept: 0,
-                    filter_total: 0,
-                    filter_fallback: false,
                     units_in_result: 0,
                 })
             } else {
@@ -149,22 +137,11 @@ pub fn ask(
         });
     }
 
-    // Phase 2: Haiku relevance filter
-    let filter_total = gathered.len();
-    let (filtered, filter_fallback) = filter_relevance(query, &gathered);
-    let filter_kept = filtered.len();
-
-    if debug {
-        eprintln!("\u{251c}\u{2500} PHASE 2: Relevance Filter (haiku)");
-        eprintln!("\u{2502}  input: {} units", filter_total);
-        eprintln!("\u{2502}  kept: {} units", filter_kept);
-        eprintln!("\u{2502}  fallback: {}", filter_fallback);
-        eprintln!("\u{2502}");
-    }
+    let total_gathered = gathered.len();
 
     // Build result units — only keep links pointing outside the result set
-    let result_ids: HashSet<&String> = filtered.iter().map(|u| &u.id).collect();
-    let units: Vec<MatchedUnit> = filtered
+    let result_ids: HashSet<&String> = gathered.iter().map(|u| &u.id).collect();
+    let units: Vec<MatchedUnit> = gathered
         .iter()
         .map(|u| {
             let mut links = Vec::new();
@@ -191,30 +168,15 @@ pub fn ask(
     let units_used: Vec<String> = units.iter().map(|u| u.id.clone()).collect();
     let units_in_result = units.len();
 
-    // Phase 3: Optional synthesis
-    let response = if synthesize {
-        if debug {
-            eprintln!("\u{2514}\u{2500} PHASE 3: Synthesis (sonnet)");
-            eprintln!("   units_used: {}", units_used.len());
-        }
-        Some(synthesize_response(query, &filtered)?)
-    } else {
-        None
-    };
-
     Ok(AskResult {
         query: query.to_string(),
         units,
         units_used,
-        response,
         debug: if debug {
             Some(DebugTrace {
                 fts_query,
                 matches_per_query,
-                total_gathered: filter_total,
-                filter_kept,
-                filter_total,
-                filter_fallback,
+                total_gathered,
                 units_in_result,
             })
         } else {
@@ -418,190 +380,6 @@ fn search_and_expand(
     })
 }
 
-/// Single Haiku call to filter gathered units by relevance to the query.
-/// Returns (filtered_units, fallback_used). On any failure, returns all
-/// units unfiltered (fallback=true). Used by `ask`. `prime` no longer calls
-/// this — see prime() docs for why an LOD-1 directory removed the need.
-fn filter_relevance<'a>(query: &str, gathered: &'a [ContextUnit]) -> (Vec<&'a ContextUnit>, bool) {
-    let mut summaries = String::new();
-    for unit in gathered {
-        let preview: String = unit.content.chars().take(150).collect();
-        let tags_str = if unit.tags.is_empty() {
-            String::new()
-        } else {
-            format!(" tags=[{}]", unit.tags.join(", "))
-        };
-        summaries.push_str(&format!(
-            "- id={} type={}{}: {}\n",
-            unit.id, unit.unit_type, tags_str, preview
-        ));
-    }
-
-    let prompt = format!(
-        r#"You are a relevance filter. Given a query and a list of knowledge units, return ONLY the IDs of units relevant to the query.
-
-Query: {query}
-
-Units:
-{summaries}
-Return ONLY JSON (no markdown, no code fences):
-{{"relevant_ids": ["id1", "id2"]}}"#
-    );
-
-    // --output-format json wraps the model reply in a structured envelope
-    // {"result": "...", ...}. The envelope itself is always well-formed JSON,
-    // which makes parsing robust against any preamble the model might emit.
-    // The model's reply lives in `.result` and may still arrive with code
-    // fences or surrounding prose — we extract the JSON object below.
-    //
-    // We deliberately do NOT pass --bare here. --bare disables OAuth/keychain
-    // auth, which is how this binary's user authenticates. Falling back to
-    // ANTHROPIC_API_KEY would silently start charging real API spend.
-    let output = match Command::new("claude")
-        .args(["-p", "--output-format", "json", "--model", "haiku", &prompt])
-        .output()
-    {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("[ask] filter_relevance fallback: subprocess spawn failed: {e}");
-            return (gathered.iter().collect(), true);
-        }
-    };
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!(
-            "[ask] filter_relevance fallback: claude exited {} stderr={}",
-            output.status,
-            stderr.trim()
-        );
-        return (gathered.iter().collect(), true);
-    }
-
-    let envelope_raw = String::from_utf8_lossy(&output.stdout);
-
-    // Outer envelope: {"result": "<inner content>", ...}. Inner content is the
-    // model's reply — should be JSON {"relevant_ids": [...]} but tolerate fence
-    // wrappers in case the model adds them.
-    #[derive(Deserialize)]
-    struct Envelope {
-        result: String,
-    }
-
-    let envelope: Envelope = match serde_json::from_str(envelope_raw.trim()) {
-        Ok(e) => e,
-        Err(e) => {
-            let preview: String = envelope_raw.chars().take(200).collect();
-            eprintln!(
-                "[ask] filter_relevance fallback: envelope parse failed ({e}); stdout preview: {preview}"
-            );
-            return (gathered.iter().collect(), true);
-        }
-    };
-
-    let inner = envelope.result.trim();
-
-    // The model's reply may include code fences or chat-prose around the JSON.
-    // Step 1: drop common fence wrappers. Step 2: locate the first `{` and the
-    // last `}` and extract that span — survives "Here's the JSON: {...}\nDone"
-    // shaped responses without needing a real parser.
-    let defenced = inner
-        .strip_prefix("```json")
-        .or_else(|| inner.strip_prefix("```"))
-        .map(|s| s.strip_suffix("```").unwrap_or(s).trim())
-        .unwrap_or(inner);
-
-    let json_str = match (defenced.find('{'), defenced.rfind('}')) {
-        (Some(lo), Some(hi)) if hi >= lo => &defenced[lo..=hi],
-        _ => defenced,
-    };
-
-    #[derive(Deserialize)]
-    struct FilterResponse {
-        relevant_ids: Vec<String>,
-    }
-
-    let parsed: FilterResponse = match serde_json::from_str(json_str) {
-        Ok(r) => r,
-        Err(e) => {
-            let preview: String = json_str.chars().take(200).collect();
-            eprintln!(
-                "[ask] filter_relevance fallback: inner parse failed ({e}); inner preview: {preview}"
-            );
-            return (gathered.iter().collect(), true);
-        }
-    };
-
-    let relevant_set: std::collections::HashSet<String> = parsed.relevant_ids.into_iter().collect();
-
-    let filtered: Vec<&ContextUnit> = gathered
-        .iter()
-        .filter(|u| relevant_set.contains(&u.id))
-        .collect();
-
-    // If filter returned nothing relevant, fall back to all
-    if filtered.is_empty() {
-        eprintln!(
-            "[ask] filter_relevance fallback: empty relevant_ids (model returned no matches for {} units)",
-            gathered.len()
-        );
-        return (gathered.iter().collect(), true);
-    }
-
-    (filtered, false)
-}
-
-fn model() -> String {
-    std::env::var("SIMARIS_MODEL").unwrap_or_else(|_| "sonnet".to_string())
-}
-
-/// Synthesize a response from gathered units using the LLM.
-fn synthesize_response(query: &str, units: &[&ContextUnit]) -> Result<String> {
-    let mut units_text = String::new();
-    for unit in units {
-        units_text.push_str(&format!(
-            "[{}] type={} source={} tags={}\n{}\n---\n",
-            unit.id,
-            unit.unit_type,
-            unit.source,
-            unit.tags.join(", "),
-            unit.content
-        ));
-    }
-
-    let prompt = format!(
-        r#"You are a knowledge RETRIEVAL system. You return relevant knowledge — nothing else.
-
-Rules:
-- Return ONLY knowledge relevant to the context below
-- Do NOT act on the query — you are not doing the work
-- Do NOT plan, execute, ask questions, or offer to help
-- Do NOT say "I can help with that" or "Here's how to do it"
-- Format: concise, dense, factual — procedures as steps, facts as statements
-- Include all relevant detail from the knowledge units
-- If knowledge is insufficient, state what's missing
-- No preamble — just the knowledge
-
-Context: {query}
-
-Knowledge units:
-{units_text}"#
-    );
-
-    let output = Command::new("claude")
-        .args(["-p", "--model", &model(), &prompt])
-        .output()
-        .context("Failed to run claude CLI")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("claude CLI failed during synthesis: {stderr}");
-    }
-
-    let response = String::from_utf8_lossy(&output.stdout);
-    Ok(response.trim().to_string())
-}
-
 /// Assemble a mindset from the knowledge graph for a given task.
 ///
 /// Returns a level-of-detail-1 (LOD-1) primer: a directory of relevant units
@@ -615,8 +393,7 @@ Knowledge units:
 /// - Context:     always directory entry.
 ///
 /// Callers that need a full unit body should run `simaris show <id>` after
-/// reading the directory. The previous LLM relevance filter is intentionally
-/// not used here — directories are cheap; spraying full bodies was the bug.
+/// reading the directory.
 ///
 /// The `primary` argument accepts unit ids OR slugs; both are resolved against
 /// the slugs table. Unknown entries are silently ignored (caller is free to

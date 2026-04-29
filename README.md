@@ -8,7 +8,7 @@ Knowledge management CLI with SQLite, FTS5 search, and graph-based linking.
 
 ## Overview
 
-Simaris stores typed knowledge units in a local SQLite database with full-text search, graph-based relationships between units, and confidence scoring via feedback marks. It supports LLM-powered classification of raw input (digest) and synthesis of query results (ask). Built for LLM agents and developers who need structured, searchable knowledge that evolves over time.
+Simaris stores typed knowledge units in a local SQLite database with full-text search, graph-based relationships between units, and confidence scoring via feedback marks. Built for LLM agents and developers who need structured, searchable knowledge that evolves over time.
 
 ## Installation
 
@@ -48,8 +48,8 @@ simaris link <id-1> <id-2> --rel related_to
 # Record feedback (adjusts confidence)
 simaris mark <id> --kind helpful
 
-# Ask a question with LLM synthesis
-simaris ask "What do I know about Rust editions?" --synthesize
+# Ask a question (FTS5 + 1-hop graph expansion)
+simaris ask "What do I know about Rust editions?"
 ```
 
 ## Commands
@@ -65,18 +65,17 @@ simaris ask "What do I know about Rust editions?" --synthesize
 | `inbox` | List pending inbox items |
 | `list [--type <type>] [--include-archived]` | List knowledge units |
 | `search <query> [--type <type>] [--include-archived]` | Full-text search across units |
-| `ask <query> [--synthesize] [--type <type>] [--include-archived]` | Query with optional LLM synthesis |
+| `ask <query> [--type <type>] [--include-archived]` | Query store; FTS5 + 1-hop graph expansion |
 | `prime <task> [--filter <strategy>] [--primary <id\|slug>]...` | Assemble a task-focused mindset grouped by unit type |
 | `stats [--top <n>] [--include-archived]` | Aggregate metrics for the admin dashboard |
 | `archive <id>` | Soft-delete a unit (reversible via `unarchive`) |
 | `unarchive <id>` | Restore an archived unit |
 | `clone <id> [--type] [--source] [--tags]` | Copy a unit into a fresh UUIDv7 |
-| `digest` | Classify inbox items via LLM into typed units |
 | `mark <id> --kind <kind>` | Record feedback on a unit |
 | `delete <id>` | Delete a knowledge unit |
 | `slug set\|unset\|list` | Manage human-readable slugs that resolve to unit IDs |
 | `emit --target <target> --type <type>` | Emit typed units as build artifacts |
-| `rewrite <id> [--suggest]` | Edit a unit in `$EDITOR` with type-aware skeleton or LLM pre-fill |
+| `rewrite <id> [--template-only]` | Edit a unit in `$EDITOR` with a type-aware skeleton |
 | `scan [--stale-days <days>]` | Find low-confidence, stale, or orphaned units |
 | `backup` | Create a database backup |
 | `restore [<filename>]` | Restore from backup (no args = list backups) |
@@ -124,20 +123,18 @@ simaris ask "What do I know about Rust editions?" --synthesize
 |----------|---------|---------|
 | `SIMARIS_HOME` | Override data directory | `~/.simaris/` |
 | `SIMARIS_ENV=dev` | Isolate to dev database | `~/.simaris/dev/sanctuary.db` |
-| `SIMARIS_MODEL` | Override LLM model for digest/ask | `sonnet` |
 
-Data lives at `~/.simaris/sanctuary.db`. The `claude` CLI is required for `digest` and `ask --synthesize`.
+Data lives at `~/.simaris/sanctuary.db`.
 
 ## Architecture
 
 ```
 src/main.rs         CLI entry, clap derive command parsing, dispatch
 src/db.rs           SQLite schema, migrations, CRUD, backup/restore, scan
-src/ask.rs          FTS5 search, graph expansion, relevance filter, LLM synthesis
-src/digest.rs       LLM classification of inbox items into typed units
+src/ask.rs          FTS5 search + 1-hop graph expansion (`ask`, `prime`)
 src/display.rs      Text and JSON output formatting
 src/emit.rs         Build-artifact emission (claude-code aspects, etc.)
-src/rewrite.rs      $EDITOR rewrite flow with type-aware skeletons + LLM pre-fill
+src/rewrite.rs      $EDITOR rewrite flow with type-aware skeletons
 src/frontmatter.rs  YAML frontmatter parse/write + refs: graph materialization
 src/size_guard.rs   Write-time body-size thresholds + warnings
 tests/integration.rs  End-to-end CLI tests via subprocess
