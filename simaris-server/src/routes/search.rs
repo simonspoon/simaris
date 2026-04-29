@@ -149,6 +149,8 @@ fn unit_from_ask(u: &Value) -> Value {
         "type": u.get("unit_type").cloned().unwrap_or(Value::Null),
         "tags": u.get("tags").cloned().unwrap_or(json!([])),
         "source": u.get("source").cloned().unwrap_or(Value::Null),
+        "slug": u.get("slug").cloned().unwrap_or(Value::Null),
+        "byte_size": u.get("byte_size").cloned().unwrap_or(Value::Null),
         "snippet": snippet,
         "is_direct_match": u.get("is_direct_match").cloned().unwrap_or(json!(false)),
     })
@@ -165,6 +167,8 @@ fn unit_from_list(u: &Value) -> Value {
         "type": u.get("type").cloned().unwrap_or(Value::Null),
         "tags": u.get("tags").cloned().unwrap_or(json!([])),
         "source": u.get("source").cloned().unwrap_or(Value::Null),
+        "slug": u.get("slug").cloned().unwrap_or(Value::Null),
+        "byte_size": u.get("byte_size").cloned().unwrap_or(Value::Null),
         "confidence": u.get("confidence").cloned().unwrap_or(Value::Null),
         "snippet": snippet,
     })

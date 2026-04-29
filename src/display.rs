@@ -81,6 +81,8 @@ struct LeanUnit<'a> {
     tags: &'a [String],
     source: &'a str,
     confidence: f64,
+    /// Body size in bytes — surfaces split-ruleset thresholds in tooling.
+    byte_size: usize,
     /// Surfaced only when an archived unit is present in the result set
     /// (i.e. caller passed `--include-archived`). Skipped from JSON when
     /// false to keep payloads compact for the common live-only case.
@@ -101,6 +103,7 @@ pub fn print_units_lean(units: &[Unit], slug_map: &[Option<String>], json: bool)
                 tags: &u.tags,
                 source: &u.source,
                 confidence: u.confidence,
+                byte_size: u.content.len(),
                 archived: u.archived,
             })
             .collect();

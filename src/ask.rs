@@ -46,6 +46,10 @@ pub struct MatchedUnit {
     pub unit_type: String,
     pub tags: Vec<String>,
     pub source: String,
+    /// First slug bound to this unit (alphabetical order); `None` if unbound.
+    pub slug: Option<String>,
+    /// Body size in bytes — surfaces split-ruleset thresholds in tooling.
+    pub byte_size: usize,
     pub is_direct_match: bool,
     pub links: Vec<LinkInfo>,
 }
@@ -167,12 +171,18 @@ pub fn ask(
             links.extend(u.links_to.iter().cloned());
             links.extend(u.links_from.iter().cloned());
             links.retain(|l| !result_ids.contains(&l.unit_id));
+            let slug = db::get_slugs_for_unit(conn, &u.id)
+                .ok()
+                .and_then(|v| v.into_iter().next());
+            let byte_size = u.content.len();
             MatchedUnit {
                 id: u.id.clone(),
                 content: u.content.clone(),
                 unit_type: u.unit_type.clone(),
                 tags: u.tags.clone(),
                 source: u.source.clone(),
+                slug,
+                byte_size,
                 is_direct_match: u.is_direct_match,
                 links,
             }

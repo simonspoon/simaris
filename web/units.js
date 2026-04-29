@@ -59,6 +59,13 @@ function fmtConfidence(c) {
   return c.toFixed(2);
 }
 
+function fmtBytes(n) {
+  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 function escapeText(s) {
   return s == null ? "" : String(s);
 }
@@ -113,8 +120,10 @@ function renderResults(payload) {
     tr.innerHTML = `
       <td class="results__col-id"><code>${escapeHtml(shortId(u.id))}</code></td>
       <td class="results__col-type"><span class="badge badge--${escapeHtml(u.type || "")}">${escapeHtml(u.type || "")}</span></td>
+      <td class="results__col-slug">${u.slug ? `<code>${escapeHtml(u.slug)}</code>` : "<span class=\"results__muted\">—</span>"}</td>
       <td class="results__col-tags">${escapeHtml(fmtTags(u.tags))}</td>
       <td class="results__col-conf">${escapeHtml(fmtConfidence(u.confidence))}</td>
+      <td class="results__col-size">${escapeHtml(fmtBytes(u.byte_size))}</td>
       <td class="results__col-snippet">${escapeHtml(u.snippet || "")}</td>
       <td class="results__col-actions">
         <button class="btn btn--small" data-act="view">View</button>
