@@ -136,17 +136,55 @@ pub fn print_units_lean(units: &[Unit], slug_map: &[Option<String>], json: bool)
     }
 }
 
+/// Display options for [`print_unit`]. Bundled into a struct to keep the
+/// function signature small as flags accrete.
+#[derive(Default, Clone, Copy)]
+pub struct ShowOpts {
+    /// Output as JSON.
+    pub json: bool,
+    /// Print content verbatim — skip frontmatter parsing/rendering.
+    pub raw: bool,
+    /// Print only `unit.content`, omit metadata and links.
+    pub content_only: bool,
+    /// Strip YAML frontmatter from the printed content.
+    pub no_frontmatter: bool,
+}
+
 pub fn print_unit(
     unit: &Unit,
     outgoing: &[Link],
     incoming: &[Link],
     slugs: &[String],
-    json: bool,
-    raw: bool,
+    opts: ShowOpts,
 ) {
-    if json {
+    // Resolve content body up-front so `--content` and `--no-frontmatter`
+    // can compose with each other and with `--raw`.
+    let content_str: String = if opts.no_frontmatter {
+        let parsed = frontmatter::parse(&unit.content);
+        parsed.body.to_string()
+    } else {
+        unit.content.clone()
+    };
+
+    if opts.content_only {
+        // `--content` always prints just the bare content string, regardless
+        // of `--json`. Nothing else (no metadata, no links, no wrapper).
+        println!("{content_str}");
+        return;
+    }
+
+    if opts.json {
+        let mut unit_value = serde_json::to_value(unit).unwrap();
+        if opts.no_frontmatter
+            && let Some(obj) = unit_value.as_object_mut()
+        {
+            obj.insert(
+                "content".to_string(),
+                serde_json::Value::String(content_str.clone()),
+            );
+        }
         let value = serde_json::json!({
-            "unit": unit,
+            "unit": unit_value,
             "links": {
                 "outgoing": outgoing,
                 "incoming": incoming,
@@ -156,8 +194,11 @@ pub fn print_unit(
         println!("{}", serde_json::to_string_pretty(&value).unwrap());
     } else {
         println!("[{}] {} ({})", unit.id, unit.unit_type, unit.source);
-        if raw {
-            println!("{}", unit.content);
+        if opts.raw {
+            println!("{content_str}");
+        } else if opts.no_frontmatter {
+            // Frontmatter already stripped — print body verbatim.
+            println!("{content_str}");
         } else {
             let parsed = frontmatter::parse(&unit.content);
             if let Some(ref fm) = parsed.frontmatter {

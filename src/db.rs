@@ -1108,7 +1108,6 @@ pub fn delete_inbox_item(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
-
 pub fn add_mark(conn: &Connection, unit_id: &str, kind: &str, delta: f64) -> Result<f64> {
     // Verify unit exists
     let exists: bool = conn.query_row(

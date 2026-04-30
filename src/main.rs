@@ -124,6 +124,14 @@ enum Command {
         /// Print content verbatim (including `---` fences) — skip parsing
         #[arg(long)]
         raw: bool,
+
+        /// Print only the `unit.content` value — omit metadata, links, etc.
+        #[arg(long)]
+        content: bool,
+
+        /// Strip YAML frontmatter from printed content
+        #[arg(long = "no-frontmatter")]
+        no_frontmatter: bool,
     },
 
     /// Link two knowledge units
@@ -939,13 +947,29 @@ fn main() -> Result<()> {
                 println!("  auto-linked to {linked} existing unit(s)");
             }
         }
-        Command::Show { id, raw } => {
+        Command::Show {
+            id,
+            raw,
+            content,
+            no_frontmatter,
+        } => {
             let id = db::resolve_id(&conn, &id)?;
             let unit = db::get_unit(&conn, &id)?;
             let outgoing = db::get_links_from(&conn, &id)?;
             let incoming = db::get_links_to(&conn, &id)?;
             let slugs = db::get_slugs_for_unit(&conn, &id)?;
-            display::print_unit(&unit, &outgoing, &incoming, &slugs, cli.json, raw);
+            display::print_unit(
+                &unit,
+                &outgoing,
+                &incoming,
+                &slugs,
+                display::ShowOpts {
+                    json: cli.json,
+                    raw,
+                    content_only: content,
+                    no_frontmatter,
+                },
+            );
         }
         Command::Link {
             from_id,
@@ -1203,7 +1227,16 @@ fn main() -> Result<()> {
             let outgoing = db::get_links_from(&conn, &id)?;
             let incoming = db::get_links_to(&conn, &id)?;
             let slugs = db::get_slugs_for_unit(&conn, &id)?;
-            display::print_unit(&unit, &outgoing, &incoming, &slugs, cli.json, false);
+            display::print_unit(
+                &unit,
+                &outgoing,
+                &incoming,
+                &slugs,
+                display::ShowOpts {
+                    json: cli.json,
+                    ..Default::default()
+                },
+            );
         }
         Command::Delete { id } => {
             let id = db::resolve_id(&conn, &id)?;
