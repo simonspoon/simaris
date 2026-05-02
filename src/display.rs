@@ -1,5 +1,5 @@
 use crate::ask::PrimeResult;
-use crate::db::{InboxItem, Link, ScanResult, SlugRow, Stats, Unit, UnstructuredRow};
+use crate::db::{InboxItem, LinkedUnit, ScanResult, SlugRow, Stats, Unit, UnstructuredRow};
 use crate::emit::EmitResult;
 use crate::frontmatter;
 use serde::Serialize;
@@ -152,8 +152,8 @@ pub struct ShowOpts {
 
 pub fn print_unit(
     unit: &Unit,
-    outgoing: &[Link],
-    incoming: &[Link],
+    outgoing: &[LinkedUnit],
+    incoming: &[LinkedUnit],
     slugs: &[String],
     opts: ShowOpts,
 ) {
@@ -229,15 +229,75 @@ pub fn print_unit(
         }
         println!("created: {}  updated: {}", unit.created, unit.updated);
 
-        if !outgoing.is_empty() || !incoming.is_empty() {
-            println!();
-        }
-        for link in outgoing {
-            println!("  -> {} ({})", link.to_id, link.relationship);
-        }
-        for link in incoming {
-            println!("  <- {} ({})", link.from_id, link.relationship);
-        }
+        print_relationships_table(outgoing, incoming);
+    }
+}
+
+/// Render the relationships block of `simaris show` as a fixed-width table.
+///
+/// Columns: direction (`->`/`<-`), relationship name, short id of the
+/// linked unit, and an identifying text — slug if present, else the
+/// derived headline. Outgoing first then incoming, each block already
+/// ordered (relationship, id) by the SQL queries.
+///
+/// No-op when both slices are empty.
+fn print_relationships_table(outgoing: &[LinkedUnit], incoming: &[LinkedUnit]) {
+    if outgoing.is_empty() && incoming.is_empty() {
+        return;
+    }
+
+    // Build rows up-front so column widths can be measured once.
+    struct Row<'a> {
+        dir: &'static str,
+        rel: &'a str,
+        id: String,
+        text: String,
+    }
+
+    let rows: Vec<Row> = outgoing
+        .iter()
+        .map(|l| Row {
+            dir: "->",
+            rel: &l.relationship,
+            id: short_id(&l.to_id).to_string(),
+            text: identifying_text(l),
+        })
+        .chain(incoming.iter().map(|l| Row {
+            dir: "<-",
+            rel: &l.relationship,
+            id: short_id(&l.from_id).to_string(),
+            text: identifying_text(l),
+        }))
+        .collect();
+
+    // Column widths: header label is the floor, longest cell sets the ceiling.
+    let rel_w = rows.iter().map(|r| r.rel.len()).max().unwrap_or(0).max(3);
+    let id_w = rows.iter().map(|r| r.id.len()).max().unwrap_or(0).max(2);
+
+    let blank = "";
+    let rel_h = "rel";
+    let id_h = "id";
+    let text_h = "text";
+    println!();
+    println!("relationships:");
+    println!("  {blank:<2}  {rel_h:<rel_w$}  {id_h:<id_w$}  {text_h}");
+    for r in &rows {
+        let dir = r.dir;
+        let rel = r.rel;
+        let id = &r.id;
+        let text = &r.text;
+        println!("  {dir:<2}  {rel:<rel_w$}  {id:<id_w$}  {text}");
+    }
+}
+
+/// Identifying text for a relationship row: slug when present, else the
+/// linked unit's derived headline. Empty string is preserved (no fallback
+/// invention) so callers can see when a unit is unidentifiable.
+fn identifying_text(l: &LinkedUnit) -> String {
+    if let Some(slug) = &l.slug {
+        slug.clone()
+    } else {
+        l.headline.clone()
     }
 }
 

@@ -143,17 +143,24 @@ fn test_show_with_links() {
     let id_b = extract_id(&out_b);
     env.run_ok(&["link", &id_a, &id_b, "--rel", "depends_on"]);
 
-    let out = env.run_ok(&["show", &id_a]);
-    assert!(
-        out.contains(&format!("-> {id_b} (depends_on)")),
-        "got: {out}"
-    );
+    let short_b = &id_b[..8];
+    let short_a = &id_a[..8];
 
+    // show on A: outgoing depends_on row pointing to B (short id).
+    let out = env.run_ok(&["show", &id_a]);
+    let has_outgoing = out.lines().any(|line| {
+        let l = line.trim_start();
+        l.starts_with("->") && line.contains("depends_on") && line.contains(short_b)
+    });
+    assert!(has_outgoing, "expected outgoing depends_on row, got: {out}");
+
+    // show on B: incoming depends_on row from A (short id).
     let out = env.run_ok(&["show", &id_b]);
-    assert!(
-        out.contains(&format!("<- {id_a} (depends_on)")),
-        "got: {out}"
-    );
+    let has_incoming = out.lines().any(|line| {
+        let l = line.trim_start();
+        l.starts_with("<-") && line.contains("depends_on") && line.contains(short_a)
+    });
+    assert!(has_incoming, "expected incoming depends_on row, got: {out}");
 }
 
 #[test]
@@ -1137,10 +1144,12 @@ fn test_sync_refs_creates_related_to_on_add() {
 
     // show should list an outgoing related_to edge to the target.
     let shown = env.run_ok(&["show", &src_id]);
-    assert!(
-        shown.contains(&format!("-> {tgt_id} (related_to)")),
-        "expected edge to target: {shown}"
-    );
+    let short_tgt = &tgt_id[..8];
+    let has_edge = shown.lines().any(|line| {
+        let l = line.trim_start();
+        l.starts_with("->") && line.contains("related_to") && line.contains(short_tgt)
+    });
+    assert!(has_edge, "expected outgoing related_to row, got: {shown}");
 }
 
 #[test]

@@ -33,6 +33,28 @@ pub struct Link {
     pub relationship: String,
 }
 
+/// A link enriched with identifying metadata about the unit on the OTHER
+/// end of the link. Drives `simaris show` relationship rendering — gives a
+/// human (or downstream agent) enough context to know what the link points
+/// at without a second `simaris show` round trip.
+///
+/// Field semantics:
+/// - `from_id` / `to_id` / `relationship`: identical to [`Link`].
+/// - `headline`: `derive_headline` of the linked unit's content. Empty if
+///   the unit content has no usable first line.
+/// - `unit_type`: type of the linked unit.
+/// - `slug`: alphabetically-first slug pointing at the linked unit, if any.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LinkedUnit {
+    pub from_id: String,
+    pub to_id: String,
+    pub relationship: String,
+    pub headline: String,
+    #[serde(rename = "type")]
+    pub unit_type: String,
+    pub slug: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InboxItem {
     pub id: String,
@@ -862,6 +884,66 @@ pub fn get_links_to(conn: &Connection, id: &str) -> Result<Vec<Link>> {
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(links)
+}
+
+/// Outgoing links from `id`, enriched with identifying metadata about the
+/// unit on the other end (the `to` side). Powers the relationship table in
+/// `simaris show`.
+///
+/// One JOIN against `units` plus a correlated `slugs` subquery to pick the
+/// alphabetically-first slug per linked unit (NULL when the unit has no
+/// slug). Headline is derived from content via [`crate::display::derive_headline`].
+pub fn get_links_from_with_meta(conn: &Connection, id: &str) -> Result<Vec<LinkedUnit>> {
+    let mut stmt = conn.prepare(
+        "SELECT l.from_id, l.to_id, l.relationship, u.content, u.type,
+                (SELECT s.slug FROM slugs s WHERE s.unit_id = u.id ORDER BY s.slug ASC LIMIT 1) AS slug
+         FROM links l
+         JOIN units u ON u.id = l.to_id
+         WHERE l.from_id = ?1
+         ORDER BY l.relationship, l.to_id",
+    )?;
+    let rows = stmt
+        .query_map(params![id], |row| {
+            let content: String = row.get(3)?;
+            Ok(LinkedUnit {
+                from_id: row.get(0)?,
+                to_id: row.get(1)?,
+                relationship: row.get(2)?,
+                headline: crate::display::derive_headline(&content),
+                unit_type: row.get(4)?,
+                slug: row.get(5)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Incoming links to `id`, enriched with identifying metadata about the
+/// unit on the other end (the `from` side). Mirror of
+/// [`get_links_from_with_meta`].
+pub fn get_links_to_with_meta(conn: &Connection, id: &str) -> Result<Vec<LinkedUnit>> {
+    let mut stmt = conn.prepare(
+        "SELECT l.from_id, l.to_id, l.relationship, u.content, u.type,
+                (SELECT s.slug FROM slugs s WHERE s.unit_id = u.id ORDER BY s.slug ASC LIMIT 1) AS slug
+         FROM links l
+         JOIN units u ON u.id = l.from_id
+         WHERE l.to_id = ?1
+         ORDER BY l.relationship, l.from_id",
+    )?;
+    let rows = stmt
+        .query_map(params![id], |row| {
+            let content: String = row.get(3)?;
+            Ok(LinkedUnit {
+                from_id: row.get(0)?,
+                to_id: row.get(1)?,
+                relationship: row.get(2)?,
+                headline: crate::display::derive_headline(&content),
+                unit_type: row.get(4)?,
+                slug: row.get(5)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
 }
 
 /// Get all units linked from or to a given unit ID
@@ -1779,6 +1861,64 @@ mod tests {
         add_link(&conn, &id_a, &id_b, "related_to").unwrap();
         let result = add_link(&conn, &id_a, &id_b, "related_to");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_links_with_meta_returns_headline_type_and_slug() {
+        // Outgoing rows carry headline + type derived from the linked
+        // unit; slug is the alphabetically-first one or None.
+        let conn = memory_db();
+        let id_src = add_unit(&conn, "source", "fact", "inbox").unwrap();
+        let id_with_slug = add_unit(&conn, "tgt body line one", "idea", "inbox").unwrap();
+        let id_no_slug = add_unit(&conn, "second tgt body", "lesson", "inbox").unwrap();
+        // Two slugs on the first target — ALPHA picked because ASC order.
+        set_slug(&conn, "zeta-slug", &id_with_slug).unwrap();
+        set_slug(&conn, "alpha-slug", &id_with_slug).unwrap();
+        add_link(&conn, &id_src, &id_with_slug, "related_to").unwrap();
+        add_link(&conn, &id_src, &id_no_slug, "depends_on").unwrap();
+
+        let rows = get_links_from_with_meta(&conn, &id_src).unwrap();
+        assert_eq!(rows.len(), 2);
+
+        // Rows are ordered by relationship ASC then to_id — `depends_on`
+        // sorts before `related_to`.
+        let depends = rows
+            .iter()
+            .find(|r| r.relationship == "depends_on")
+            .expect("depends_on row");
+        assert_eq!(depends.to_id, id_no_slug);
+        assert_eq!(depends.unit_type, "lesson");
+        assert_eq!(depends.headline, "second tgt body");
+        assert_eq!(depends.slug, None);
+
+        let related = rows
+            .iter()
+            .find(|r| r.relationship == "related_to")
+            .expect("related_to row");
+        assert_eq!(related.to_id, id_with_slug);
+        assert_eq!(related.unit_type, "idea");
+        assert_eq!(related.headline, "tgt body line one");
+        assert_eq!(related.slug.as_deref(), Some("alpha-slug"));
+    }
+
+    #[test]
+    fn test_get_links_to_with_meta_returns_inbound_metadata() {
+        // Mirror of the outgoing test — incoming rows describe the unit
+        // on the FROM side of the link.
+        let conn = memory_db();
+        let id_target = add_unit(&conn, "target", "fact", "inbox").unwrap();
+        let id_from = add_unit(&conn, "first line of source", "principle", "inbox").unwrap();
+        set_slug(&conn, "src-slug", &id_from).unwrap();
+        add_link(&conn, &id_from, &id_target, "part_of").unwrap();
+
+        let rows = get_links_to_with_meta(&conn, &id_target).unwrap();
+        assert_eq!(rows.len(), 1);
+        let r = &rows[0];
+        assert_eq!(r.from_id, id_from);
+        assert_eq!(r.relationship, "part_of");
+        assert_eq!(r.unit_type, "principle");
+        assert_eq!(r.headline, "first line of source");
+        assert_eq!(r.slug.as_deref(), Some("src-slug"));
     }
 
     #[test]

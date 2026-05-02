@@ -955,8 +955,8 @@ fn main() -> Result<()> {
         } => {
             let id = db::resolve_id(&conn, &id)?;
             let unit = db::get_unit(&conn, &id)?;
-            let outgoing = db::get_links_from(&conn, &id)?;
-            let incoming = db::get_links_to(&conn, &id)?;
+            let outgoing = db::get_links_from_with_meta(&conn, &id)?;
+            let incoming = db::get_links_to_with_meta(&conn, &id)?;
             let slugs = db::get_slugs_for_unit(&conn, &id)?;
             display::print_unit(
                 &unit,
@@ -1224,8 +1224,8 @@ fn main() -> Result<()> {
                 source.as_deref(),
                 tag_vec.as_deref(),
             )?;
-            let outgoing = db::get_links_from(&conn, &id)?;
-            let incoming = db::get_links_to(&conn, &id)?;
+            let outgoing = db::get_links_from_with_meta(&conn, &id)?;
+            let incoming = db::get_links_to_with_meta(&conn, &id)?;
             let slugs = db::get_slugs_for_unit(&conn, &id)?;
             display::print_unit(
                 &unit,
