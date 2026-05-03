@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
@@ -735,6 +735,33 @@ pub fn add_unit(conn: &Connection, content: &str, unit_type: &str, source: &str)
     // F15: materialize frontmatter `refs:` as related_to edges.
     sync_frontmatter_refs(conn, &id, content)?;
     Ok(id)
+}
+
+/// S1 bridge — exact-match dedup over a recent window.
+///
+/// Returns Some(existing_id) if a non-archived live unit with byte-identical
+/// content was created within the last `window_days` days. Used by
+/// `simaris add --refuse-dup` to refuse re-creating an obvious duplicate.
+/// Newest match wins (`ORDER BY created DESC`).
+pub fn find_recent_duplicate(
+    conn: &Connection,
+    content: &str,
+    window_days: u32,
+) -> Result<Option<String>> {
+    let window = format!("-{window_days} days");
+    let row = conn
+        .query_row(
+            "SELECT id FROM units
+             WHERE content = ?1
+               AND archived = 0
+               AND created > datetime('now', ?2)
+             ORDER BY created DESC
+             LIMIT 1",
+            params![content, window],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?;
+    Ok(row)
 }
 
 pub fn get_unit(conn: &Connection, id: &str) -> Result<Unit> {

@@ -310,6 +310,26 @@ pub fn print_added(id: &str, json: bool) {
     }
 }
 
+/// S1 bridge — refusal output when `--refuse-dup` finds a recent twin.
+/// Caller exits non-zero (currently 2). Stderr in text mode so callers can
+/// still capture stdout; stdout in JSON mode for machine consumers.
+pub fn print_refused_dup(existing_id: &str, json: bool) {
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "refused": "duplicate",
+                "existing_id": existing_id,
+                "window_days": 7,
+            })
+        );
+    } else {
+        eprintln!(
+            "refused: byte-identical content already added within 7 days as {existing_id}"
+        );
+    }
+}
+
 pub fn print_cloned(from_id: &str, new_id: &str, json: bool) {
     if json {
         println!("{}", serde_json::json!({ "id": new_id, "from": from_id }));

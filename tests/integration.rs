@@ -3819,3 +3819,92 @@ fn test_clone_resolves_slug() {
     let new_v: serde_json::Value = serde_json::from_str(&new_raw).expect("valid JSON");
     assert_eq!(new_v["unit"]["content"], "slugged body");
 }
+
+// --- S1 bridge: --refuse-dup ----------------------------------------------
+
+#[test]
+fn test_refuse_dup_blocks_exact_match() {
+    let env = TestEnv::new("refusedup_block");
+    let first = env.run_ok(&["add", "dedup body alpha", "--type", "fact"]);
+    let first_id = extract_id(&first);
+
+    let out = env.run(&[
+        "add",
+        "dedup body alpha",
+        "--type",
+        "fact",
+        "--refuse-dup",
+    ]);
+    assert!(!out.status.success(), "second add must refuse");
+    assert_eq!(out.status.code(), Some(2), "exit code must be 2");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("refused"),
+        "stderr should announce refusal: {stderr}"
+    );
+    assert!(
+        stderr.contains(&first_id),
+        "stderr should cite existing id {first_id}: {stderr}"
+    );
+}
+
+#[test]
+fn test_refuse_dup_allows_distinct_content() {
+    let env = TestEnv::new("refusedup_pass");
+    env.run_ok(&["add", "first body", "--type", "fact"]);
+    let out = env.run_ok(&[
+        "add",
+        "second body",
+        "--type",
+        "fact",
+        "--refuse-dup",
+    ]);
+    assert!(out.starts_with("Added unit "), "second add must succeed: {out}");
+}
+
+#[test]
+fn test_refuse_dup_default_off() {
+    // Without the flag, byte-identical re-adds still create new units —
+    // bridge is opt-in by design (charter: S1 only, blast radius minimal).
+    let env = TestEnv::new("refusedup_optin");
+    let a = extract_id(&env.run_ok(&["add", "same body", "--type", "fact"]));
+    let b = extract_id(&env.run_ok(&["add", "same body", "--type", "fact"]));
+    assert_ne!(a, b, "without --refuse-dup, two units allowed");
+}
+
+#[test]
+fn test_refuse_dup_json_output() {
+    let env = TestEnv::new("refusedup_json");
+    let first_id = extract_id(&env.run_ok(&["add", "json dup body", "--type", "fact"]));
+    let out = env.run(&[
+        "--json",
+        "add",
+        "json dup body",
+        "--type",
+        "fact",
+        "--refuse-dup",
+    ]);
+    assert_eq!(out.status.code(), Some(2));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("valid JSON");
+    assert_eq!(v["refused"], "duplicate");
+    assert_eq!(v["existing_id"], first_id);
+    assert_eq!(v["window_days"], 7);
+}
+
+#[test]
+fn test_refuse_dup_ignores_archived() {
+    // An archived twin must NOT block fresh inserts — refuse only on
+    // live recent dups.
+    let env = TestEnv::new("refusedup_arch");
+    let id = extract_id(&env.run_ok(&["add", "arch body", "--type", "fact"]));
+    env.run_ok(&["archive", &id]);
+    let out = env.run_ok(&[
+        "add",
+        "arch body",
+        "--type",
+        "fact",
+        "--refuse-dup",
+    ]);
+    assert!(out.starts_with("Added unit "), "archived twin must not block: {out}");
+}

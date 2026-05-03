@@ -53,6 +53,11 @@ enum Command {
         #[arg(long)]
         flow: bool,
 
+        /// S1 bridge — refuse if byte-identical content exists within the
+        /// last 7 days. Exits 2 with the existing unit id; no insert.
+        #[arg(long = "refuse-dup")]
+        refuse_dup: bool,
+
         /// Read content verbatim from file path (mutex with any field flag)
         #[arg(long, value_name = "PATH")]
         from_file: Option<String>,
@@ -892,6 +897,7 @@ fn main() -> Result<()> {
             tags,
             force,
             flow,
+            refuse_dup,
             from_file,
             trigger,
             check,
@@ -947,6 +953,15 @@ fn main() -> Result<()> {
                         .collect()
                 })
                 .unwrap_or_default();
+            // S1 bridge: refuse exact-match dup in 7d window before any write.
+            if refuse_dup {
+                if let Some(existing_id) =
+                    db::find_recent_duplicate(&conn, &final_content, 7)?
+                {
+                    display::print_refused_dup(&existing_id, cli.json);
+                    std::process::exit(2);
+                }
+            }
             size_guard::check_size(&final_content, &tag_vec, flow, force)?;
             let id = if tags.is_some() {
                 db::add_unit_full(&conn, &final_content, r#type.as_str(), &source, &tag_vec)?
