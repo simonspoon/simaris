@@ -3,6 +3,7 @@ mod db;
 mod display;
 mod emit;
 mod frontmatter;
+mod lint;
 mod rewrite;
 mod size_guard;
 
@@ -462,6 +463,17 @@ enum Command {
         /// Type of knowledge unit to emit
         #[arg(long, rename_all = "snake_case")]
         r#type: EmitType,
+    },
+
+    /// Read-only audit — surface knowledge-store rot.
+    ///
+    /// Reports four categories: PROCEDURE_NO_TRIGGER, ORPHAN, DUPE,
+    /// DUAL_PARENT_DIVERGENCE. Always exits 0 — advisory only. See the
+    /// approved `simaris-knowledge-v2` design for thresholds.
+    Lint {
+        /// Print fix suggestions per category after the report.
+        #[arg(long = "fix-suggest")]
+        fix_suggest: bool,
     },
 
     /// Rewrite a unit in `$EDITOR` with a type-aware skeleton.
@@ -1280,6 +1292,10 @@ fn main() -> Result<()> {
             let target_dir = emit::claude_agents_dir()?;
             let result = emit::emit_claude_code_aspects(&conn, &target_dir)?;
             display::print_emit_result(&result, &target_dir, cli.json);
+        }
+        Command::Lint { fix_suggest } => {
+            let report = lint::lint(&conn)?;
+            display::print_lint(&report, cli.json, fix_suggest);
         }
         Command::Rewrite { id, template_only } => {
             rewrite::run(&conn, &id, template_only)?;

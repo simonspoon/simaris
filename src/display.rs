@@ -1,5 +1,6 @@
 use crate::ask::PrimeResult;
 use crate::db::{InboxItem, LinkedUnit, ScanResult, SlugRow, Stats, Unit, UnstructuredRow};
+use crate::lint::LintReport;
 use crate::emit::EmitResult;
 use crate::frontmatter;
 use serde::Serialize;
@@ -861,5 +862,152 @@ mod tests {
         // whitespace trimmed.
         let plain = "\n\n  plain start\nrest\n";
         assert_eq!(first_line_preview(plain), "plain start");
+    }
+}
+
+
+/// Render a `simaris lint` report.
+///
+/// JSON mode emits the full structured report (no truncation, all findings
+/// per category). Text mode prints grouped sections with counts and the top
+/// 5 examples per category. Always advisory — caller exits 0.
+pub fn print_lint(report: &LintReport, json: bool, fix_suggest: bool) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(report).unwrap());
+        return;
+    }
+
+    let mut printed_any = false;
+
+    if !report.procedure_no_trigger.is_empty() {
+        printed_any = true;
+        println!(
+            "PROCEDURE_NO_TRIGGER: {} unit(s)",
+            report.procedure_no_trigger.len()
+        );
+        for f in report.procedure_no_trigger.iter().take(5) {
+            println!(
+                "  [{}] ({}) {}",
+                short_id(&f.id),
+                f.unit_type,
+                truncate_content(&f.headline)
+            );
+            println!("      → {}", f.reason);
+        }
+        if report.procedure_no_trigger.len() > 5 {
+            println!(
+                "  … and {} more",
+                report.procedure_no_trigger.len() - 5
+            );
+        }
+        println!();
+    }
+
+    if !report.orphan.is_empty() {
+        printed_any = true;
+        println!("ORPHAN: {} unit(s)", report.orphan.len());
+        for f in report.orphan.iter().take(5) {
+            println!(
+                "  [{}] ({}) {}",
+                short_id(&f.id),
+                f.unit_type,
+                truncate_content(&f.headline)
+            );
+            println!("      → {}", f.reason);
+        }
+        if report.orphan.len() > 5 {
+            println!("  … and {} more", report.orphan.len() - 5);
+        }
+        println!();
+    }
+
+    if !report.dupe.is_empty() {
+        printed_any = true;
+        println!("DUPE: {} pair(s)", report.dupe.len());
+        for f in report.dupe.iter().take(5) {
+            println!(
+                "  [{}] <-> [{}] (sim={:.2}, type={})",
+                short_id(&f.a_id),
+                short_id(&f.b_id),
+                f.similarity,
+                f.unit_type
+            );
+            println!("      → {}", f.reason);
+            println!("        a: {}", truncate_content(&f.a_headline));
+            println!("        b: {}", truncate_content(&f.b_headline));
+        }
+        if report.dupe.len() > 5 {
+            println!("  … and {} more", report.dupe.len() - 5);
+        }
+        println!();
+    }
+
+    if !report.dual_parent_divergence.is_empty() {
+        printed_any = true;
+        println!(
+            "DUAL_PARENT_DIVERGENCE: {} unit(s)",
+            report.dual_parent_divergence.len()
+        );
+        for f in report.dual_parent_divergence.iter().take(5) {
+            println!(
+                "  [{}] ({}) {}",
+                short_id(&f.id),
+                f.unit_type,
+                truncate_content(&f.headline)
+            );
+            println!("      → {}", f.reason);
+            println!(
+                "        parents: [{}] @ {}  ↔  [{}] @ {}",
+                short_id(&f.parent_a_id),
+                f.parent_a_updated,
+                short_id(&f.parent_b_id),
+                f.parent_b_updated
+            );
+        }
+        if report.dual_parent_divergence.len() > 5 {
+            println!(
+                "  … and {} more",
+                report.dual_parent_divergence.len() - 5
+            );
+        }
+        println!();
+    }
+
+    if !printed_any {
+        println!("No lint issues found.");
+    } else {
+        println!(
+            "Total findings: {} (procedure_no_trigger={}, orphan={}, dupe={}, dual_parent_divergence={})",
+            report.total(),
+            report.procedure_no_trigger.len(),
+            report.orphan.len(),
+            report.dupe.len(),
+            report.dual_parent_divergence.len()
+        );
+    }
+
+    if fix_suggest && report.total() > 0 {
+        println!();
+        println!("Fix suggestions:");
+        if !report.procedure_no_trigger.is_empty() {
+            println!(
+                "  PROCEDURE_NO_TRIGGER → simaris edit <id> --trigger '<machine-detectable event>'"
+            );
+        }
+        if !report.orphan.is_empty() {
+            println!(
+                "  ORPHAN → simaris link <id> <parent-aspect-id> --rel part_of   (or)   simaris slug set <name> <id>"
+            );
+        }
+        if !report.dupe.is_empty() {
+            println!(
+                "  DUPE → review pairs; simaris archive <loser-id>, or simaris link winner loser --rel supersedes"
+            );
+        }
+        if !report.dual_parent_divergence.is_empty() {
+            println!(
+                "  DUAL_PARENT_DIVERGENCE → review parents; drop the stale link or refresh the lagging branch"
+            );
+        }
     }
 }
