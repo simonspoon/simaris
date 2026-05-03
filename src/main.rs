@@ -472,13 +472,44 @@ enum Command {
 
     /// Read-only audit — surface knowledge-store rot.
     ///
-    /// Reports four categories: PROCEDURE_NO_TRIGGER, ORPHAN, DUPE,
-    /// DUAL_PARENT_DIVERGENCE. Always exits 0 — advisory only. See the
-    /// approved `simaris-knowledge-v2` design for thresholds.
+    /// M0 categories: PROCEDURE_NO_TRIGGER, ORPHAN, DUPE,
+    /// DUAL_PARENT_DIVERGENCE. M1 additions: TAG_VARIANT (near-duplicate
+    /// tags), per-aspect rollup, snapshot history, CI regression check.
+    /// Default exit 0 (advisory). `--ci` exits 1 on regression.
     Lint {
         /// Print fix suggestions per category after the report.
         #[arg(long = "fix-suggest")]
         fix_suggest: bool,
+
+        /// Append per-aspect rollup table to text output. JSON always
+        /// includes the rollup field.
+        #[arg(long = "by-aspect")]
+        by_aspect: bool,
+
+        /// Persist a snapshot row of the current totals so future runs
+        /// can compute deltas via `--history` / `--ci`.
+        #[arg(long)]
+        snapshot: bool,
+
+        /// Optional note attached to the snapshot (e.g. milestone tag).
+        /// Has no effect without `--snapshot`.
+        #[arg(long, default_value = "")]
+        note: String,
+
+        /// Show recent snapshots instead of running a fresh lint.
+        /// Mutually exclusive with `--ci`.
+        #[arg(long)]
+        history: bool,
+
+        /// Cap the `--history` listing.
+        #[arg(long, default_value = "20")]
+        limit: usize,
+
+        /// CI mode — compare current totals to the most recent snapshot.
+        /// Exits 1 if any category regressed (count went up). Stdout is
+        /// JSON delta. Pair with `--snapshot` to also persist the run.
+        #[arg(long)]
+        ci: bool,
     },
 
     /// Rewrite a unit in `$EDITOR` with a type-aware skeleton.
@@ -1308,9 +1339,42 @@ fn main() -> Result<()> {
             let result = emit::emit_claude_code_aspects(&conn, &target_dir)?;
             display::print_emit_result(&result, &target_dir, cli.json);
         }
-        Command::Lint { fix_suggest } => {
+        Command::Lint {
+            fix_suggest,
+            by_aspect,
+            snapshot,
+            note,
+            history,
+            limit,
+            ci,
+        } => {
+            if history && ci {
+                anyhow::bail!("--history and --ci are mutually exclusive");
+            }
+            if history {
+                let rows = db::list_lint_snapshots(&conn, limit)?;
+                display::print_lint_history(&rows, cli.json);
+                return Ok(());
+            }
             let report = lint::lint(&conn)?;
-            display::print_lint(&report, cli.json, fix_suggest);
+            if ci {
+                let prev = db::latest_lint_snapshot(&conn)?;
+                let regressed = display::print_lint_ci(&report, prev.as_ref(), cli.json);
+                if snapshot {
+                    db::insert_lint_snapshot(&conn, &report.totals(), &note)?;
+                }
+                if regressed {
+                    std::process::exit(1);
+                }
+                return Ok(());
+            }
+            display::print_lint(&report, cli.json, fix_suggest, by_aspect);
+            if snapshot {
+                let id = db::insert_lint_snapshot(&conn, &report.totals(), &note)?;
+                if !cli.json {
+                    println!("Snapshot saved: {id}");
+                }
+            }
         }
         Command::Rewrite { id, template_only } => {
             rewrite::run(&conn, &id, template_only)?;

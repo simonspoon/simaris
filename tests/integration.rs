@@ -3908,3 +3908,159 @@ fn test_refuse_dup_ignores_archived() {
     ]);
     assert!(out.starts_with("Added unit "), "archived twin must not block: {out}");
 }
+
+// --- M1 audit expansion: snapshot + history + CI + tag + by-aspect --------
+
+#[test]
+fn test_lint_snapshot_writes_row() {
+    let env = TestEnv::new("lint_snapshot");
+    env.run_ok(&["add", "fact body", "--type", "fact"]);
+    let out = env.run_ok(&["lint", "--snapshot", "--note", "v1"]);
+    assert!(out.contains("Snapshot saved:"), "got: {out}");
+
+    let history = env.run_ok(&["lint", "--history"]);
+    assert!(history.contains("v1"), "history must list note: {history}");
+}
+
+#[test]
+fn test_lint_history_empty() {
+    let env = TestEnv::new("lint_hist_empty");
+    let out = env.run_ok(&["lint", "--history"]);
+    assert!(
+        out.contains("No lint snapshots recorded"),
+        "empty history hint: {out}"
+    );
+}
+
+#[test]
+fn test_lint_ci_no_regression_exits_zero() {
+    let env = TestEnv::new("lint_ci_clean");
+    env.run_ok(&["add", "stable fact", "--type", "fact"]);
+    env.run_ok(&["lint", "--snapshot"]);
+    let out = env.run(&["lint", "--ci"]);
+    assert!(out.status.success(), "no regression must exit 0");
+}
+
+#[test]
+fn test_lint_ci_regression_exits_one() {
+    let env = TestEnv::new("lint_ci_regress");
+    // Snapshot a clean baseline (no procedures, no orphans yet — but
+    // the first add will create an orphan since no slug/parent).
+    env.run_ok(&["add", "first fact", "--type", "fact"]);
+    env.run_ok(&["lint", "--snapshot"]);
+    // Now add a procedure with no trigger AND no parent — increases
+    // orphan AND procedure_no_trigger.
+    env.run_ok(&["add", "trigger-less procedure", "--type", "procedure"]);
+    let out = env.run(&["lint", "--ci"]);
+    assert_eq!(out.status.code(), Some(1), "regression must exit 1");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("REGRESSED:"),
+        "stdout should announce regression: {stdout}"
+    );
+}
+
+#[test]
+fn test_lint_ci_no_prior_snapshot() {
+    let env = TestEnv::new("lint_ci_first");
+    env.run_ok(&["add", "fresh fact", "--type", "fact"]);
+    let out = env.run(&["lint", "--ci"]);
+    // Without a prior snapshot, baseline = zero. Any orphan -> regression.
+    // The fresh fact has no slug/parent so it's an orphan, so we expect
+    // regression. The contract is: deltas computed against zero baseline.
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("no prior snapshot"),
+        "stdout should note absent baseline: {stdout}"
+    );
+}
+
+#[test]
+fn test_lint_ci_json_shape() {
+    let env = TestEnv::new("lint_ci_json");
+    env.run_ok(&["add", "j fact", "--type", "fact"]);
+    env.run_ok(&["lint", "--snapshot"]);
+    let raw = env.run_ok(&["--json", "lint", "--ci"]);
+    let v: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+    assert!(v.get("current").is_some(), "current totals required");
+    assert!(v.get("delta").is_some(), "delta required");
+    assert!(v.get("regressed").is_some(), "regressed flag required");
+    assert!(v["delta"]["procedure_no_trigger"].is_i64());
+}
+
+#[test]
+fn test_lint_tag_variant_detects_plurals() {
+    let env = TestEnv::new("lint_tag_var");
+    // Three uses of `procedure`, two of `procedures` — same normalized.
+    for _ in 0..3 {
+        env.run_ok(&[
+            "add",
+            "p body",
+            "--type",
+            "fact",
+            "--tags",
+            "procedure",
+        ]);
+    }
+    for _ in 0..2 {
+        env.run_ok(&[
+            "add",
+            "p body 2",
+            "--type",
+            "fact",
+            "--tags",
+            "procedures",
+        ]);
+    }
+    let raw = env.run_ok(&["--json", "lint"]);
+    let v: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+    let groups = v["tag_variant"].as_array().expect("tag_variant is array");
+    let found = groups.iter().any(|g| {
+        g["canonical"] == "procedure"
+            && g["variants"].as_array().unwrap().len() == 2
+            && g["total_uses"] == 5
+    });
+    assert!(found, "expected procedure/procedures group: {raw}");
+}
+
+#[test]
+fn test_lint_by_aspect_attributes_to_owner() {
+    let env = TestEnv::new("lint_by_aspect");
+    let aspect_id = extract_id(&env.run_ok(&[
+        "add",
+        "# parent aspect body",
+        "--type",
+        "aspect",
+    ]));
+    env.run_ok(&["slug", "set", "parent-aspect", &aspect_id]);
+    // Procedure parent_of the aspect, no trigger -> PNT contributes to aspect.
+    let proc_id = extract_id(&env.run_ok(&[
+        "add",
+        "child procedure",
+        "--type",
+        "procedure",
+    ]));
+    env.run_ok(&["link", &proc_id, &aspect_id, "--rel", "part_of"]);
+
+    let raw = env.run_ok(&["--json", "lint"]);
+    let v: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+    let by = v["by_aspect"].as_array().expect("by_aspect array");
+    let owned = by.iter().find(|r| r["aspect_id"] == aspect_id);
+    assert!(owned.is_some(), "aspect must appear in rollup: {raw}");
+    let owned = owned.unwrap();
+    assert_eq!(owned["procedure_no_trigger"], 1);
+    assert_eq!(owned["slug"], "parent-aspect");
+}
+
+#[test]
+fn test_lint_tag_stats_counts_singletons() {
+    let env = TestEnv::new("lint_tag_stats");
+    env.run_ok(&["add", "a", "--type", "fact", "--tags", "alpha,beta"]);
+    env.run_ok(&["add", "b", "--type", "fact", "--tags", "alpha"]);
+    let raw = env.run_ok(&["--json", "lint"]);
+    let v: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+    let s = &v["tag_stats"];
+    assert_eq!(s["distinct"], 2);
+    assert_eq!(s["total_uses"], 3);
+    assert_eq!(s["singletons"], 1); // beta used once
+}

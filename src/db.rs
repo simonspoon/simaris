@@ -662,7 +662,20 @@ fn initialize(conn: &Connection) -> Result<()> {
             created  TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
-        CREATE INDEX IF NOT EXISTS idx_slugs_unit ON slugs(unit_id);",
+        CREATE INDEX IF NOT EXISTS idx_slugs_unit ON slugs(unit_id);
+
+        -- M1 audit: snapshot history for `simaris lint --snapshot` /
+        -- `--history` / `--ci`. Stores per-category counts as JSON so
+        -- adding categories does not require a schema bump.
+        CREATE TABLE IF NOT EXISTS lint_snapshots (
+            id       TEXT PRIMARY KEY,
+            created  TEXT NOT NULL DEFAULT (datetime('now')),
+            totals   TEXT NOT NULL,
+            note     TEXT NOT NULL DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_lint_snapshots_created
+            ON lint_snapshots(created);",
     )?;
 
     let fts_exists: bool = conn.query_row(
@@ -3448,3 +3461,80 @@ mod tests {
         }
     }
 }
+
+// --- M1 audit: lint snapshot history -------------------------------------
+
+/// Per-category lint counts persisted alongside a snapshot.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LintTotals {
+    pub procedure_no_trigger: usize,
+    pub orphan: usize,
+    pub dupe: usize,
+    pub dual_parent_divergence: usize,
+    pub tag_variant: usize,
+    pub total: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LintSnapshotRow {
+    pub id: String,
+    pub created: String,
+    pub totals: LintTotals,
+    pub note: String,
+}
+
+/// Insert a snapshot row. Returns the new id.
+pub fn insert_lint_snapshot(
+    conn: &Connection,
+    totals: &LintTotals,
+    note: &str,
+) -> Result<String> {
+    let id = Uuid::now_v7().to_string();
+    let totals_json = serde_json::to_string(totals)?;
+    conn.execute(
+        "INSERT INTO lint_snapshots (id, totals, note) VALUES (?1, ?2, ?3)",
+        params![id, totals_json, note],
+    )?;
+    Ok(id)
+}
+
+/// List snapshots newest-first. \`limit\` caps the page size.
+pub fn list_lint_snapshots(
+    conn: &Connection,
+    limit: usize,
+) -> Result<Vec<LintSnapshotRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, created, totals, note
+         FROM lint_snapshots
+         ORDER BY created DESC, id DESC
+         LIMIT ?1",
+    )?;
+    let rows = stmt.query_map(params![limit as i64], |r| {
+        let totals_json: String = r.get(2)?;
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            totals_json,
+            r.get::<_, String>(3)?,
+        ))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (id, created, totals_json, note) = row?;
+        let totals: LintTotals = serde_json::from_str(&totals_json)?;
+        out.push(LintSnapshotRow {
+            id,
+            created,
+            totals,
+            note,
+        });
+    }
+    Ok(out)
+}
+
+/// Fetch the most recent snapshot, if any.
+pub fn latest_lint_snapshot(conn: &Connection) -> Result<Option<LintSnapshotRow>> {
+    let row = list_lint_snapshots(conn, 1)?;
+    Ok(row.into_iter().next())
+}
+

@@ -891,7 +891,7 @@ mod tests {
 /// JSON mode emits the full structured report (no truncation, all findings
 /// per category). Text mode prints grouped sections with counts and the top
 /// 5 examples per category. Always advisory — caller exits 0.
-pub fn print_lint(report: &LintReport, json: bool, fix_suggest: bool) {
+pub fn print_lint(report: &LintReport, json: bool, fix_suggest: bool, by_aspect: bool) {
     if json {
         println!("{}", serde_json::to_string_pretty(report).unwrap());
         return;
@@ -993,17 +993,87 @@ pub fn print_lint(report: &LintReport, json: bool, fix_suggest: bool) {
         println!();
     }
 
+    // M1: TAG_VARIANT block (printed alongside content categories).
+    if !report.tag_variant.is_empty() {
+        printed_any = true;
+        println!("TAG_VARIANT: {} group(s)", report.tag_variant.len());
+        for f in report.tag_variant.iter().take(5) {
+            println!(
+                "  `{}` ({} variant(s), {} total uses)",
+                f.canonical,
+                f.variants.len(),
+                f.total_uses
+            );
+            println!("      → {}", f.reason);
+        }
+        if report.tag_variant.len() > 5 {
+            println!("  … and {} more", report.tag_variant.len() - 5);
+        }
+        println!();
+    }
+
     if !printed_any {
         println!("No lint issues found.");
     } else {
         println!(
-            "Total findings: {} (procedure_no_trigger={}, orphan={}, dupe={}, dual_parent_divergence={})",
+            "Total findings: {} (procedure_no_trigger={}, orphan={}, dupe={}, dual_parent_divergence={}, tag_variant={})",
             report.total(),
             report.procedure_no_trigger.len(),
             report.orphan.len(),
             report.dupe.len(),
-            report.dual_parent_divergence.len()
+            report.dual_parent_divergence.len(),
+            report.tag_variant.len()
         );
+    }
+
+    // M1: bulk tag entropy stats (always printed — fast diagnostic).
+    let ts = &report.tag_stats;
+    if ts.distinct > 0 {
+        println!(
+            "tag_stats: distinct={}, total_uses={}, singletons={} ({:.1}%), low_use(<3)={} ({:.1}%)",
+            ts.distinct,
+            ts.total_uses,
+            ts.singletons,
+            (ts.singletons as f64 / ts.distinct as f64) * 100.0,
+            ts.low_use,
+            (ts.low_use as f64 / ts.distinct as f64) * 100.0
+        );
+        println!();
+    }
+
+    // M1: per-aspect rollup table (gated on --by-aspect to keep default
+    // output skim-friendly). Top 10.
+    if by_aspect && !report.by_aspect.is_empty() {
+        println!("by_aspect (top 10 by total findings):");
+        println!(
+            "  {:<10}  {:<32}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}",
+            "id", "owner", "PNT", "ORPH", "DUPE", "DPD", "TOTAL"
+        );
+        for r in report.by_aspect.iter().take(10) {
+            let owner = match &r.slug {
+                Some(s) => format!("{} ({})", s, truncate_content(&r.headline)),
+                None => truncate_content(&r.headline),
+            };
+            let id_short = if r.aspect_id == "(unowned)" {
+                "(unowned)".to_string()
+            } else {
+                short_id(&r.aspect_id).to_string()
+            };
+            println!(
+                "  {:<10}  {:<32}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}",
+                id_short,
+                truncate_owner(&owner, 32),
+                r.procedure_no_trigger,
+                r.orphan,
+                r.dupe,
+                r.dual_parent_divergence,
+                r.total
+            );
+        }
+        if report.by_aspect.len() > 10 {
+            println!("  … and {} more aspect(s)", report.by_aspect.len() - 10);
+        }
+        println!();
     }
 
     if fix_suggest && report.total() > 0 {
@@ -1029,5 +1099,156 @@ pub fn print_lint(report: &LintReport, json: bool, fix_suggest: bool) {
                 "  DUAL_PARENT_DIVERGENCE → review parents; drop the stale link or refresh the lagging branch"
             );
         }
+        if !report.tag_variant.is_empty() {
+            println!(
+                "  TAG_VARIANT → pick a canonical, then `simaris edit <id> --tags ...` on each unit; archive obsolete variant"
+            );
+        }
     }
+}
+
+/// Helper: truncate the owner column without splitting a UTF-8 boundary.
+fn truncate_owner(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let take: String = s.chars().take(max.saturating_sub(1)).collect();
+    format!("{take}…")
+}
+
+/// Render `simaris lint --history` output.
+pub fn print_lint_history(rows: &[crate::db::LintSnapshotRow], json: bool) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(rows).unwrap());
+        return;
+    }
+    if rows.is_empty() {
+        println!("No lint snapshots recorded yet. Run `simaris lint --snapshot` first.");
+        return;
+    }
+    println!(
+        "{:<10}  {:<19}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>6}  note",
+        "id", "created", "PNT", "ORPH", "DUPE", "DPD", "TAG", "TOTAL"
+    );
+    for r in rows {
+        let t = &r.totals;
+        let id_short = short_id(&r.id);
+        println!(
+            "{:<10}  {:<19}  {:>5}  {:>5}  {:>5}  {:>5}  {:>5}  {:>6}  {}",
+            id_short,
+            r.created,
+            t.procedure_no_trigger,
+            t.orphan,
+            t.dupe,
+            t.dual_parent_divergence,
+            t.tag_variant,
+            t.total,
+            r.note
+        );
+    }
+}
+
+/// Render `simaris lint --ci` output. Compares current totals to `prev`
+/// and emits a structured delta. Returns `true` if any category regressed
+/// (count strictly increased) — caller exits non-zero.
+pub fn print_lint_ci(
+    report: &LintReport,
+    prev: Option<&crate::db::LintSnapshotRow>,
+    json: bool,
+) -> bool {
+    let curr = report.totals();
+    let prev_totals = prev.map(|p| p.totals.clone()).unwrap_or(crate::db::LintTotals {
+        procedure_no_trigger: 0,
+        orphan: 0,
+        dupe: 0,
+        dual_parent_divergence: 0,
+        tag_variant: 0,
+        total: 0,
+    });
+
+    // Per-category delta (signed).
+    let d = |a: usize, b: usize| -> i64 { a as i64 - b as i64 };
+    let pnt_d = d(curr.procedure_no_trigger, prev_totals.procedure_no_trigger);
+    let orph_d = d(curr.orphan, prev_totals.orphan);
+    let dupe_d = d(curr.dupe, prev_totals.dupe);
+    let dpd_d = d(curr.dual_parent_divergence, prev_totals.dual_parent_divergence);
+    let tag_d = d(curr.tag_variant, prev_totals.tag_variant);
+    let total_d = d(curr.total, prev_totals.total);
+
+    let mut regressions: Vec<&'static str> = Vec::new();
+    if pnt_d > 0 {
+        regressions.push("procedure_no_trigger");
+    }
+    if orph_d > 0 {
+        regressions.push("orphan");
+    }
+    if dupe_d > 0 {
+        regressions.push("dupe");
+    }
+    if dpd_d > 0 {
+        regressions.push("dual_parent_divergence");
+    }
+    if tag_d > 0 {
+        regressions.push("tag_variant");
+    }
+    let regressed = !regressions.is_empty();
+
+    if json {
+        let payload = serde_json::json!({
+            "previous": prev.map(|p| serde_json::json!({
+                "id": p.id,
+                "created": p.created,
+                "totals": p.totals,
+                "note": p.note,
+            })),
+            "current": curr,
+            "delta": {
+                "procedure_no_trigger": pnt_d,
+                "orphan": orph_d,
+                "dupe": dupe_d,
+                "dual_parent_divergence": dpd_d,
+                "tag_variant": tag_d,
+                "total": total_d,
+            },
+            "regressions": regressions,
+            "regressed": regressed,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload).unwrap());
+    } else {
+        if let Some(p) = prev {
+            println!("CI compare vs snapshot {} ({})", short_id(&p.id), p.created);
+        } else {
+            println!("CI compare vs no prior snapshot (treating baseline as zero)");
+        }
+        println!(
+            "  procedure_no_trigger: {} -> {} ({:+})",
+            prev_totals.procedure_no_trigger, curr.procedure_no_trigger, pnt_d
+        );
+        println!(
+            "  orphan:               {} -> {} ({:+})",
+            prev_totals.orphan, curr.orphan, orph_d
+        );
+        println!(
+            "  dupe:                 {} -> {} ({:+})",
+            prev_totals.dupe, curr.dupe, dupe_d
+        );
+        println!(
+            "  dual_parent_divergence: {} -> {} ({:+})",
+            prev_totals.dual_parent_divergence, curr.dual_parent_divergence, dpd_d
+        );
+        println!(
+            "  tag_variant:          {} -> {} ({:+})",
+            prev_totals.tag_variant, curr.tag_variant, tag_d
+        );
+        println!(
+            "  total:                {} -> {} ({:+})",
+            prev_totals.total, curr.total, total_d
+        );
+        if regressed {
+            println!();
+            println!("REGRESSED: {}", regressions.join(", "));
+        }
+    }
+
+    regressed
 }
