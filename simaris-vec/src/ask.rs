@@ -7,7 +7,7 @@
 //!   embeddings; structural smoke test of the fusion pipeline.
 
 use anyhow::{Context, Result};
-use arrow_array::StringArray;
+use arrow_array::{Float32Array, StringArray};
 use futures::TryStreamExt;
 use lance::Dataset;
 use lance::dataset::scanner::Scanner;
@@ -38,6 +38,97 @@ pub fn rrf_fuse(vec_ranking: &[String], text_ranking: &[String], n: usize) -> Ve
     });
     fused.truncate(n);
     fused
+}
+
+/// Production hybrid retrieval: lance KNN over the `embedding` column ∪
+/// tantivy text search → RRF fusion (k=60). Real query embedding required —
+/// callers obtain it from [`crate::embed::OllamaEmbedClient`] (or any other
+/// source).
+///
+/// Returns up to `top_n` ranked `(unit_id, fused_score)` pairs, ordered by
+/// descending fused score with deterministic id-tiebreak (matches `rrf_fuse`).
+///
+/// `candidate_pool` controls top-K per leg before fusion. M3-redo-2 cell
+/// matches at `candidate_pool = 50`.
+pub async fn hybrid_search(
+    lance_dir: &Path,
+    tantivy_dir: &Path,
+    query_text: &str,
+    query_embedding: &[f32],
+    top_n: usize,
+    candidate_pool: usize,
+) -> Result<Vec<(String, f64)>> {
+    // VECTOR leg — lance KNN.
+    let units_path = lance_dir.join("units.lance");
+    let units = Dataset::open(units_path.to_str().context("lance path utf8")?).await?;
+    let qarr = Float32Array::from(query_embedding.to_vec());
+    let mut scanner: Scanner = units.scan();
+    scanner.project(&["id"])?;
+    scanner.nearest("embedding", &qarr, candidate_pool)?;
+    let stream = scanner.try_into_stream().await?;
+    let batches: Vec<_> = stream.try_collect().await?;
+    let mut vec_ranking: Vec<String> = Vec::with_capacity(candidate_pool);
+    for b in &batches {
+        let ids = b
+            .column_by_name("id")
+            .context("lance KNN missing id column")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .context("lance id column not string")?;
+        for i in 0..b.num_rows() {
+            vec_ranking.push(ids.value(i).to_string());
+            if vec_ranking.len() >= candidate_pool {
+                break;
+            }
+        }
+    }
+
+    // TEXT leg — tantivy. Sanitize to drop tantivy operator characters; the
+    // bench harness applies the same rule (replace +!(){}[]^"~*?:\/- with
+    // whitespace) to keep parser ergonomics identical to the M3-redo-2
+    // measured cell.
+    let q_clean = sanitize_tantivy_query(query_text);
+    let mut text_ranking: Vec<String> = Vec::with_capacity(candidate_pool);
+    if !q_clean.is_empty() {
+        let index = Index::open_in_dir(tantivy_dir)?;
+        let reader = index.reader()?;
+        let searcher = reader.searcher();
+        let schema = index.schema();
+        let f_id = schema.get_field("id")?;
+        let f_content = schema.get_field("content")?;
+        let f_tags = schema.get_field("tags")?;
+        let parser = QueryParser::for_index(&index, vec![f_content, f_tags]);
+        if let Ok(q) = parser.parse_query(&q_clean) {
+            let top = searcher.search(&q, &TopDocs::with_limit(candidate_pool))?;
+            for (_score, addr) in top {
+                let d: tantivy::TantivyDocument = searcher.doc(addr)?;
+                if let Some(v) = d.get_first(f_id)
+                    && let Some(s) = v.as_str()
+                {
+                    text_ranking.push(s.to_string());
+                }
+            }
+        }
+    }
+
+    Ok(rrf_fuse(&vec_ranking, &text_ranking, top_n))
+}
+
+/// Tantivy query parser is brittle to operator chars. Match the bench harness
+/// rule from `/tmp/m3-bench/scripts/harness_lance.py::sanitize_query`.
+fn sanitize_tantivy_query(q: &str) -> String {
+    let bad = [
+        '+', '!', '(', ')', '{', '}', '[', ']', '^', '"', '~', '*', '?', ':', '\\', '/', '-',
+    ];
+    let mut out = String::with_capacity(q.len());
+    for c in q.chars() {
+        if bad.contains(&c) {
+            out.push(' ');
+        } else {
+            out.push(c);
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 pub async fn run(lance_dir: &Path, tantivy_dir: &Path, query: &str, n: usize) -> Result<()> {

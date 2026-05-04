@@ -3,6 +3,7 @@ mod db;
 mod display;
 mod emit;
 mod frontmatter;
+mod hybrid;
 mod lint;
 mod rewrite;
 mod size_guard;
@@ -191,7 +192,8 @@ enum Command {
         include_archived: bool,
     },
 
-    /// Search knowledge units
+    /// Search knowledge units (default: hybrid lance KNN + tantivy + RRF k=60).
+    /// Use --no-vec to force the FTS5-only legacy path.
     Search {
         /// Search query
         query: String,
@@ -207,6 +209,14 @@ enum Command {
         /// Include archived units (default: hidden)
         #[arg(long)]
         include_archived: bool,
+
+        /// Disable the vec leg — fall back to FTS5-only (revert path).
+        #[arg(long)]
+        no_vec: bool,
+
+        /// Override the top-N result count (default: 10 hybrid, all-rank for FTS5).
+        #[arg(long, value_name = "N")]
+        top_k: Option<usize>,
     },
 
     /// Aggregate metrics for the dashboard (single fast query)
@@ -986,9 +996,7 @@ fn main() -> Result<()> {
                 .unwrap_or_default();
             // S1 bridge: refuse exact-match dup in 7d window before any write.
             if refuse_dup {
-                if let Some(existing_id) =
-                    db::find_recent_duplicate(&conn, &final_content, 7)?
-                {
+                if let Some(existing_id) = db::find_recent_duplicate(&conn, &final_content, 7)? {
                     display::print_refused_dup(&existing_id, cli.json);
                     std::process::exit(2);
                 }
@@ -1070,9 +1078,53 @@ fn main() -> Result<()> {
             r#type,
             full,
             include_archived,
+            no_vec,
+            top_k,
         } => {
             let filter = r#type.as_ref().map(|t| t.as_str());
-            let units = db::search_units(&conn, &query, filter, include_archived)?;
+            let top_n = top_k.unwrap_or(10);
+
+            let units: Vec<db::Unit> = if no_vec {
+                // FTS5-only revert path. `--top-k` still applies as a cap.
+                let mut hits = db::search_units(&conn, &query, filter, include_archived)?;
+                if top_k.is_some() {
+                    hits.truncate(top_n);
+                }
+                hits
+            } else {
+                match hybrid::HybridConfig::discover()? {
+                    Some(cfg) => match hybrid::run_hybrid(
+                        &conn,
+                        &cfg,
+                        &query,
+                        top_n,
+                        filter,
+                        include_archived,
+                    ) {
+                        Ok(hits) => hits,
+                        Err(e) => {
+                            eprintln!("warning: hybrid search failed ({e}); falling back to FTS5");
+                            let mut hits =
+                                db::search_units(&conn, &query, filter, include_archived)?;
+                            if top_k.is_some() {
+                                hits.truncate(top_n);
+                            }
+                            hits
+                        }
+                    },
+                    None => {
+                        eprintln!(
+                            "warning: lance dataset not found (run `simaris-vec-dev migrate` or set SIMARIS_VEC_DIR); falling back to FTS5"
+                        );
+                        let mut hits = db::search_units(&conn, &query, filter, include_archived)?;
+                        if top_k.is_some() {
+                            hits.truncate(top_n);
+                        }
+                        hits
+                    }
+                }
+            };
+
             if full {
                 display::print_units(&units, cli.json);
             } else {
