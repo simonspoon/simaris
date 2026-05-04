@@ -219,6 +219,12 @@ enum Command {
         top_k: Option<usize>,
     },
 
+    /// Vec subsystem operations (lance + tantivy + bge-m3 hybrid retrieval).
+    Vec {
+        #[command(subcommand)]
+        sub: VecSubcommand,
+    },
+
     /// Aggregate metrics for the dashboard (single fast query)
     ///
     /// Computes counts entirely in SQL: total units, by-type, by-tag (top N),
@@ -564,6 +570,57 @@ enum SlugAction {
     List,
 }
 
+#[derive(Subcommand)]
+enum VecSubcommand {
+    /// Backfill embeddings for sanctuary units missing from the lance dataset.
+    ///
+    /// Idempotent: re-running on a populated dataset is a fast no-op (presence
+    /// check by unit id; only missing ids are embedded + appended).
+    ///
+    /// Default `--model bge-m3 --backend lance` per ratification
+    /// (`simaris-m3-redo-2-verdict-2026-05-04`).
+    ///
+    /// Deadlock workaround: if the embedded ollama HTTP path stalls (per
+    /// `simaris-m3-2-falsifiers-2026-05-03`), use the direct-write Python
+    /// fallback at `tools/direct_backfill_ollama.py` to produce an equivalent
+    /// dataset.
+    Backfill {
+        /// Embedding model — only `bge-m3` is supported in M5.3 (nomic + others retained for future per `simaris-decoupled-work-items-2026-05-04`).
+        #[arg(long, default_value = "bge-m3")]
+        model: String,
+
+        /// Backend — only `lance` is supported in M5.3.
+        #[arg(long, default_value = "lance")]
+        backend: String,
+
+        /// Embed up to N units per batch before flushing. Also drives the
+        /// progress-report cadence to stderr.
+        #[arg(long, default_value = "100", value_name = "N")]
+        batch_size: usize,
+
+        /// Reserved for future incremental schemes; current backfill is
+        /// always resume-safe via id presence check.
+        #[arg(long)]
+        resume: bool,
+
+        /// Override sqlite source path (default: $SIMARIS_HOME/sanctuary.db or ~/.simaris/sanctuary.db).
+        #[arg(long, value_name = "PATH")]
+        sqlite: Option<std::path::PathBuf>,
+
+        /// Override the lance dataset directory (default: $SIMARIS_HOME/vec/<model>).
+        #[arg(long, value_name = "PATH")]
+        lance_dir: Option<std::path::PathBuf>,
+
+        /// Override the tantivy index directory (default: <lance_dir>/tantivy).
+        #[arg(long, value_name = "PATH")]
+        tantivy_dir: Option<std::path::PathBuf>,
+
+        /// Override the ollama base URL (default: $SIMARIS_OLLAMA_URL or http://localhost:11434).
+        #[arg(long, value_name = "URL")]
+        ollama_url: Option<String>,
+    },
+}
+
 #[derive(Clone, ValueEnum)]
 enum UnitType {
     Fact,
@@ -655,6 +712,100 @@ impl MarkKind {
             MarkKind::Helpful => 0.1,
         }
     }
+}
+
+/// Resolve `simaris vec backfill` paths from CLI args + env, then run the
+/// embedding backfill. Mirrors the discovery convention used by
+/// [`crate::hybrid::HybridConfig::discover`] so the dataset written here is
+/// the same one `simaris search` reads.
+#[allow(clippy::too_many_arguments)]
+fn run_vec_backfill(
+    json: bool,
+    model: &str,
+    backend: &str,
+    batch_size: usize,
+    sqlite: Option<std::path::PathBuf>,
+    lance_dir_arg: Option<std::path::PathBuf>,
+    tantivy_dir_arg: Option<std::path::PathBuf>,
+    ollama_url_arg: Option<String>,
+) -> Result<()> {
+    use anyhow::{Context, bail};
+    use std::path::PathBuf;
+
+    if backend != "lance" {
+        bail!(
+            "unsupported backend: {backend} (M5.3 ships --backend lance only; sqlite-vec retained as future fallback per simaris-decoupled-work-items-2026-05-04)"
+        );
+    }
+    let dim = match model {
+        "bge-m3" => simaris_vec::BGE_M3_DIM,
+        "nomic" | "nomic-embed-text" | "nomic-embed-text-v1.5" => simaris_vec::NOMIC_DIM,
+        other => bail!(
+            "unsupported model: {other} (M5.3 ships --model bge-m3; nomic recognised as a future option per simaris-decoupled-work-items-2026-05-04 but not validated for ship)"
+        ),
+    };
+
+    let home_root: PathBuf = if let Ok(h) = std::env::var("SIMARIS_HOME") {
+        PathBuf::from(h)
+    } else {
+        dirs::home_dir()
+            .context("no $HOME for vec backfill paths")?
+            .join(".simaris")
+    };
+    let sqlite_path = sqlite.unwrap_or_else(|| home_root.join("sanctuary.db"));
+    let lance_dir = lance_dir_arg.unwrap_or_else(|| home_root.join("vec").join(model));
+    let tantivy_dir = tantivy_dir_arg.unwrap_or_else(|| lance_dir.join("tantivy"));
+    let ollama_url = ollama_url_arg
+        .or_else(|| std::env::var("SIMARIS_OLLAMA_URL").ok())
+        .unwrap_or_else(|| simaris_vec::embed::OLLAMA_DEFAULT_URL.to_string());
+
+    if !sqlite_path.exists() {
+        bail!("sqlite source not found: {}", sqlite_path.display());
+    }
+
+    let stats = {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .context("build tokio runtime")?;
+        rt.block_on(simaris_vec::backfill::run(
+            &sqlite_path,
+            &lance_dir,
+            &tantivy_dir,
+            model,
+            dim,
+            batch_size,
+            &ollama_url,
+        ))?
+    };
+
+    if json {
+        let payload = serde_json::json!({
+            "model": model,
+            "backend": backend,
+            "lance_dir": lance_dir,
+            "tantivy_dir": tantivy_dir,
+            "total_units": stats.total_units,
+            "embedded": stats.embedded,
+            "skipped": stats.skipped,
+            "elapsed_secs": stats.elapsed_secs,
+            "throughput_per_sec": stats.throughput,
+            "bootstrapped": stats.bootstrapped,
+        });
+        println!("{}", serde_json::to_string(&payload)?);
+    } else {
+        println!("backfill.model: {model}");
+        println!("backfill.backend: {backend}");
+        println!("backfill.total_units: {}", stats.total_units);
+        println!("backfill.embedded: {}", stats.embedded);
+        println!("backfill.skipped: {}", stats.skipped);
+        println!("backfill.elapsed_secs: {:.2}", stats.elapsed_secs);
+        println!("backfill.throughput_per_sec: {:.2}", stats.throughput);
+        println!("backfill.bootstrapped: {}", stats.bootstrapped);
+        println!("backfill.lance_dir: {}", lance_dir.display());
+        println!("backfill.tantivy_dir: {}", tantivy_dir.display());
+    }
+    Ok(())
 }
 
 /// Build a per-unit slug hint for lean output. Each entry is the first slug
@@ -1132,6 +1283,29 @@ fn main() -> Result<()> {
                 display::print_units_lean(&units, &slug_map, cli.json);
             }
         }
+        Command::Vec { sub } => match sub {
+            VecSubcommand::Backfill {
+                model,
+                backend,
+                batch_size,
+                resume: _resume,
+                sqlite,
+                lance_dir,
+                tantivy_dir,
+                ollama_url,
+            } => {
+                run_vec_backfill(
+                    cli.json,
+                    &model,
+                    &backend,
+                    batch_size,
+                    sqlite,
+                    lance_dir,
+                    tantivy_dir,
+                    ollama_url,
+                )?;
+            }
+        },
         Command::Stats {
             top,
             include_archived,

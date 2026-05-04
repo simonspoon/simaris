@@ -86,7 +86,7 @@ pub async fn run(
     Ok(())
 }
 
-fn units_schema(dim: usize) -> Arc<Schema> {
+pub(crate) fn units_schema(dim: usize) -> Arc<Schema> {
     Arc::new(Schema::new(vec![
         Field::new("id", DataType::Utf8, false),
         Field::new("content", DataType::Utf8, false),
@@ -203,7 +203,7 @@ fn flat_schema(fields: Vec<(&str, DataType)>) -> Arc<Schema> {
     ))
 }
 
-async fn migrate_links(conn: &Connection, out: &Path) -> Result<usize> {
+pub(crate) async fn migrate_links(conn: &Connection, out: &Path) -> Result<usize> {
     let schema = flat_schema(vec![
         ("from_id", DataType::Utf8),
         ("to_id", DataType::Utf8),
@@ -241,7 +241,7 @@ async fn migrate_links(conn: &Connection, out: &Path) -> Result<usize> {
     Ok(n)
 }
 
-async fn migrate_slugs(conn: &Connection, out: &Path) -> Result<usize> {
+pub(crate) async fn migrate_slugs(conn: &Connection, out: &Path) -> Result<usize> {
     let schema = flat_schema(vec![
         ("slug", DataType::Utf8),
         ("unit_id", DataType::Utf8),
@@ -277,7 +277,7 @@ async fn migrate_slugs(conn: &Connection, out: &Path) -> Result<usize> {
     Ok(n)
 }
 
-async fn migrate_marks(conn: &Connection, out: &Path) -> Result<usize> {
+pub(crate) async fn migrate_marks(conn: &Connection, out: &Path) -> Result<usize> {
     let schema = flat_schema(vec![
         ("id", DataType::Utf8),
         ("unit_id", DataType::Utf8),
@@ -317,7 +317,7 @@ async fn migrate_marks(conn: &Connection, out: &Path) -> Result<usize> {
     Ok(n)
 }
 
-async fn migrate_inbox(conn: &Connection, out: &Path) -> Result<usize> {
+pub(crate) async fn migrate_inbox(conn: &Connection, out: &Path) -> Result<usize> {
     let schema = flat_schema(vec![
         ("id", DataType::Utf8),
         ("content", DataType::Utf8),
@@ -360,7 +360,7 @@ async fn migrate_inbox(conn: &Connection, out: &Path) -> Result<usize> {
     Ok(n)
 }
 
-fn build_tantivy(conn: &Connection, dir: &Path) -> Result<usize> {
+pub(crate) fn build_tantivy(conn: &Connection, dir: &Path) -> Result<usize> {
     let mut sb = TSchema::builder();
     let f_id = sb.add_text_field("id", STRING | STORED);
     let f_content = sb.add_text_field("content", TEXT | STORED);

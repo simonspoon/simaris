@@ -20,6 +20,7 @@
 //! - `simaris-m3-redo-2-results-2026-05-03`
 
 pub mod ask;
+pub mod backfill;
 pub mod embed;
 pub mod migrate;
 pub mod verify;
