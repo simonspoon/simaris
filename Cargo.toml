@@ -1,5 +1,5 @@
 [workspace]
-members = ["simaris-server"]
+members = ["simaris-server", "simaris-vec"]
 resolver = "3"
 
 [package]
