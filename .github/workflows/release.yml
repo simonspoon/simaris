@@ -63,6 +63,8 @@ jobs:
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
       - name: Build workspace
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
         run: cargo build --release --workspace --target ${{ matrix.target }}
 
       - name: Stage binaries (unix)
