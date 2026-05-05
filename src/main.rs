@@ -306,6 +306,11 @@ enum Command {
     /// expanded inline (use this when dispatching as a specific aspect, e.g.
     /// `simaris prime --primary lotus "..."`). All other units appear as
     /// directory entries — load full content via `simaris show <id>`.
+    ///
+    /// Default retrieval is hybrid (lance KNN + tantivy + RRF k=60) — same
+    /// path as `simaris search`. Use `--no-vec` to force the FTS5-only legacy
+    /// path. If the lance dataset is missing or the hybrid leg errors, prime
+    /// degrades to FTS5 with a stderr warning; the hook never aborts.
     Prime {
         /// Task description
         task: String,
@@ -319,6 +324,11 @@ enum Command {
         /// Include archived units in the primer (default: hidden)
         #[arg(long)]
         include_archived: bool,
+
+        /// Disable the vec leg — fall back to FTS5-only (revert path).
+        /// Mirrors `simaris search --no-vec`.
+        #[arg(long)]
+        no_vec: bool,
     },
 
     /// Ask the knowledge store a question
@@ -1367,8 +1377,9 @@ fn main() -> Result<()> {
             task,
             primary,
             include_archived,
+            no_vec,
         } => {
-            let result = ask::prime(&conn, &task, &primary, cli.debug, include_archived)?;
+            let result = ask::prime(&conn, &task, &primary, cli.debug, include_archived, no_vec)?;
             display::print_prime(&result, cli.json);
         }
         Command::Ask {

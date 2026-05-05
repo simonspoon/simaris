@@ -1,4 +1,5 @@
 use crate::db;
+use crate::hybrid;
 use anyhow::Result;
 use rusqlite::Connection;
 use serde::Serialize;
@@ -272,6 +273,19 @@ fn search_and_expand(
         matches_per_query.insert(sq.clone(), count);
     }
 
+    expand_with_matches(conn, all_matches, matches_per_query, cap, include_archived)
+}
+
+/// Take a pre-fetched list of direct matches (from FTS or hybrid retrieval)
+/// and apply 1-hop link expansion. Shared between `search_and_expand` (FTS)
+/// and the hybrid path used by `prime`.
+fn expand_with_matches(
+    conn: &Connection,
+    all_matches: Vec<db::Unit>,
+    matches_per_query: HashMap<String, usize>,
+    cap: usize,
+    include_archived: bool,
+) -> Result<GatherResult> {
     let matches: Vec<_> = all_matches.into_iter().take(cap).collect();
     let direct_count = matches.len();
 
@@ -380,6 +394,62 @@ fn search_and_expand(
     })
 }
 
+/// Retrieval gather for `prime`. Default path is hybrid (lance KNN + tantivy
+/// + RRF) with FTS5 fallback if the lance dataset is missing or hybrid errors.
+/// `--no-vec` forces the FTS5-only legacy path.
+///
+/// Crash-safe: any error or absence on the hybrid leg degrades to FTS5
+/// silently (warning to stderr) — the UserPromptSubmit hook is on the user's
+/// hot path and must never abort or panic from this function.
+fn gather_for_prime(
+    conn: &Connection,
+    task: &str,
+    debug: bool,
+    include_archived: bool,
+    no_vec: bool,
+) -> Result<GatherResult> {
+    const PRIME_CAP: usize = 40;
+
+    if no_vec {
+        if debug {
+            eprintln!("prime: --no-vec set, using FTS5-only path");
+        }
+        return search_and_expand(conn, &[task.to_string()], None, PRIME_CAP, include_archived);
+    }
+
+    // Hybrid path. Any failure (config discovery, ollama embed, lance/tantivy
+    // search) → warn + fall back to FTS5. Never propagate.
+    match hybrid::HybridConfig::discover() {
+        Ok(Some(cfg)) => {
+            match hybrid::run_hybrid(conn, &cfg, task, PRIME_CAP, None, include_archived) {
+                Ok(hits) => {
+                    if debug {
+                        eprintln!("prime: hybrid returned {} hit(s)", hits.len());
+                    }
+                    let mut mpq = HashMap::new();
+                    mpq.insert(task.to_string(), hits.len());
+                    return expand_with_matches(conn, hits, mpq, PRIME_CAP, include_archived);
+                }
+                Err(e) => {
+                    eprintln!("warning: hybrid retrieval failed ({e}); falling back to FTS5");
+                }
+            }
+        }
+        Ok(None) => {
+            if debug {
+                eprintln!(
+                    "prime: lance dataset not found (run `simaris vec backfill` or set SIMARIS_VEC_DIR); falling back to FTS5"
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!("warning: hybrid config discovery failed ({e}); falling back to FTS5");
+        }
+    }
+
+    search_and_expand(conn, &[task.to_string()], None, PRIME_CAP, include_archived)
+}
+
 /// Assemble a mindset from the knowledge graph for a given task.
 ///
 /// Returns a level-of-detail-1 (LOD-1) primer: a directory of relevant units
@@ -404,8 +474,9 @@ pub fn prime(
     primary: &[String],
     debug: bool,
     include_archived: bool,
+    no_vec: bool,
 ) -> Result<PrimeResult> {
-    let gather = search_and_expand(conn, &[task.to_string()], None, 40, include_archived)?;
+    let gather = gather_for_prime(conn, task, debug, include_archived, no_vec)?;
 
     if debug {
         eprintln!(
