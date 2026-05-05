@@ -5379,7 +5379,7 @@ dependencies = [
 
 [[package]]
 name = "simaris"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5395,7 +5395,7 @@ dependencies = [
 
 [[package]]
 name = "simaris-server"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "axum",
