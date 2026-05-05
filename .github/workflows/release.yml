@@ -19,15 +19,9 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             suffix: linux-arm64
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            suffix: darwin-amd64
           - target: aarch64-apple-darwin
             os: macos-latest
             suffix: darwin-arm64
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            suffix: windows-amd64
 
     runs-on: ${{ matrix.os }}
 
@@ -49,12 +43,6 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install protobuf
 
-      - name: Install protoc (Windows)
-        if: runner.os == 'Windows'
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Install cross-compilation tools
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
@@ -67,17 +55,10 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
         run: cargo build --release --workspace --target ${{ matrix.target }}
 
-      - name: Stage binaries (unix)
-        if: runner.os != 'Windows'
+      - name: Stage binaries
         run: |
           cp target/${{ matrix.target }}/release/simaris simaris-${{ matrix.suffix }}
           cp target/${{ matrix.target }}/release/simaris-server simaris-server-${{ matrix.suffix }}
-
-      - name: Stage binaries (windows)
-        if: runner.os == 'Windows'
-        run: |
-          cp target/${{ matrix.target }}/release/simaris.exe simaris-${{ matrix.suffix }}.exe
-          cp target/${{ matrix.target }}/release/simaris-server.exe simaris-server-${{ matrix.suffix }}.exe
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
