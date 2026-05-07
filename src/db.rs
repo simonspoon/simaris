@@ -1197,22 +1197,26 @@ pub fn vacuum_autolink(
     apply: bool,
     sample_limit: usize,
 ) -> Result<VacuumAutolinkReport> {
-    // Build a tag map for all non-archived units (lowercase tags).
+    // Build tag map and content map for all non-archived units.
     let mut tag_map: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
+    let mut content_map: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     {
-        let mut stmt = conn.prepare("SELECT id, tags FROM units WHERE archived = 0")?;
+        let mut stmt = conn.prepare("SELECT id, tags, content FROM units WHERE archived = 0")?;
         let rows = stmt
             .query_map([], |row| {
                 let id: String = row.get(0)?;
                 let tags_str: String = row.get(1)?;
-                Ok((id, tags_str))
+                let content: String = row.get(2)?;
+                Ok((id, tags_str, content))
             })?
             .collect::<Result<Vec<_>, _>>()?;
-        for (id, tags_str) in rows {
+        for (id, tags_str, content) in rows {
             let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
             let tags_lower: Vec<String> = tags.iter().map(|t| t.to_lowercase()).collect();
-            tag_map.insert(id, tags_lower);
+            tag_map.insert(id.clone(), tags_lower);
+            content_map.insert(id, content);
         }
     }
 
@@ -1227,7 +1231,11 @@ pub fn vacuum_autolink(
         .collect::<Result<Vec<_>, _>>()?
     };
 
-    // Find candidates that match STOP1.
+    // Cache of resolved frontmatter refs per from_id (built lazily).
+    let mut refs_cache: std::collections::HashMap<String, std::collections::HashSet<String>> =
+        std::collections::HashMap::new();
+
+    // Find candidates that match STOP1 and are NOT refs-backed.
     let mut candidates: Vec<(String, String, Vec<String>)> = Vec::new();
     for (from_id, to_id) in &edges {
         let from_tags = match tag_map.get(from_id) {
@@ -1248,6 +1256,17 @@ pub fn vacuum_autolink(
                 .iter()
                 .all(|t| AUTO_LINK_STOP_TAGS.contains(&t.as_str()))
         {
+            // Skip if the edge is backed by a frontmatter refs: entry in from_id.
+            let refs_set = refs_cache.entry(from_id.clone()).or_insert_with(|| {
+                let body = content_map.get(from_id).map(|s| s.as_str()).unwrap_or("");
+                crate::frontmatter::extract_refs(body)
+                    .into_iter()
+                    .filter_map(|r| resolve_id(conn, &r).ok())
+                    .collect()
+            });
+            if refs_set.contains(to_id) {
+                continue;
+            }
             candidates.push((from_id.clone(), to_id.clone(), shared_tags));
         }
     }
@@ -3618,6 +3637,183 @@ mod tests {
             .unwrap();
         assert!(ac_exists, "A↔C must remain");
         assert!(bc_exists, "B↔C must remain");
+    }
+
+    #[test]
+    fn test_vacuum_autolink_preserves_frontmatter_refs() {
+        // A (tags: caveman, aspect-v2) has frontmatter refs: [B-uuid].
+        // sync_frontmatter_refs creates A→B. Vacuum must NOT delete that edge.
+        let conn = memory_db();
+
+        // Create B first so we have its UUID for A's frontmatter.
+        let b = add_unit_full(
+            &conn,
+            "unit B — stop tagged",
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into()],
+        )
+        .unwrap();
+
+        // A's content has a frontmatter refs block pointing at B.
+        let a_content = format!(
+            "---
+refs:
+  - {b}
+---
+unit A — refs B"
+        );
+        let a = add_unit_full(
+            &conn,
+            &a_content,
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into()],
+        )
+        .unwrap();
+
+        // sync_frontmatter_refs (called inside add_unit_full) created A→B.
+        let ab_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM links WHERE from_id=?1 AND to_id=?2 AND relationship='related_to')",
+                params![a, b],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(ab_exists, "A→B must exist before vacuum");
+
+        // Dry-run: refs protection means 0 candidates.
+        let dry = vacuum_autolink(&conn, false, 20).unwrap();
+        assert_eq!(
+            dry.candidate_count, 0,
+            "refs-backed edge must not be a candidate"
+        );
+        assert_eq!(dry.deleted_count, 0);
+
+        // Apply: still 0 deleted, edge survives.
+        let apply = vacuum_autolink(&conn, true, 20).unwrap();
+        assert_eq!(
+            apply.deleted_count, 0,
+            "refs-backed edge must not be deleted"
+        );
+
+        let ab_still: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM links WHERE from_id=?1 AND to_id=?2 AND relationship='related_to')",
+                params![a, b],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(ab_still, "A→B must survive vacuum apply");
+    }
+
+    #[test]
+    fn test_vacuum_autolink_drops_when_no_refs_match() {
+        // A has no frontmatter refs to B; edge is pure spam → vacuum deletes it.
+        let conn = memory_db();
+
+        let a = add_unit_full(
+            &conn,
+            "unit A — no refs",
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into()],
+        )
+        .unwrap();
+        let b = add_unit_full(
+            &conn,
+            "unit B — no refs",
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into()],
+        )
+        .unwrap();
+
+        // Manually insert the spam edge (bypass auto_link to control setup).
+        add_link(&conn, &a, &b, "related_to").unwrap();
+
+        let dry = vacuum_autolink(&conn, false, 20).unwrap();
+        assert_eq!(
+            dry.candidate_count, 1,
+            "unreferenced stop-tag edge is a candidate"
+        );
+        assert_eq!(dry.deleted_count, 0, "dry-run must not delete");
+
+        let apply = vacuum_autolink(&conn, true, 20).unwrap();
+        assert_eq!(apply.deleted_count, 1, "apply must delete the spam edge");
+
+        let ab_gone: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM links WHERE from_id=?1 AND to_id=?2 AND relationship='related_to')",
+                params![a, b],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!ab_gone, "A→B must be deleted");
+    }
+
+    #[test]
+    fn test_vacuum_autolink_partial_refs_protection() {
+        // A refs [B] but not C; both B and C are stop-tagged.
+        // vacuum must delete A→C but preserve A→B.
+        let conn = memory_db();
+
+        let b = add_unit_full(
+            &conn,
+            "unit B — stop tagged",
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into()],
+        )
+        .unwrap();
+        let c = add_unit_full(
+            &conn,
+            "unit C — stop tagged",
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into()],
+        )
+        .unwrap();
+
+        // A refs B only.
+        let a_content = format!(
+            "---
+refs:
+  - {b}
+---
+unit A — refs B only"
+        );
+        let a = add_unit_full(
+            &conn,
+            &a_content,
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into()],
+        )
+        .unwrap();
+
+        // A→B created by sync_frontmatter_refs; add A→C manually as spam.
+        add_link(&conn, &a, &c, "related_to").unwrap();
+
+        let apply = vacuum_autolink(&conn, true, 20).unwrap();
+        assert_eq!(apply.deleted_count, 1, "only A→C must be deleted");
+
+        let ab_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM links WHERE from_id=?1 AND to_id=?2 AND relationship='related_to')",
+                params![a, b],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let ac_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM links WHERE from_id=?1 AND to_id=?2 AND relationship='related_to')",
+                params![a, c],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(ab_exists, "A→B (refs-backed) must survive");
+        assert!(!ac_exists, "A→C (spam) must be deleted");
     }
 
     mod slug {
