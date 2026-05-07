@@ -197,6 +197,10 @@ pub fn connect() -> Result<Connection> {
     }
     if user_version == 3 {
         migrate_add_archived(&conn)?;
+        user_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    }
+    if user_version == 4 {
+        migrate_add_context_preamble(&conn)?;
     }
 
     initialize(&conn)?;
@@ -613,7 +617,33 @@ fn migrate_add_archived(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn initialize(conn: &Connection) -> Result<()> {
+fn migrate_add_context_preamble(conn: &Connection) -> Result<()> {
+    // Pure additive — `ALTER TABLE ADD COLUMN context_preamble TEXT NULL`
+    // leaves existing rows with NULL preambles, which the contextual
+    // retrieval generator treats as "unprocessed". FTS triggers reference
+    // explicit columns and do not include `context_preamble`, so no
+    // trigger rebuild is needed. Idempotent: skips the ALTER when the
+    // column already exists (e.g. fresh installs that landed on v5
+    // directly via `initialize()`).
+    let has_preamble: bool = conn.query_row(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info('units') WHERE name = 'context_preamble'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let tx = conn.unchecked_transaction()?;
+
+    if !has_preamble {
+        tx.execute_batch("ALTER TABLE units ADD COLUMN context_preamble TEXT NULL;")?;
+    }
+
+    tx.execute_batch("PRAGMA user_version = 5;")?;
+    tx.commit()?;
+
+    Ok(())
+}
+
+pub(crate) fn initialize(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS units (
             id          TEXT PRIMARY KEY,
@@ -626,7 +656,8 @@ fn initialize(conn: &Connection) -> Result<()> {
             conditions  TEXT NOT NULL DEFAULT '{}',
             created     TEXT NOT NULL DEFAULT (datetime('now')),
             updated     TEXT NOT NULL DEFAULT (datetime('now')),
-            archived    INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1))
+            archived    INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1)),
+            context_preamble TEXT NULL
         );
 
         CREATE TABLE IF NOT EXISTS links (
@@ -711,8 +742,8 @@ fn initialize(conn: &Connection) -> Result<()> {
 
     // Ensure user_version is set for fresh installs
     let user_version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if user_version < 4 {
-        conn.execute_batch("PRAGMA user_version = 4;")?;
+    if user_version < 5 {
+        conn.execute_batch("PRAGMA user_version = 5;")?;
     }
 
     Ok(())
@@ -1809,6 +1840,49 @@ pub fn list_slugs(conn: &Connection) -> Result<Vec<SlugRow>> {
     Ok(rows)
 }
 
+/// Count units that have not yet had a context preamble generated.
+/// Excludes archived units; mirrors the active-set definition used by
+/// vec backfill (`simaris-vec-bge-m3`).
+pub fn count_units_without_preamble(conn: &Connection) -> Result<u64> {
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM units WHERE context_preamble IS NULL AND archived = 0",
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(n as u64)
+}
+
+/// Unit IDs awaiting preamble generation, deterministically ordered.
+/// `limit` caps the result; pass `None` for the full backlog.
+pub fn list_unit_ids_without_preamble(
+    conn: &Connection,
+    limit: Option<usize>,
+) -> Result<Vec<String>> {
+    let sql = match limit {
+        Some(n) => format!(
+            "SELECT id FROM units WHERE context_preamble IS NULL AND archived = 0 ORDER BY id LIMIT {n}"
+        ),
+        None => "SELECT id FROM units WHERE context_preamble IS NULL AND archived = 0 ORDER BY id"
+            .to_string(),
+    };
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Persist the generated preamble for a unit. Idempotent — overwrites any
+/// previous value, but the contextual-retrieval generator filters on
+/// `IS NULL` upstream so this is only called once per unit per run.
+pub fn set_context_preamble(conn: &Connection, unit_id: &str, preamble: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE units SET context_preamble = ?1 WHERE id = ?2",
+        params![preamble, unit_id],
+    )?;
+    Ok(())
+}
+
 /// All slugs pointing at a given unit, ordered by slug ASC.
 /// Unknown unit returns `Ok(vec![])`, not an error.
 pub fn get_slugs_for_unit(conn: &Connection, unit_id: &str) -> Result<Vec<String>> {
@@ -2457,7 +2531,7 @@ mod tests {
         let version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
     }
 
     #[test]
@@ -3038,6 +3112,89 @@ mod tests {
     }
 
     #[test]
+    fn test_migrate_add_context_preamble_from_v4() {
+        // v4 is reachable from v3 by running the prior migration.
+        let conn = v3_memory_db();
+        migrate_add_archived(&conn).unwrap();
+
+        // Sanity: at v4, no preamble column.
+        let pre_version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(pre_version, 4);
+        let pre_pre: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('units') WHERE name='context_preamble'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(pre_pre, 0);
+
+        // Seed a row at v4 (pre-context_preamble) — the migration must not
+        // touch existing data.
+        let u1 = Uuid::now_v7().to_string();
+        conn.execute(
+            "INSERT INTO units (id, content, type, source) VALUES (?1, ?2, ?3, ?4)",
+            params![u1, "seed v4 unit", "fact", "test"],
+        )
+        .unwrap();
+
+        migrate_add_context_preamble(&conn).unwrap();
+
+        // user_version advanced to 5.
+        let post_version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(post_version, 5);
+
+        // Column present and defaults to NULL on the seed row.
+        let preamble: Option<String> = conn
+            .query_row(
+                "SELECT context_preamble FROM units WHERE id = ?1",
+                params![u1],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(preamble.is_none());
+
+        // Round-trip: setting the preamble persists.
+        set_context_preamble(&conn, &u1, "test preamble").unwrap();
+        let got: Option<String> = conn
+            .query_row(
+                "SELECT context_preamble FROM units WHERE id = ?1",
+                params![u1],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(got.as_deref(), Some("test preamble"));
+
+        // Idempotency: re-running on a v5 DB is a no-op.
+        migrate_add_context_preamble(&conn).unwrap();
+        let still_v5: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(still_v5, 5);
+    }
+
+    #[test]
+    fn test_count_units_without_preamble_excludes_archived() {
+        let conn = memory_db();
+        let id_a = add_unit(&conn, "atom A", "fact", "test").unwrap();
+        let id_b = add_unit(&conn, "atom B", "fact", "test").unwrap();
+        let id_c = add_unit(&conn, "atom C", "fact", "test").unwrap();
+        archive_unit(&conn, &id_c).unwrap();
+        // a + b unprocessed and live; c archived.
+        assert_eq!(count_units_without_preamble(&conn).unwrap(), 2);
+
+        set_context_preamble(&conn, &id_a, "done A").unwrap();
+        assert_eq!(count_units_without_preamble(&conn).unwrap(), 1);
+
+        let ids = list_unit_ids_without_preamble(&conn, None).unwrap();
+        assert_eq!(ids, vec![id_b]);
+    }
+
+    #[test]
     fn test_archive_and_unarchive_roundtrip() {
         let conn = memory_db();
         let id = add_unit(&conn, "live unit", "fact", "test").unwrap();
@@ -3484,11 +3641,7 @@ pub struct LintSnapshotRow {
 }
 
 /// Insert a snapshot row. Returns the new id.
-pub fn insert_lint_snapshot(
-    conn: &Connection,
-    totals: &LintTotals,
-    note: &str,
-) -> Result<String> {
+pub fn insert_lint_snapshot(conn: &Connection, totals: &LintTotals, note: &str) -> Result<String> {
     let id = Uuid::now_v7().to_string();
     let totals_json = serde_json::to_string(totals)?;
     conn.execute(
@@ -3499,10 +3652,7 @@ pub fn insert_lint_snapshot(
 }
 
 /// List snapshots newest-first. \`limit\` caps the page size.
-pub fn list_lint_snapshots(
-    conn: &Connection,
-    limit: usize,
-) -> Result<Vec<LintSnapshotRow>> {
+pub fn list_lint_snapshots(conn: &Connection, limit: usize) -> Result<Vec<LintSnapshotRow>> {
     let mut stmt = conn.prepare(
         "SELECT id, created, totals, note
          FROM lint_snapshots
@@ -3537,4 +3687,3 @@ pub fn latest_lint_snapshot(conn: &Connection) -> Result<Option<LintSnapshotRow>
     let row = list_lint_snapshots(conn, 1)?;
     Ok(row.into_iter().next())
 }
-

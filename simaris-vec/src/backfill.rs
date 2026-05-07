@@ -56,12 +56,18 @@ struct UnitRow {
     id: String,
     content: String,
     tags: String,
+    /// Cached `units.context_preamble`, when non-NULL. Only consumed in the
+    /// `--reembed-with-context` path; otherwise ignored at embed time and
+    /// never written into the lance dataset (which keeps the original
+    /// content for display).
+    preamble: Option<String>,
 }
 
 /// Run the backfill. `dim` is the embedding width (1024 for bge-m3, 768 for nomic).
 ///
 /// `lance_dir` holds `units.lance` plus the side-table datasets. `tantivy_dir`
 /// is the tantivy index directory; conventionally `lance_dir/tantivy`.
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     sqlite: &Path,
     lance_dir: &Path,
@@ -70,6 +76,7 @@ pub async fn run(
     dim: usize,
     batch_size: usize,
     ollama_url: &str,
+    reembed_with_context: bool,
 ) -> Result<BackfillStats> {
     let conn = Connection::open(sqlite).with_context(|| format!("open {}", sqlite.display()))?;
 
@@ -144,10 +151,23 @@ pub async fn run(
     let started = Instant::now();
     let mut embedded = 0usize;
 
+    if reembed_with_context {
+        eprintln!("backfill: reembed-with-context=true (preamble prepended before embed)");
+    }
+
     for (batch_idx, chunk) in missing.chunks(batch_size).enumerate() {
         let mut vectors: Vec<Vec<f32>> = Vec::with_capacity(chunk.len());
         for u in chunk {
-            let truncated: String = u.content.chars().take(max_chars).collect();
+            // M9.5: when contextual retrieval is enabled and the unit has a
+            // generated preamble, prepend it before truncation. The lance
+            // dataset still stores the original content (callers want the
+            // raw atom for display), but the *embedding* is contextualized
+            // to lift retrieval recall on tightly-clustered atoms.
+            let embed_input: String = match (reembed_with_context, &u.preamble) {
+                (true, Some(p)) if !p.is_empty() => format!("{p}\n\n{}", u.content),
+                _ => u.content.clone(),
+            };
+            let truncated: String = embed_input.chars().take(max_chars).collect();
             let v = client.embed(&truncated).with_context(|| {
                 format!(
                     "ollama embed failed (model={model}, unit={}); see `simaris vec backfill --help` for the direct-write Python fallback",
@@ -197,13 +217,15 @@ pub async fn run(
 }
 
 fn collect_missing(conn: &Connection, existing: &HashSet<String>) -> Result<Vec<UnitRow>> {
-    let mut stmt =
-        conn.prepare("select id, content, tags from units where archived = 0 order by id")?;
+    let mut stmt = conn.prepare(
+        "select id, content, tags, context_preamble from units where archived = 0 order by id",
+    )?;
     let rows = stmt.query_map([], |r| {
         Ok(UnitRow {
             id: r.get(0)?,
             content: r.get(1)?,
             tags: r.get(2)?,
+            preamble: r.get::<_, Option<String>>(3)?,
         })
     })?;
     let mut out = Vec::new();
