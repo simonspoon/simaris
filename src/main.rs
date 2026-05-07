@@ -1,6 +1,7 @@
 mod ask;
 mod db;
 mod display;
+mod dream;
 mod emit;
 mod frontmatter;
 mod hybrid;
@@ -223,6 +224,21 @@ enum Command {
     Vec {
         #[command(subcommand)]
         sub: VecSubcommand,
+    },
+
+    /// Dream subsystem — periodic corpus hygiene (decay, etc.).
+    ///
+    /// `decay` applies Ebbinghaus-style forgetting: confidence decays as
+    /// `0.5 ^ (days_since_activity / half_life_days)`. Activity = max of
+    /// `units.updated` and the latest mark. Units that fall below 0.1
+    /// confidence are archived (soft-deleted), unless they are pinned by a
+    /// slug or have other units linking to them via `part_of`.
+    ///
+    /// Idempotent: re-running within the same minute is a no-op (the prior
+    /// run bumps `updated`, so days_since collapses to 0).
+    Dream {
+        #[command(subcommand)]
+        sub: DreamSubcommand,
     },
 
     /// Aggregate metrics for the dashboard (single fast query)
@@ -578,6 +594,27 @@ enum SlugAction {
 
     /// List every slug
     List,
+}
+
+#[derive(Subcommand)]
+enum DreamSubcommand {
+    /// Apply Ebbinghaus decay to unit confidences (M9 pick #5).
+    ///
+    /// For each non-archived unit, compute
+    /// `confidence *= 0.5 ^ (days_since_activity / half_life_days)`.
+    /// Activity timestamp = max(`units.updated`, latest mark `created`).
+    /// Units that fall below 0.1 confidence are archived
+    /// (`archived = 1`) unless pinned by a slug or referenced by another
+    /// unit via `part_of`.
+    Decay {
+        /// Show what would happen without writing.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Half-life in days. After `half_life_days`, confidence halves.
+        #[arg(long, default_value_t = crate::dream::DEFAULT_HALF_LIFE_DAYS)]
+        half_life_days: f64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1293,6 +1330,15 @@ fn main() -> Result<()> {
                 display::print_units_lean(&units, &slug_map, cli.json);
             }
         }
+        Command::Dream { sub } => match sub {
+            DreamSubcommand::Decay {
+                dry_run,
+                half_life_days,
+            } => {
+                let result = dream::run_decay(&conn, half_life_days, dry_run)?;
+                dream::print_decay(&result, cli.json);
+            }
+        },
         Command::Vec { sub } => match sub {
             VecSubcommand::Backfill {
                 model,
