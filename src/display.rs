@@ -1,8 +1,10 @@
 use crate::ask::PrimeResult;
-use crate::db::{InboxItem, LinkedUnit, ScanResult, SlugRow, Stats, Unit, UnstructuredRow};
-use crate::lint::LintReport;
+use crate::db::{
+    InboxItem, LinkedUnit, ScanResult, SlugRow, Stats, Unit, UnstructuredRow, VacuumAutolinkReport,
+};
 use crate::emit::EmitResult;
 use crate::frontmatter;
+use crate::lint::LintReport;
 use serde::Serialize;
 use std::path::Path;
 
@@ -324,9 +326,7 @@ pub fn print_refused_dup(existing_id: &str, json: bool) {
             })
         );
     } else {
-        eprintln!(
-            "refused: byte-identical content already added within 7 days as {existing_id}"
-        );
+        eprintln!("refused: byte-identical content already added within 7 days as {existing_id}");
     }
 }
 
@@ -815,6 +815,45 @@ pub fn print_slug_list(rows: &[SlugRow], json: bool) {
     }
 }
 
+pub fn print_vacuum_autolink(report: &VacuumAutolinkReport, applied: bool, json: bool) {
+    if json {
+        let out = serde_json::json!({
+            "candidate_count": report.candidate_count,
+            "deleted_count":   report.deleted_count,
+            "applied":         applied,
+            "sample": report.sample.iter().map(|(f, t, tags)| serde_json::json!({
+                "from_id":     f,
+                "to_id":       t,
+                "shared_tags": tags,
+            })).collect::<Vec<_>>(),
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        return;
+    }
+    if applied {
+        println!("vacuum autolink: deleted {} edge(s)", report.deleted_count);
+    } else {
+        println!(
+            "vacuum autolink (dry-run): {} candidate edge(s) match STOP1",
+            report.candidate_count
+        );
+        if report.sample.is_empty() {
+            println!("  (no candidates)");
+        } else {
+            println!("  sample (up to {}):", report.sample.len());
+            for (from_id, to_id, tags) in &report.sample {
+                println!(
+                    "  {} → {}  [{}]",
+                    &from_id[..8.min(from_id.len())],
+                    &to_id[..8.min(to_id.len())],
+                    tags.join(", ")
+                );
+            }
+        }
+        println!("  run with --apply to delete");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -885,7 +924,6 @@ mod tests {
     }
 }
 
-
 /// Render a `simaris lint` report.
 ///
 /// JSON mode emits the full structured report (no truncation, all findings
@@ -915,10 +953,7 @@ pub fn print_lint(report: &LintReport, json: bool, fix_suggest: bool, by_aspect:
             println!("      → {}", f.reason);
         }
         if report.procedure_no_trigger.len() > 5 {
-            println!(
-                "  … and {} more",
-                report.procedure_no_trigger.len() - 5
-            );
+            println!("  … and {} more", report.procedure_no_trigger.len() - 5);
         }
         println!();
     }
@@ -985,10 +1020,7 @@ pub fn print_lint(report: &LintReport, json: bool, fix_suggest: bool, by_aspect:
             );
         }
         if report.dual_parent_divergence.len() > 5 {
-            println!(
-                "  … and {} more",
-                report.dual_parent_divergence.len() - 5
-            );
+            println!("  … and {} more", report.dual_parent_divergence.len() - 5);
         }
         println!();
     }
@@ -1157,21 +1189,26 @@ pub fn print_lint_ci(
     json: bool,
 ) -> bool {
     let curr = report.totals();
-    let prev_totals = prev.map(|p| p.totals.clone()).unwrap_or(crate::db::LintTotals {
-        procedure_no_trigger: 0,
-        orphan: 0,
-        dupe: 0,
-        dual_parent_divergence: 0,
-        tag_variant: 0,
-        total: 0,
-    });
+    let prev_totals = prev
+        .map(|p| p.totals.clone())
+        .unwrap_or(crate::db::LintTotals {
+            procedure_no_trigger: 0,
+            orphan: 0,
+            dupe: 0,
+            dual_parent_divergence: 0,
+            tag_variant: 0,
+            total: 0,
+        });
 
     // Per-category delta (signed).
     let d = |a: usize, b: usize| -> i64 { a as i64 - b as i64 };
     let pnt_d = d(curr.procedure_no_trigger, prev_totals.procedure_no_trigger);
     let orph_d = d(curr.orphan, prev_totals.orphan);
     let dupe_d = d(curr.dupe, prev_totals.dupe);
-    let dpd_d = d(curr.dual_parent_divergence, prev_totals.dual_parent_divergence);
+    let dpd_d = d(
+        curr.dual_parent_divergence,
+        prev_totals.dual_parent_divergence,
+    );
     let tag_d = d(curr.tag_variant, prev_totals.tag_variant);
     let total_d = d(curr.total, prev_totals.total);
 

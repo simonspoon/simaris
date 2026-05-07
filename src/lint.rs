@@ -200,7 +200,9 @@ fn has_trigger(content: &str) -> bool {
         let trimmed = line.trim_start();
         if trimmed.starts_with("trigger:") {
             // Accept either `trigger:` or `trigger::` followed by something.
-            let after = trimmed.trim_start_matches("trigger:").trim_start_matches(':');
+            let after = trimmed
+                .trim_start_matches("trigger:")
+                .trim_start_matches(':');
             if !after.trim().is_empty() {
                 return true;
             }
@@ -495,10 +497,7 @@ fn check_tags(units: &[Unit]) -> (Vec<TagVariantFinding>, TagStats) {
         }
         // Highest-use variant first — likely canonical winner.
         variants.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        let variant_strs: Vec<String> = variants
-            .iter()
-            .map(|(t, c)| format!("{t}({c})"))
-            .collect();
+        let variant_strs: Vec<String> = variants.iter().map(|(t, c)| format!("{t}({c})")).collect();
         findings.push(TagVariantFinding {
             canonical: canonical.clone(),
             variants: variants
@@ -514,7 +513,11 @@ fn check_tags(units: &[Unit]) -> (Vec<TagVariantFinding>, TagStats) {
         });
     }
 
-    findings.sort_by(|a, b| b.total_uses.cmp(&a.total_uses).then_with(|| a.canonical.cmp(&b.canonical)));
+    findings.sort_by(|a, b| {
+        b.total_uses
+            .cmp(&a.total_uses)
+            .then_with(|| a.canonical.cmp(&b.canonical))
+    });
 
     let distinct = uses.len();
     let total_uses: usize = uses.values().sum();
@@ -550,9 +553,7 @@ fn rollup_by_aspect(
     let mut slug_by_id: HashMap<String, String> = HashMap::new();
     {
         let mut stmt = conn.prepare("SELECT slug, unit_id FROM slugs")?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-        })?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
         for row in rows {
             let (slug, uid) = row?;
             slug_by_id
@@ -569,12 +570,9 @@ fn rollup_by_aspect(
     // child -> [parent] via part_of.
     let mut parents: HashMap<String, Vec<String>> = HashMap::new();
     {
-        let mut stmt = conn.prepare(
-            "SELECT from_id, to_id FROM links WHERE relationship = 'part_of'",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-        })?;
+        let mut stmt =
+            conn.prepare("SELECT from_id, to_id FROM links WHERE relationship = 'part_of'")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
         for row in rows {
             let (child, parent) = row?;
             parents.entry(child).or_default().push(parent);
@@ -584,10 +582,10 @@ fn rollup_by_aspect(
     // Memoized owner lookup: id -> Option<aspect_id>.
     let mut owner_cache: HashMap<String, Option<String>> = HashMap::new();
     let find_owner = |id: &str,
-                          unit_by_id: &HashMap<&str, &Unit>,
-                          parents: &HashMap<String, Vec<String>>,
-                          slug_by_id: &HashMap<String, String>,
-                          owner_cache: &mut HashMap<String, Option<String>>|
+                      unit_by_id: &HashMap<&str, &Unit>,
+                      parents: &HashMap<String, Vec<String>>,
+                      slug_by_id: &HashMap<String, String>,
+                      owner_cache: &mut HashMap<String, Option<String>>|
      -> Option<String> {
         if let Some(hit) = owner_cache.get(id) {
             return hit.clone();
@@ -676,7 +674,11 @@ fn rollup_by_aspect(
         })
         .collect();
 
-    out.sort_by(|a, b| b.total.cmp(&a.total).then_with(|| a.aspect_id.cmp(&b.aspect_id)));
+    out.sort_by(|a, b| {
+        b.total
+            .cmp(&a.total)
+            .then_with(|| a.aspect_id.cmp(&b.aspect_id))
+    });
     Ok(out)
 }
 

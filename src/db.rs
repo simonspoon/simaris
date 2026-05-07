@@ -65,6 +65,11 @@ pub struct InboxItem {
 
 const LOW_CONFIDENCE_THRESHOLD: f64 = 0.6;
 
+/// Tags whose exclusive presence in the shared-tag set triggers the STOP1
+/// auto-link skip. When every shared tag between two units belongs to this
+/// set, the pair is pivot-only noise — not a semantic relationship.
+const AUTO_LINK_STOP_TAGS: &[&str] = &["caveman", "aspect-v2"];
+
 #[derive(Debug, Serialize)]
 pub struct ScanResult {
     pub low_confidence: Vec<Unit>,
@@ -1136,11 +1141,19 @@ pub fn auto_link(conn: &Connection, unit_id: &str) -> Result<usize> {
 
     let mut created = 0;
     for (cand_id, cand_tags) in &candidates {
-        let shared = cand_tags
+        let shared_tags: Vec<String> = cand_tags
             .iter()
-            .filter(|t| unit_tags.contains(&t.to_lowercase()))
-            .count();
-        if shared < 2 {
+            .map(|t| t.to_lowercase())
+            .filter(|t| unit_tags.contains(t))
+            .collect();
+        if shared_tags.len() < 2 {
+            continue;
+        }
+        // STOP1: skip pivot-only pairs (shared tags ⊆ AUTO_LINK_STOP_TAGS)
+        if shared_tags
+            .iter()
+            .all(|t| AUTO_LINK_STOP_TAGS.contains(&t.as_str()))
+        {
             continue;
         }
 
@@ -1162,6 +1175,106 @@ pub fn auto_link(conn: &Connection, unit_id: &str) -> Result<usize> {
     }
 
     Ok(created)
+}
+
+/// Report returned by [`vacuum_autolink`].
+#[derive(Debug, Serialize)]
+pub struct VacuumAutolinkReport {
+    /// Number of `related_to` edges that match the STOP1 predicate.
+    pub candidate_count: usize,
+    /// Number of edges actually deleted (0 in dry-run mode).
+    pub deleted_count: usize,
+    /// Sample of candidates: `(from_id, to_id, shared_tags)`.
+    pub sample: Vec<(String, String, Vec<String>)>,
+}
+
+/// Scan (and optionally delete) existing `related_to` edges that match the
+/// STOP1 predicate: shared tag set is non-empty and every shared tag is in
+/// [`AUTO_LINK_STOP_TAGS`]. Only operates on edges where both endpoints are
+/// non-archived. When `apply` is false this is a pure dry-run.
+pub fn vacuum_autolink(
+    conn: &Connection,
+    apply: bool,
+    sample_limit: usize,
+) -> Result<VacuumAutolinkReport> {
+    // Build a tag map for all non-archived units (lowercase tags).
+    let mut tag_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    {
+        let mut stmt = conn.prepare("SELECT id, tags FROM units WHERE archived = 0")?;
+        let rows = stmt
+            .query_map([], |row| {
+                let id: String = row.get(0)?;
+                let tags_str: String = row.get(1)?;
+                Ok((id, tags_str))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (id, tags_str) in rows {
+            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+            let tags_lower: Vec<String> = tags.iter().map(|t| t.to_lowercase()).collect();
+            tag_map.insert(id, tags_lower);
+        }
+    }
+
+    // Load all related_to edges where both endpoints are non-archived.
+    let edges: Vec<(String, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT l.from_id, l.to_id              FROM links l              WHERE l.relationship = 'related_to'                AND EXISTS (SELECT 1 FROM units u WHERE u.id = l.from_id AND u.archived = 0)                AND EXISTS (SELECT 1 FROM units u WHERE u.id = l.to_id   AND u.archived = 0)",
+        )?;
+        stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?
+    };
+
+    // Find candidates that match STOP1.
+    let mut candidates: Vec<(String, String, Vec<String>)> = Vec::new();
+    for (from_id, to_id) in &edges {
+        let from_tags = match tag_map.get(from_id) {
+            Some(t) => t,
+            None => continue,
+        };
+        let to_tags = match tag_map.get(to_id) {
+            Some(t) => t,
+            None => continue,
+        };
+        let shared_tags: Vec<String> = from_tags
+            .iter()
+            .filter(|t| to_tags.contains(t))
+            .cloned()
+            .collect();
+        if shared_tags.len() >= 2
+            && shared_tags
+                .iter()
+                .all(|t| AUTO_LINK_STOP_TAGS.contains(&t.as_str()))
+        {
+            candidates.push((from_id.clone(), to_id.clone(), shared_tags));
+        }
+    }
+
+    let candidate_count = candidates.len();
+    let sample: Vec<(String, String, Vec<String>)> =
+        candidates.iter().take(sample_limit).cloned().collect();
+
+    let deleted_count = if apply {
+        let tx = conn.unchecked_transaction()?;
+        for (from_id, to_id, _) in &candidates {
+            tx.execute(
+                "DELETE FROM links                  WHERE from_id = ?1 AND to_id = ?2 AND relationship = 'related_to'",
+                params![from_id, to_id],
+            )?;
+        }
+        tx.commit()?;
+        candidates.len()
+    } else {
+        0
+    };
+
+    Ok(VacuumAutolinkReport {
+        candidate_count,
+        deleted_count,
+        sample,
+    })
 }
 
 pub fn add_unit_full(
@@ -3311,6 +3424,200 @@ mod tests {
             count, 0,
             "auto_link must not create edges to archived candidates"
         );
+    }
+
+    #[test]
+    fn test_auto_link_skips_stop_tags_only() {
+        // Shared tags {caveman, aspect-v2} ⊆ STOP_TAGS → no edge created.
+        let conn = memory_db();
+        add_unit_full(
+            &conn,
+            "unit A",
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into()],
+        )
+        .unwrap();
+        let b = add_unit_full(
+            &conn,
+            "unit B",
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into()],
+        )
+        .unwrap();
+        let count = auto_link(&conn, &b).unwrap();
+        assert_eq!(count, 0, "STOP1: pivot-only pair must not be linked");
+    }
+
+    #[test]
+    fn test_auto_link_links_when_stop_plus_other() {
+        // Shared tags {caveman, aspect-v2, rust} — not a subset of STOP_TAGS → edge created.
+        let conn = memory_db();
+        add_unit_full(
+            &conn,
+            "unit A",
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into(), "rust".into()],
+        )
+        .unwrap();
+        let b = add_unit_full(
+            &conn,
+            "unit B",
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into(), "rust".into()],
+        )
+        .unwrap();
+        let count = auto_link(&conn, &b).unwrap();
+        assert_eq!(count, 1, "STOP1: stop+other shared tags must still link");
+    }
+
+    #[test]
+    fn test_auto_link_links_when_only_one_stop_tag() {
+        // Shared tags {caveman, rust} — only one stop tag, not a subset → edge created.
+        let conn = memory_db();
+        add_unit_full(
+            &conn,
+            "unit A",
+            "aspect",
+            "test",
+            &["caveman".into(), "rust".into()],
+        )
+        .unwrap();
+        let b = add_unit_full(
+            &conn,
+            "unit B",
+            "aspect",
+            "test",
+            &["caveman".into(), "rust".into()],
+        )
+        .unwrap();
+        let count = auto_link(&conn, &b).unwrap();
+        assert_eq!(
+            count, 1,
+            "STOP1: one stop tag + one real tag must still link"
+        );
+    }
+
+    #[test]
+    fn test_vacuum_autolink_dry_run() {
+        // A↔B share {caveman,aspect-v2} only → candidate.
+        // A↔C share {caveman,aspect-v2,rust} → NOT a candidate.
+        // B↔C share {rust,cli} → NOT a candidate.
+        let conn = memory_db();
+        let a = add_unit_full(
+            &conn,
+            "unit A",
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into(), "rust".into()],
+        )
+        .unwrap();
+        let b = add_unit_full(
+            &conn,
+            "unit B",
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into()],
+        )
+        .unwrap();
+        let c = add_unit_full(
+            &conn,
+            "unit C",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+
+        // Manually insert the three edges (bypass auto_link to control setup).
+        add_link(&conn, &a, &b, "related_to").unwrap();
+        add_link(&conn, &a, &c, "related_to").unwrap();
+        add_link(&conn, &b, &c, "related_to").unwrap();
+
+        let report = vacuum_autolink(&conn, false, 20).unwrap();
+        assert_eq!(report.candidate_count, 1, "only A↔B is a STOP1 candidate");
+        assert_eq!(report.deleted_count, 0, "dry-run must not delete");
+
+        // Edge still present.
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM links WHERE from_id=?1 AND to_id=?2 AND relationship='related_to')",
+                params![a, b],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(exists, "dry-run must leave edge intact");
+    }
+
+    #[test]
+    fn test_vacuum_autolink_apply() {
+        let conn = memory_db();
+        let a = add_unit_full(
+            &conn,
+            "unit A",
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into(), "rust".into()],
+        )
+        .unwrap();
+        let b = add_unit_full(
+            &conn,
+            "unit B",
+            "aspect",
+            "test",
+            &["caveman".into(), "aspect-v2".into()],
+        )
+        .unwrap();
+        let c = add_unit_full(
+            &conn,
+            "unit C",
+            "fact",
+            "test",
+            &["rust".into(), "cli".into()],
+        )
+        .unwrap();
+
+        add_link(&conn, &a, &b, "related_to").unwrap();
+        add_link(&conn, &a, &c, "related_to").unwrap();
+        add_link(&conn, &b, &c, "related_to").unwrap();
+
+        let report = vacuum_autolink(&conn, true, 20).unwrap();
+        assert_eq!(report.candidate_count, 1);
+        assert_eq!(
+            report.deleted_count, 1,
+            "apply must delete the candidate edge"
+        );
+
+        // A↔B gone.
+        let ab_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM links WHERE from_id=?1 AND to_id=?2 AND relationship='related_to')",
+                params![a, b],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!ab_exists, "A↔B edge must be deleted");
+
+        // A↔C and B↔C intact.
+        let ac_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM links WHERE from_id=?1 AND to_id=?2 AND relationship='related_to')",
+                params![a, c],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let bc_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM links WHERE from_id=?1 AND to_id=?2 AND relationship='related_to')",
+                params![b, c],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(ac_exists, "A↔C must remain");
+        assert!(bc_exists, "B↔C must remain");
     }
 
     mod slug {

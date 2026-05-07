@@ -3828,13 +3828,7 @@ fn test_refuse_dup_blocks_exact_match() {
     let first = env.run_ok(&["add", "dedup body alpha", "--type", "fact"]);
     let first_id = extract_id(&first);
 
-    let out = env.run(&[
-        "add",
-        "dedup body alpha",
-        "--type",
-        "fact",
-        "--refuse-dup",
-    ]);
+    let out = env.run(&["add", "dedup body alpha", "--type", "fact", "--refuse-dup"]);
     assert!(!out.status.success(), "second add must refuse");
     assert_eq!(out.status.code(), Some(2), "exit code must be 2");
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -3852,14 +3846,11 @@ fn test_refuse_dup_blocks_exact_match() {
 fn test_refuse_dup_allows_distinct_content() {
     let env = TestEnv::new("refusedup_pass");
     env.run_ok(&["add", "first body", "--type", "fact"]);
-    let out = env.run_ok(&[
-        "add",
-        "second body",
-        "--type",
-        "fact",
-        "--refuse-dup",
-    ]);
-    assert!(out.starts_with("Added unit "), "second add must succeed: {out}");
+    let out = env.run_ok(&["add", "second body", "--type", "fact", "--refuse-dup"]);
+    assert!(
+        out.starts_with("Added unit "),
+        "second add must succeed: {out}"
+    );
 }
 
 #[test]
@@ -3899,14 +3890,11 @@ fn test_refuse_dup_ignores_archived() {
     let env = TestEnv::new("refusedup_arch");
     let id = extract_id(&env.run_ok(&["add", "arch body", "--type", "fact"]));
     env.run_ok(&["archive", &id]);
-    let out = env.run_ok(&[
-        "add",
-        "arch body",
-        "--type",
-        "fact",
-        "--refuse-dup",
-    ]);
-    assert!(out.starts_with("Added unit "), "archived twin must not block: {out}");
+    let out = env.run_ok(&["add", "arch body", "--type", "fact", "--refuse-dup"]);
+    assert!(
+        out.starts_with("Added unit "),
+        "archived twin must not block: {out}"
+    );
 }
 
 // --- M1 audit expansion: snapshot + history + CI + tag + by-aspect --------
@@ -3993,24 +3981,10 @@ fn test_lint_tag_variant_detects_plurals() {
     let env = TestEnv::new("lint_tag_var");
     // Three uses of `procedure`, two of `procedures` — same normalized.
     for _ in 0..3 {
-        env.run_ok(&[
-            "add",
-            "p body",
-            "--type",
-            "fact",
-            "--tags",
-            "procedure",
-        ]);
+        env.run_ok(&["add", "p body", "--type", "fact", "--tags", "procedure"]);
     }
     for _ in 0..2 {
-        env.run_ok(&[
-            "add",
-            "p body 2",
-            "--type",
-            "fact",
-            "--tags",
-            "procedures",
-        ]);
+        env.run_ok(&["add", "p body 2", "--type", "fact", "--tags", "procedures"]);
     }
     let raw = env.run_ok(&["--json", "lint"]);
     let v: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
@@ -4026,20 +4000,10 @@ fn test_lint_tag_variant_detects_plurals() {
 #[test]
 fn test_lint_by_aspect_attributes_to_owner() {
     let env = TestEnv::new("lint_by_aspect");
-    let aspect_id = extract_id(&env.run_ok(&[
-        "add",
-        "# parent aspect body",
-        "--type",
-        "aspect",
-    ]));
+    let aspect_id = extract_id(&env.run_ok(&["add", "# parent aspect body", "--type", "aspect"]));
     env.run_ok(&["slug", "set", "parent-aspect", &aspect_id]);
     // Procedure parent_of the aspect, no trigger -> PNT contributes to aspect.
-    let proc_id = extract_id(&env.run_ok(&[
-        "add",
-        "child procedure",
-        "--type",
-        "procedure",
-    ]));
+    let proc_id = extract_id(&env.run_ok(&["add", "child procedure", "--type", "procedure"]));
     env.run_ok(&["link", &proc_id, &aspect_id, "--rel", "part_of"]);
 
     let raw = env.run_ok(&["--json", "lint"]);

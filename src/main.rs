@@ -601,6 +601,12 @@ enum Command {
         #[arg(long)]
         template_only: bool,
     },
+
+    /// Corpus hygiene — scan or clean up auto-generated noise.
+    Vacuum {
+        #[command(subcommand)]
+        sub: VacuumSubcommand,
+    },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -652,6 +658,24 @@ enum DreamSubcommand {
         /// Half-life in days. After `half_life_days`, confidence halves.
         #[arg(long, default_value_t = crate::dream::DEFAULT_HALF_LIFE_DAYS)]
         half_life_days: f64,
+    },
+}
+
+#[derive(Subcommand)]
+enum VacuumSubcommand {
+    /// Scan (and optionally delete) `related_to` edges created by auto-link
+    /// that match the STOP1 predicate: shared tag set ⊆ {caveman, aspect-v2}.
+    ///
+    /// Default = dry-run: prints candidate count + sample. Pass `--apply` to
+    /// actually delete matching edges in a single transaction.
+    Autolink {
+        /// Delete the matching edges (default: dry-run only).
+        #[arg(long)]
+        apply: bool,
+
+        /// Number of sample rows to print in dry-run mode.
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
     },
 }
 
@@ -1827,6 +1851,12 @@ fn main() -> Result<()> {
         Command::Rewrite { id, template_only } => {
             rewrite::run(&conn, &id, template_only)?;
         }
+        Command::Vacuum { sub } => match sub {
+            VacuumSubcommand::Autolink { apply, limit } => {
+                let report = db::vacuum_autolink(&conn, apply, limit)?;
+                display::print_vacuum_autolink(&report, apply, cli.json);
+            }
+        },
         Command::Restore { .. } => unreachable!(),
     }
 
