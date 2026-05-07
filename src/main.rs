@@ -1,4 +1,5 @@
 mod ask;
+mod context;
 mod db;
 mod display;
 mod emit;
@@ -223,6 +224,43 @@ enum Command {
     Vec {
         #[command(subcommand)]
         sub: VecSubcommand,
+    },
+
+    /// Generate Anthropic-style contextual retrieval preambles for units.
+    ///
+    /// For each unit without a stored preamble, builds a context block
+    /// (parent slug + top-3 `related_to` headlines + top-3 `part_of`
+    /// children) and asks Haiku 3.5 for a single-sentence preamble that
+    /// situates the unit in the broader knowledge graph. Preambles are
+    /// stored in `units.context_preamble` and prepended to the unit body
+    /// when re-embedding via `simaris vec backfill --reembed-with-context`.
+    ///
+    /// Defaults to `--dry-run`: samples 5 units and projects total cost.
+    /// Pass `--execute` to walk the entire backlog. Idempotent — units
+    /// with a non-NULL `context_preamble` are skipped automatically.
+    ///
+    /// Reads `ANTHROPIC_API_KEY` from the environment (never logged).
+    /// Rate limit defaults to 50 req/min, override via
+    /// `SIMARIS_RATE_LIMIT_RPM`.
+    #[command(name = "context-enhance")]
+    ContextEnhance {
+        /// Persist generated preambles. Mutually exclusive with `--dry-run`.
+        #[arg(long, conflicts_with = "dry_run")]
+        execute: bool,
+
+        /// Dry-run only — sample 5 units, project total cost, write nothing.
+        /// This is the default.
+        #[arg(long, default_value_t = true)]
+        dry_run: bool,
+
+        /// Cap the number of units processed in `--execute` mode.
+        /// Useful for resumable runs over a large backlog.
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+
+        /// Sample size for `--dry-run` mode.
+        #[arg(long, default_value_t = 5, value_name = "N")]
+        sample: usize,
     },
 
     /// Aggregate metrics for the dashboard (single fast query)
@@ -628,6 +666,18 @@ enum VecSubcommand {
         /// Override the ollama base URL (default: $SIMARIS_OLLAMA_URL or http://localhost:11434).
         #[arg(long, value_name = "URL")]
         ollama_url: Option<String>,
+
+        /// Prepend each unit's stored `context_preamble` to its content
+        /// before embedding (Anthropic Contextual Retrieval, M9.5).
+        ///
+        /// Generate preambles first via `simaris context-enhance --execute`.
+        /// Units without a preamble fall back to embedding raw content, so
+        /// the flag is safe to enable on a partially-processed corpus.
+        ///
+        /// Note: this only affects the *embedding input*. The lance dataset
+        /// still stores the original `content` for display.
+        #[arg(long)]
+        reembed_with_context: bool,
     },
 }
 
@@ -738,6 +788,7 @@ fn run_vec_backfill(
     lance_dir_arg: Option<std::path::PathBuf>,
     tantivy_dir_arg: Option<std::path::PathBuf>,
     ollama_url_arg: Option<String>,
+    reembed_with_context: bool,
 ) -> Result<()> {
     use anyhow::{Context, bail};
     use std::path::PathBuf;
@@ -786,6 +837,7 @@ fn run_vec_backfill(
             dim,
             batch_size,
             &ollama_url,
+            reembed_with_context,
         ))?
     };
 
@@ -814,6 +866,109 @@ fn run_vec_backfill(
         println!("backfill.bootstrapped: {}", stats.bootstrapped);
         println!("backfill.lance_dir: {}", lance_dir.display());
         println!("backfill.tantivy_dir: {}", tantivy_dir.display());
+    }
+    Ok(())
+}
+
+/// Drive the `simaris context-enhance` flow.
+///
+/// Defaults to dry-run: pulls a sample, generates (or mocks) preambles, and
+/// projects total cost. `--execute` walks the entire backlog (or a
+/// `--limit`-capped slice) and persists preambles. The Anthropic API key is
+/// read from `ANTHROPIC_API_KEY`; the rate cap is configured via
+/// `SIMARIS_RATE_LIMIT_RPM` (default 50 rpm).
+fn run_context_enhance(
+    conn: &rusqlite::Connection,
+    execute: bool,
+    limit: Option<usize>,
+    sample: usize,
+    json: bool,
+) -> Result<()> {
+    let rpm = std::env::var("SIMARIS_RATE_LIMIT_RPM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(context::DEFAULT_RATE_LIMIT_RPM);
+
+    if execute {
+        // Live API client — bail upfront when key is missing.
+        let client = context::AnthropicClient::from_env()?;
+        let out = context::run_execute(conn, &client, limit, rpm)?;
+        if json {
+            let v = serde_json::json!({
+                "mode": "execute",
+                "processed": out.processed,
+                "backlog_before": out.backlog_before,
+                "input_tokens": out.input_tokens,
+                "output_tokens": out.output_tokens,
+                "cost_usd": out.cost_usd,
+                "rate_limit_rpm": rpm,
+            });
+            println!("{}", serde_json::to_string_pretty(&v)?);
+        } else {
+            println!("context-enhance: mode=execute");
+            println!("  backlog_before: {}", out.backlog_before);
+            println!("  processed:      {}", out.processed);
+            println!("  input_tokens:   {}", out.input_tokens);
+            println!("  output_tokens:  {}", out.output_tokens);
+            println!("  cost_usd:       ${:.4}", out.cost_usd);
+            println!("  rate_limit_rpm: {rpm}");
+        }
+    } else {
+        // Dry-run — generate a real preamble when ANTHROPIC_API_KEY is
+        // present, otherwise mock so the user can still see the prompt
+        // shape and a backlog cost projection.
+        let client_opt = context::AnthropicClient::from_env().ok();
+        let client_ref: Option<&dyn context::LlmClient> =
+            client_opt.as_ref().map(|c| c as &dyn context::LlmClient);
+        let out = context::run_dry_run(conn, sample, client_ref)?;
+
+        if json {
+            let samples: Vec<serde_json::Value> = out
+                .samples
+                .iter()
+                .map(|s| {
+                    serde_json::json!({
+                        "id": s.id,
+                        "headline": s.headline,
+                        "prompt": s.prompt,
+                        "preamble": s.preamble,
+                        "input_tokens": s.input_tokens,
+                        "output_tokens": s.output_tokens,
+                        "mocked": s.mocked,
+                    })
+                })
+                .collect();
+            let v = serde_json::json!({
+                "mode": "dry-run",
+                "mocked": out.mocked,
+                "total_backlog": out.total_backlog,
+                "estimated_input_tokens": out.estimated_input_tokens,
+                "estimated_output_tokens": out.estimated_output_tokens,
+                "estimated_cost_usd": out.estimated_cost_usd,
+                "samples": samples,
+                "rate_limit_rpm": rpm,
+            });
+            println!("{}", serde_json::to_string_pretty(&v)?);
+        } else {
+            println!("context-enhance: mode=dry-run");
+            println!("  total_backlog: {}", out.total_backlog);
+            println!("  mocked:        {}", out.mocked);
+            println!("  estimated_input_tokens:  {}", out.estimated_input_tokens);
+            println!("  estimated_output_tokens: {}", out.estimated_output_tokens);
+            println!("  estimated_cost_usd:      ${:.4}", out.estimated_cost_usd);
+            println!();
+            println!("samples:");
+            for (i, s) in out.samples.iter().enumerate() {
+                println!("  [{}] {} ({})", i + 1, s.id, s.headline);
+                println!(
+                    "      tokens in/out: {}/{}{}",
+                    s.input_tokens,
+                    s.output_tokens,
+                    if s.mocked { " [mocked]" } else { "" }
+                );
+                println!("      preamble: {}", s.preamble);
+            }
+        }
     }
     Ok(())
 }
@@ -1303,6 +1458,7 @@ fn main() -> Result<()> {
                 lance_dir,
                 tantivy_dir,
                 ollama_url,
+                reembed_with_context,
             } => {
                 run_vec_backfill(
                     cli.json,
@@ -1313,9 +1469,18 @@ fn main() -> Result<()> {
                     lance_dir,
                     tantivy_dir,
                     ollama_url,
+                    reembed_with_context,
                 )?;
             }
         },
+        Command::ContextEnhance {
+            execute,
+            dry_run: _,
+            limit,
+            sample,
+        } => {
+            run_context_enhance(&conn, execute, limit, sample, cli.json)?;
+        }
         Command::Stats {
             top,
             include_archived,

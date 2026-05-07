@@ -1324,7 +1324,7 @@ fn test_migration_runs_on_first_command() {
     let version: i32 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 4, "expected user_version=4, got {version}");
+    assert_eq!(version, 5, "expected user_version=5, got {version}");
 
     let slugs_present: i64 = conn
         .query_row(
@@ -1421,7 +1421,7 @@ fn test_existing_v2_db_upgrades_on_launch() {
     let version: i32 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 4);
+    assert_eq!(version, 5);
 
     let slugs_present: i64 = conn
         .query_row(
