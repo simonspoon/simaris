@@ -139,6 +139,178 @@ pub fn print_units_lean(units: &[Unit], slug_map: &[Option<String>], json: bool)
     }
 }
 
+/// Per-result score envelope. Sibling to `LeanUnit`; only emitted when the
+/// caller passed `--scores` to `simaris search`. Backward compat: when the
+/// flag is off the JSON / text output is unchanged (no `score` field).
+///
+/// Score scale:
+/// - Hybrid path: RRF over lance KNN + tantivy text, k=60 (`simaris_vec::RRF_K`).
+/// - FTS5 fallback: single-leg RRF on the FTS5 leg only (k=60).
+///
+/// The two scales are NOT normalised across paths — `fallback_method`
+/// surfaces which path produced the score so consumers can branch.
+#[derive(Debug, Clone)]
+pub struct ScoreInfo {
+    pub score: f64,
+    pub vec_rank: Option<usize>,
+    pub fts_rank: Option<usize>,
+    pub fallback_method: Option<&'static str>,
+}
+
+/// LeanUnit + score envelope. Identical schema to `LeanUnit` plus four
+/// score fields appended at the end. Field order is stable; downstream jq
+/// pipelines depending on `--scores` keys should pin to these names.
+#[derive(Serialize)]
+struct LeanUnitScored<'a> {
+    id: &'a str,
+    #[serde(rename = "type")]
+    unit_type: &'a str,
+    slug: Option<&'a str>,
+    headline: String,
+    tags: &'a [String],
+    source: &'a str,
+    confidence: f64,
+    byte_size: usize,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    archived: bool,
+    // m11 score envelope. Always present on `--scores` rows.
+    score: f64,
+    vec_rank: Option<usize>,
+    fts_rank: Option<usize>,
+    fallback_method: Option<&'static str>,
+}
+
+/// Lean rows + score envelope. Used by `simaris search --scores`. Backward
+/// compat: callers without `--scores` go through `print_units_lean` (no
+/// score fields emitted).
+pub fn print_units_lean_scored(
+    units: &[Unit],
+    slug_map: &[Option<String>],
+    scores: &[ScoreInfo],
+    json: bool,
+) {
+    debug_assert_eq!(units.len(), scores.len(), "scored len mismatch");
+    if json {
+        let rows: Vec<LeanUnitScored> = units
+            .iter()
+            .zip(slug_map.iter())
+            .zip(scores.iter())
+            .map(|((u, s), sc)| LeanUnitScored {
+                id: &u.id,
+                unit_type: &u.unit_type,
+                slug: s.as_deref(),
+                headline: derive_headline(&u.content),
+                tags: &u.tags,
+                source: &u.source,
+                confidence: u.confidence,
+                byte_size: u.content.len(),
+                archived: u.archived,
+                score: sc.score,
+                vec_rank: sc.vec_rank,
+                fts_rank: sc.fts_rank,
+                fallback_method: sc.fallback_method,
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+    } else if units.is_empty() {
+        println!("No units found.");
+    } else {
+        for ((unit, slug), sc) in units.iter().zip(slug_map.iter()).zip(scores.iter()) {
+            let slug_disp = slug.as_deref().unwrap_or("-");
+            let tags_str = if unit.tags.is_empty() {
+                String::new()
+            } else {
+                format!("  [{}]", unit.tags.join(", "))
+            };
+            let archived_marker = if unit.archived { "[archived] " } else { "" };
+            let v = sc.vec_rank.map_or("-".to_string(), |r| r.to_string());
+            let f = sc.fts_rank.map_or("-".to_string(), |r| r.to_string());
+            let fb = sc.fallback_method.unwrap_or("-");
+            println!(
+                "{}[{}] {} ({}) {}  {}  conf={:.2}  score={:.6}  v={}  f={}  fb={}{}",
+                archived_marker,
+                short_id(&unit.id),
+                unit.unit_type,
+                unit.source,
+                slug_disp,
+                derive_headline(&unit.content),
+                unit.confidence,
+                sc.score,
+                v,
+                f,
+                fb,
+                tags_str,
+            );
+        }
+    }
+}
+
+/// Full units + score envelope. Used by `simaris search --full --scores`.
+/// JSON: serializes each `Unit` and merges the four score fields into the
+/// object. Text: appends a score line after the unit summary.
+pub fn print_units_scored(units: &[Unit], scores: &[ScoreInfo], json: bool) {
+    debug_assert_eq!(units.len(), scores.len(), "scored len mismatch");
+    if json {
+        let rows: Vec<serde_json::Value> = units
+            .iter()
+            .zip(scores.iter())
+            .map(|(u, sc)| {
+                let mut v = serde_json::to_value(u).unwrap();
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert(
+                        "score".to_string(),
+                        serde_json::json!(sc.score),
+                    );
+                    obj.insert(
+                        "vec_rank".to_string(),
+                        serde_json::json!(sc.vec_rank),
+                    );
+                    obj.insert(
+                        "fts_rank".to_string(),
+                        serde_json::json!(sc.fts_rank),
+                    );
+                    obj.insert(
+                        "fallback_method".to_string(),
+                        serde_json::json!(sc.fallback_method),
+                    );
+                }
+                v
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&rows).unwrap());
+    } else if units.is_empty() {
+        println!("No units found.");
+    } else {
+        for (unit, sc) in units.iter().zip(scores.iter()) {
+            let content = if unit.content.chars().count() > 80 {
+                let end = unit
+                    .content
+                    .char_indices()
+                    .nth(80)
+                    .map(|(i, _)| i)
+                    .unwrap_or(unit.content.len());
+                format!("{}...", &unit.content[..end])
+            } else {
+                unit.content.clone()
+            };
+            let v = sc.vec_rank.map_or("-".to_string(), |r| r.to_string());
+            let f = sc.fts_rank.map_or("-".to_string(), |r| r.to_string());
+            let fb = sc.fallback_method.unwrap_or("-");
+            println!(
+                "[{}] {} ({})  {}  score={:.6}  v={}  f={}  fb={}",
+                short_id(&unit.id),
+                unit.unit_type,
+                unit.source,
+                content,
+                sc.score,
+                v,
+                f,
+                fb,
+            );
+        }
+    }
+}
+
 /// Display options for [`print_unit`]. Bundled into a struct to keep the
 /// function signature small as flags accrete.
 #[derive(Default, Clone, Copy)]

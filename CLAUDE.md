@@ -115,7 +115,7 @@ simaris drop <content> [--source <source>]
 simaris promote <id> --type <type>
 simaris inbox
 simaris list [--type <type>] [--include-archived]
-simaris search <query> [--type <type>] [--include-archived]
+simaris search <query> [--type <type>] [--full] [--include-archived] [--no-vec] [--top-k <n>] [--scores]
 simaris ask <query> [--type <type>] [--include-archived]
 simaris prime <task> [--filter <strategy>] [--primary <id|slug>]... [--include-archived]
 simaris stats [--top <n>] [--include-archived]

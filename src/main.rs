@@ -219,6 +219,17 @@ enum Command {
         /// Override the top-N result count (default: 10 hybrid, all-rank for FTS5).
         #[arg(long, value_name = "N")]
         top_k: Option<usize>,
+
+        /// Emit per-result score metadata: hybrid RRF score (k=60) + per-leg
+        /// 0-indexed `vec_rank` / `fts_rank` + `fallback_method`. Opt-in.
+        ///
+        /// Score scale: hybrid path uses Reciprocal Rank Fusion
+        /// `score = Σ 1 / (k + rank + 1)` with k=60 (matches simaris-vec
+        /// `RRF_K`). FTS5-only fallback applies the same RRF formula on the
+        /// single text leg, so the absolute score scale differs from hybrid —
+        /// scores are NOT normalised across the two paths.
+        #[arg(long)]
+        scores: bool,
     },
 
     /// Vec subsystem operations (lance + tantivy + bge-m3 hybrid retrieval).
@@ -1047,6 +1058,44 @@ fn build_slug_map(conn: &rusqlite::Connection, units: &[db::Unit]) -> Result<Vec
     Ok(out)
 }
 
+/// Convert hybrid scored hits into the parallel `(units, score_info)` shape
+/// the search dispatcher needs for `--scores`. Splits the per-result envelope
+/// into units (for downstream slug/display) and score info (rendered into
+/// JSON / text).
+fn split_scored_hits(
+    hits: Vec<hybrid::HybridHit>,
+) -> (Vec<db::Unit>, Option<Vec<display::ScoreInfo>>) {
+    let mut units = Vec::with_capacity(hits.len());
+    let mut info = Vec::with_capacity(hits.len());
+    for h in hits {
+        info.push(display::ScoreInfo {
+            score: h.score,
+            vec_rank: h.vec_rank,
+            fts_rank: h.fts_rank,
+            fallback_method: None,
+        });
+        units.push(h.unit);
+    }
+    (units, Some(info))
+}
+
+/// Synthesize per-result score info for the FTS5-only fallback. Single-leg
+/// RRF: `score = 1 / (k + rank + 1)` with k=60. `vec_rank` is `None`,
+/// `fts_rank` is the 0-indexed position, and `fallback_method` records why
+/// the hybrid path was bypassed (e.g. "fts5" when --no-vec or lance dataset
+/// missing). Documented in `--scores` help: scale differs from hybrid path.
+fn build_fts5_scores(n: usize, fallback_method: &'static str) -> Vec<display::ScoreInfo> {
+    const RRF_K: usize = simaris_vec::RRF_K;
+    (0..n)
+        .map(|i| display::ScoreInfo {
+            score: 1.0 / ((i + 1 + RRF_K) as f64),
+            vec_rank: None,
+            fts_rank: Some(i),
+            fallback_method: Some(fallback_method),
+        })
+        .collect()
+}
+
 /// Borrowed view of all per-type frontmatter flags. Used by both `add` and
 /// `edit` (P1.5) for validation + serialization.
 struct TypeFlags<'a> {
@@ -1457,38 +1506,80 @@ fn main() -> Result<()> {
             include_archived,
             no_vec,
             top_k,
+            scores,
         } => {
             let filter = r#type.as_ref().map(|t| t.as_str());
             let top_n = top_k.unwrap_or(10);
 
-            let units: Vec<db::Unit> = if no_vec {
+            // Forensic stderr telemetry — opt-in, no behaviour change. Lets
+            // m11 rollout track real `--scores` adoption without changing
+            // the JSON contract.
+            if scores {
+                eprintln!("simaris.search.scores=on");
+            }
+
+            // Resolve hits + optional score envelopes. `score_info` parallel
+            // to `units` (same length, same order). When `scores=false` we
+            // skip building it entirely and the JSON path stays byte-
+            // identical to pre-m11.
+            let (units, score_info): (Vec<db::Unit>, Option<Vec<display::ScoreInfo>>) = if no_vec {
                 // FTS5-only revert path. `--top-k` still applies as a cap.
                 let mut hits = db::search_units(&conn, &query, filter, include_archived)?;
                 if top_k.is_some() {
                     hits.truncate(top_n);
                 }
-                hits
+                let info = scores.then(|| build_fts5_scores(hits.len(), "fts5"));
+                (hits, info)
             } else {
                 match hybrid::HybridConfig::discover()? {
-                    Some(cfg) => match hybrid::run_hybrid(
-                        &conn,
-                        &cfg,
-                        &query,
-                        top_n,
-                        filter,
-                        include_archived,
-                    ) {
-                        Ok(hits) => hits,
-                        Err(e) => {
-                            eprintln!("warning: hybrid search failed ({e}); falling back to FTS5");
-                            let mut hits =
-                                db::search_units(&conn, &query, filter, include_archived)?;
-                            if top_k.is_some() {
-                                hits.truncate(top_n);
+                    Some(cfg) => {
+                        if scores {
+                            match hybrid::run_hybrid_scored(
+                                &conn,
+                                &cfg,
+                                &query,
+                                top_n,
+                                filter,
+                                include_archived,
+                            ) {
+                                Ok(hits) => split_scored_hits(hits),
+                                Err(e) => {
+                                    eprintln!(
+                                        "warning: hybrid search failed ({e}); falling back to FTS5"
+                                    );
+                                    let mut h =
+                                        db::search_units(&conn, &query, filter, include_archived)?;
+                                    if top_k.is_some() {
+                                        h.truncate(top_n);
+                                    }
+                                    let info = build_fts5_scores(h.len(), "fts5");
+                                    (h, Some(info))
+                                }
                             }
-                            hits
+                        } else {
+                            match hybrid::run_hybrid(
+                                &conn,
+                                &cfg,
+                                &query,
+                                top_n,
+                                filter,
+                                include_archived,
+                            ) {
+                                Ok(hits) => (hits, None),
+                                Err(e) => {
+                                    eprintln!(
+                                        "warning: hybrid search failed ({e}); falling back to FTS5"
+                                    );
+                                    let mut hits =
+                                        db::search_units(&conn, &query, filter, include_archived)?;
+                                    if top_k.is_some() {
+                                        hits.truncate(top_n);
+                                    }
+                                    (hits, None)
+                                }
+                            }
                         }
-                    },
+                    }
                     None => {
                         eprintln!(
                             "warning: lance dataset not found (run `simaris-vec-dev migrate` or set SIMARIS_VEC_DIR); falling back to FTS5"
@@ -1497,12 +1588,20 @@ fn main() -> Result<()> {
                         if top_k.is_some() {
                             hits.truncate(top_n);
                         }
-                        hits
+                        let info = scores.then(|| build_fts5_scores(hits.len(), "fts5"));
+                        (hits, info)
                     }
                 }
             };
 
-            if full {
+            if let Some(info) = score_info.as_deref() {
+                if full {
+                    display::print_units_scored(&units, info, cli.json);
+                } else {
+                    let slug_map = build_slug_map(&conn, &units)?;
+                    display::print_units_lean_scored(&units, &slug_map, info, cli.json);
+                }
+            } else if full {
                 display::print_units(&units, cli.json);
             } else {
                 let slug_map = build_slug_map(&conn, &units)?;

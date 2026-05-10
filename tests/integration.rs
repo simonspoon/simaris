@@ -459,6 +459,139 @@ fn test_search_json_full_restores_content() {
     assert!(content.contains("second line detail"));
 }
 
+/// m11 backward-compat gate: default `simaris search --json` MUST emit zero
+/// score-related fields. Hook scripts, cya, simaris-emit-prefs, and any user
+/// jq pipeline depending on the lean schema must see byte-identical output to
+/// pre-m11 (modulo the rows themselves).
+#[test]
+fn test_search_json_no_scores_field_by_default() {
+    let env = TestEnv::new("searchnoscoresdefault");
+    env.run_ok(&["add", "caching improves performance", "--type", "fact"]);
+
+    let out = env.run_ok(&["--json", "search", "caching"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+    assert_eq!(parsed.len(), 1);
+    for k in ["score", "vec_rank", "fts_rank", "fallback_method"] {
+        assert!(
+            parsed[0].get(k).is_none(),
+            "default search JSON must omit `{k}` (m11 opt-in), got: {out}"
+        );
+    }
+}
+
+/// m11 backward-compat gate (full): `--full` without `--scores` MUST also
+/// omit the score envelope. Same contract as the lean default.
+#[test]
+fn test_search_json_full_no_scores_field_by_default() {
+    let env = TestEnv::new("searchnoscoresfull");
+    env.run_ok(&["add", "caching improves performance", "--type", "fact"]);
+
+    let out = env.run_ok(&["--json", "search", "caching", "--full"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+    assert_eq!(parsed.len(), 1);
+    for k in ["score", "vec_rank", "fts_rank", "fallback_method"] {
+        assert!(
+            parsed[0].get(k).is_none(),
+            "default --full search JSON must omit `{k}` (m11 opt-in), got: {out}"
+        );
+    }
+}
+
+/// m11 opt-in: `--scores` adds `score` / `vec_rank` / `fts_rank` /
+/// `fallback_method` to each lean row. Test envs have no lance dataset so we
+/// land on the FTS5 fallback — `vec_rank` is null, `fts_rank` is 0-indexed,
+/// `fallback_method` == "fts5", and `score` follows the single-leg RRF
+/// formula `1 / (k + rank + 1)` with k=60.
+#[test]
+fn test_search_scores_flag_adds_envelope_fts5_fallback() {
+    let env = TestEnv::new("searchscoresfts5");
+    env.run_ok(&["add", "caching improves performance", "--type", "fact"]);
+    env.run_ok(&["add", "caching also helps latency", "--type", "fact"]);
+
+    let out = env.run_ok(&["--json", "search", "caching", "--scores"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+    assert!(!parsed.is_empty(), "expect at least one hit, got: {out}");
+
+    for (i, row) in parsed.iter().enumerate() {
+        // Score envelope must be present + correctly typed.
+        assert!(
+            row.get("score").map(|v| v.is_number()).unwrap_or(false),
+            "row {i} missing numeric `score`, got: {out}"
+        );
+        // FTS5 fallback path: no vec leg.
+        assert!(
+            row.get("vec_rank").map(|v| v.is_null()).unwrap_or(false),
+            "row {i} expected vec_rank=null on FTS5 fallback, got: {out}"
+        );
+        assert_eq!(
+            row.get("fts_rank").and_then(|v| v.as_u64()),
+            Some(i as u64),
+            "row {i} fts_rank mismatch, got: {out}"
+        );
+        assert_eq!(
+            row.get("fallback_method").and_then(|v| v.as_str()),
+            Some("fts5"),
+            "row {i} fallback_method mismatch, got: {out}"
+        );
+    }
+
+    // First-rank single-leg RRF score: 1 / (1 + 60) ≈ 0.01639.
+    let first_score = parsed[0]["score"].as_f64().unwrap();
+    let expected = 1.0_f64 / 61.0;
+    assert!(
+        (first_score - expected).abs() < 1e-9,
+        "first row score should match single-leg RRF (1/61), got {first_score}, full: {out}"
+    );
+}
+
+/// m11 opt-in (full): `--full --scores` merges the score envelope into the
+/// full Unit JSON object. Existing Unit fields stay intact; score fields
+/// are simply additive.
+#[test]
+fn test_search_scores_flag_full_includes_envelope() {
+    let env = TestEnv::new("searchscoresfull");
+    env.run_ok(&["add", "caching improves performance", "--type", "fact"]);
+
+    let out = env.run_ok(&["--json", "search", "caching", "--full", "--scores"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+    assert_eq!(parsed.len(), 1);
+    // Unit shape survives.
+    assert!(parsed[0].get("content").is_some(), "got: {out}");
+    assert!(parsed[0].get("id").is_some(), "got: {out}");
+    // Score envelope merged in.
+    assert!(parsed[0].get("score").is_some(), "got: {out}");
+    assert!(parsed[0].get("vec_rank").is_some(), "got: {out}");
+    assert!(parsed[0].get("fts_rank").is_some(), "got: {out}");
+    assert_eq!(
+        parsed[0].get("fallback_method").and_then(|v| v.as_str()),
+        Some("fts5")
+    );
+}
+
+/// m11 telemetry: `--scores` writes a single forensic line to stderr at run.
+/// Lets the m11 rollout track adoption without touching the JSON contract.
+#[test]
+fn test_search_scores_writes_stderr_telemetry() {
+    let env = TestEnv::new("searchscorestelemetry");
+    env.run_ok(&["add", "caching improves performance", "--type", "fact"]);
+
+    let output = env.run(&["--json", "search", "caching", "--scores"]);
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("simaris.search.scores=on"),
+        "expected forensic stderr line, got: {stderr}"
+    );
+
+    // Negative: without --scores there must be no telemetry leak.
+    let plain = env.run(&["--json", "search", "caching"]);
+    let plain_stderr = String::from_utf8_lossy(&plain.stderr);
+    assert!(
+        !plain_stderr.contains("simaris.search.scores"),
+        "telemetry must not fire without --scores, got: {plain_stderr}"
+    );
+}
+
 #[test]
 fn test_list_default_text_omits_body() {
     let env = TestEnv::new("listtextlean");

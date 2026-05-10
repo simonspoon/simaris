@@ -396,18 +396,23 @@ simaris list --type lesson --json
 
 ## search
 
-Full-text search (FTS5) across knowledge units with an optional type filter.
+Hybrid retrieval (lance KNN + tantivy text → RRF k=60) over knowledge units, with `--no-vec` to force the FTS5-only legacy path.
 
 ```
-simaris search <QUERY> [--type <TYPE>]
+simaris search <QUERY> [--type <TYPE>] [--full] [--include-archived] [--no-vec] [--top-k <N>] [--scores]
 ```
 
 ### Arguments
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
-| `QUERY` | string | yes | Search query. Matched against unit content via SQLite FTS5. |
+| `QUERY` | string | yes | Search query. |
 | `--type` | UnitType | no | Filter results to a specific unit type. |
+| `--full` | flag | no | Emit full unit bodies (default: lean rows). |
+| `--include-archived` | flag | no | Include archived (soft-deleted) units. |
+| `--no-vec` | flag | no | Force FTS5-only path (skip vec leg). |
+| `--top-k` | int | no | Override result count (default 10 hybrid). |
+| `--scores` | flag | no | Opt-in: emit per-result `score`/`vec_rank`/`fts_rank`/`fallback_method`. |
 
 ### Output
 
@@ -415,7 +420,23 @@ Same format as `list`. Content is truncated at 80 characters in human-readable m
 
 ### JSON output
 
-Same format as `list` -- returns full `Unit` object array.
+Same format as `list` -- returns full `Unit` object array. With `--scores`, each row gains four extra fields (see below).
+
+### --scores (m11, opt-in)
+
+Adds per-result score metadata. Disabled by default — without `--scores` the JSON schema is byte-identical to pre-m11 output. Fields:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `score` | float | Hybrid RRF score, k=60 (`Σ 1/(k+rank+1)`). |
+| `vec_rank` | int \| null | 0-indexed position in lance KNN top-50 (null if not in pool, or on FTS5 fallback). |
+| `fts_rank` | int \| null | 0-indexed position in text leg top-50 (null if not in pool). |
+| `fallback_method` | string \| null | `"fts5"` when the vec leg was skipped/missing, else null. |
+
+Score scale notes:
+- Hybrid path: two legs combined via RRF (k=60).
+- FTS5 fallback: same RRF formula on the single text leg only.
+- Scales differ across paths — `fallback_method` lets consumers branch. Scores are NOT normalised between hybrid and fallback.
 
 ### Example
 
@@ -423,6 +444,7 @@ Same format as `list` -- returns full `Unit` object array.
 simaris search "async traits"
 simaris search "homebrew formula" --type procedure
 simaris search "git workflow" --type lesson --json
+simaris search "rust borrow" --json --scores | jq '.[] | {id, score, vec_rank, fts_rank}'
 ```
 
 ---

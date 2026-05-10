@@ -40,6 +40,20 @@ pub fn rrf_fuse(vec_ranking: &[String], text_ranking: &[String], n: usize) -> Ve
     fused
 }
 
+/// Detailed hybrid result. Same fused output as [`hybrid_search`] PLUS the
+/// raw per-leg ranked id lists (lance KNN, tantivy text). M11 callers
+/// (`simaris search --scores`) consume `vec_ranking` / `text_ranking` to
+/// derive per-result `vec_rank` / `fts_rank` for downstream score-gate logic.
+#[derive(Debug, Clone)]
+pub struct HybridDetail {
+    /// Fused `(unit_id, rrf_score)` pairs, ordered by descending score.
+    pub fused: Vec<(String, f64)>,
+    /// Vector leg ranking (lance KNN), 0-indexed by position.
+    pub vec_ranking: Vec<String>,
+    /// Text leg ranking (tantivy), 0-indexed by position.
+    pub text_ranking: Vec<String>,
+}
+
 /// Production hybrid retrieval: lance KNN over the `embedding` column ∪
 /// tantivy text search → RRF fusion (k=60). Real query embedding required —
 /// callers obtain it from [`crate::embed::OllamaEmbedClient`] (or any other
@@ -58,6 +72,29 @@ pub async fn hybrid_search(
     top_n: usize,
     candidate_pool: usize,
 ) -> Result<Vec<(String, f64)>> {
+    let detail = hybrid_search_detailed(
+        lance_dir,
+        tantivy_dir,
+        query_text,
+        query_embedding,
+        top_n,
+        candidate_pool,
+    )
+    .await?;
+    Ok(detail.fused)
+}
+
+/// Detailed counterpart to [`hybrid_search`] — returns the fused list AND the
+/// per-leg ranked id pools so callers can recover per-result rank metadata.
+/// Added in m11 to back `simaris search --scores`.
+pub async fn hybrid_search_detailed(
+    lance_dir: &Path,
+    tantivy_dir: &Path,
+    query_text: &str,
+    query_embedding: &[f32],
+    top_n: usize,
+    candidate_pool: usize,
+) -> Result<HybridDetail> {
     // VECTOR leg — lance KNN.
     let units_path = lance_dir.join("units.lance");
     let units = Dataset::open(units_path.to_str().context("lance path utf8")?).await?;
@@ -111,7 +148,12 @@ pub async fn hybrid_search(
         }
     }
 
-    Ok(rrf_fuse(&vec_ranking, &text_ranking, top_n))
+    let fused = rrf_fuse(&vec_ranking, &text_ranking, top_n);
+    Ok(HybridDetail {
+        fused,
+        vec_ranking,
+        text_ranking,
+    })
 }
 
 /// Tantivy query parser is brittle to operator chars. Match the bench harness

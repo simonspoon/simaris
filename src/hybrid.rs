@@ -20,9 +20,24 @@
 use crate::db::{self, Unit};
 use anyhow::{Context, Result};
 use rusqlite::Connection;
-use simaris_vec::ask::hybrid_search;
+use simaris_vec::ask::{hybrid_search, hybrid_search_detailed};
 use simaris_vec::embed::{BGE_M3_MODEL, OLLAMA_DEFAULT_URL, OllamaEmbedClient};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+/// Per-result score envelope. Returned alongside `Unit` rows when the caller
+/// asks for hybrid retrieval with score data (m11 `simaris search --scores`).
+///
+/// `vec_rank` / `fts_rank` are 0-indexed positions in the per-leg candidate
+/// pool (top-50 each) BEFORE RRF fusion. `None` means the unit was not in
+/// that leg's pool.
+#[derive(Debug)]
+pub struct HybridHit {
+    pub unit: Unit,
+    pub score: f64,
+    pub vec_rank: Option<usize>,
+    pub fts_rank: Option<usize>,
+}
 
 /// Resolved hybrid configuration. Returned by [`HybridConfig::discover`] so
 /// the caller can decide between the hybrid path and the FTS5 fallback before
@@ -124,6 +139,75 @@ pub fn run_hybrid(
             continue;
         }
         out.push(u);
+        if out.len() >= top_n {
+            break;
+        }
+    }
+    Ok(out)
+}
+
+/// Hybrid retrieval with per-result score + per-leg rank metadata. Same
+/// query path as [`run_hybrid`] but the caller gets the RRF score and the
+/// 0-indexed `vec_rank` / `fts_rank` per surviving result. Used by
+/// `simaris search --scores` to feed downstream score-gate logic (m11).
+pub fn run_hybrid_scored(
+    conn: &Connection,
+    cfg: &HybridConfig,
+    query: &str,
+    top_n: usize,
+    type_filter: Option<&str>,
+    include_archived: bool,
+) -> Result<Vec<HybridHit>> {
+    let client = OllamaEmbedClient::new(&cfg.ollama_url, &cfg.model);
+    let qvec = client
+        .embed(query)
+        .with_context(|| format!("embed query via ollama ({})", cfg.model))?;
+
+    let candidate_pool = 50usize;
+    let fused_pool = (top_n * 5).max(50);
+
+    let detail = run_async(hybrid_search_detailed(
+        &cfg.lance_dir,
+        &cfg.tantivy_dir,
+        query,
+        &qvec,
+        fused_pool,
+        candidate_pool,
+    ))?;
+
+    // Reverse-index per-leg rankings so per-result lookup is O(1).
+    let vec_rank: HashMap<&str, usize> = detail
+        .vec_ranking
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (id.as_str(), i))
+        .collect();
+    let fts_rank: HashMap<&str, usize> = detail
+        .text_ranking
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (id.as_str(), i))
+        .collect();
+
+    let mut out: Vec<HybridHit> = Vec::with_capacity(top_n);
+    for (id, score) in &detail.fused {
+        let Ok(u) = db::get_unit(conn, id) else {
+            continue;
+        };
+        if !include_archived && u.archived {
+            continue;
+        }
+        if let Some(t) = type_filter
+            && u.unit_type != t
+        {
+            continue;
+        }
+        out.push(HybridHit {
+            score: *score,
+            vec_rank: vec_rank.get(id.as_str()).copied(),
+            fts_rank: fts_rank.get(id.as_str()).copied(),
+            unit: u,
+        });
         if out.len() >= top_n {
             break;
         }
