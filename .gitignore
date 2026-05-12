@@ -9,8 +9,9 @@ sanctuary.db
 /dev/
 /dev2/
 
-# Local scripts
+# Local scripts (except tracked hook-scripts)
 /scripts/
+!/scripts/hooks/
 
 # Experiment run outputs (keep scripts, drop captured results)
 /experiments/*/results/
