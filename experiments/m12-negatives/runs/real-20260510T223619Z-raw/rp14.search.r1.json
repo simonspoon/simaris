@@ -1,0 +1,153 @@
+[
+  {
+    "id": "019dbb85-752e-7fa1-b812-7cfee4bc7bf1",
+    "type": "aspect",
+    "slug": "orchestrator-parse-branch",
+    "headline": "# Orchestrator tick — parse + branch",
+    "tags": [
+      "caveman",
+      "orchestrator",
+      "aspect-v2",
+      "parse-branch"
+    ],
+    "source": "flatten-v2:oapb",
+    "confidence": 1.0,
+    "byte_size": 4914
+  },
+  {
+    "id": "019dbb85-7428-7a40-816b-2e865ada193d",
+    "type": "aspect",
+    "slug": "orchestrator-boot",
+    "headline": "# Orchestrator boot",
+    "tags": [
+      "caveman",
+      "orchestrator",
+      "aspect-v2",
+      "boot"
+    ],
+    "source": "flatten-v2:oapb",
+    "confidence": 1.0,
+    "byte_size": 4332
+  },
+  {
+    "id": "019dbb4b-7028-7e51-8dc9-f6737f624e6e",
+    "type": "procedure",
+    "slug": "orokin-orch-pick-leaf",
+    "headline": "# Orokin Orchestrator pick leaf",
+    "tags": [
+      "orokin",
+      "orchestrator"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 4605
+  },
+  {
+    "id": "019de472-c7af-7b30-8e88-8b7714099b8c",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Worker complete task but skip limbo status advance — known gap (tixu). Orchestrator detect via: post-RESULT:done, run li...",
+    "tags": [
+      "orchestrator",
+      "limbo",
+      "worker",
+      "tixu",
+      "workaround"
+    ],
+    "source": "session-38f40729",
+    "confidence": 1.0,
+    "byte_size": 287
+  },
+  {
+    "id": "019dbb62-b200-7653-b781-a90b14cfd728",
+    "type": "aspect",
+    "slug": "pm-rule-session-lifecycle",
+    "headline": "# PM rule — session lifecycle",
+    "tags": [
+      "caveman",
+      "pm",
+      "aspect-v2",
+      "rule",
+      "lifecycle"
+    ],
+    "source": "split from monolith 019d97d3 (task nsau)",
+    "confidence": 1.0,
+    "byte_size": 4359
+  },
+  {
+    "id": "019dbb85-74a9-7930-beeb-96c38d55f536",
+    "type": "aspect",
+    "slug": "orchestrator-tick-pick",
+    "headline": "# Orchestrator tick — stop-check + pick leaf",
+    "tags": [
+      "caveman",
+      "orchestrator",
+      "aspect-v2",
+      "tick-pick"
+    ],
+    "source": "flatten-v2:oapb",
+    "confidence": 1.0,
+    "byte_size": 4885
+  },
+  {
+    "id": "019dbb6d-d14e-7623-bb9e-2ca074d3cbdd",
+    "type": "aspect",
+    "slug": "worker-refined-to-planned",
+    "headline": "# Worker refined → planned",
+    "tags": [
+      "caveman",
+      "worker",
+      "aspect-v2",
+      "refined-to-planned"
+    ],
+    "source": "split from monolith 019da7a6 (task psgb)",
+    "confidence": 1.0,
+    "byte_size": 5166
+  },
+  {
+    "id": "019d708d-c960-7141-b14f-6229f6824dd6",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Review the limbo backlog with the user when deciding what to work on next.",
+    "tags": [
+      "limbo",
+      "backlog",
+      "planning"
+    ],
+    "source": "suda:backlog-capture",
+    "confidence": 1.0,
+    "byte_size": 159
+  },
+  {
+    "id": "019dbcbd-dbd4-7e92-a66b-c8c47e14f3c9",
+    "type": "idea",
+    "slug": null,
+    "headline": "Orchestrator role: stateless dispatcher. Runs on trigger, polls limbo list --status open --not-blocked, spawns fresh age...",
+    "tags": [
+      "orchestrator",
+      "limbo",
+      "dispatcher",
+      "agent-isolation"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 175
+  },
+  {
+    "id": "019da7a7-a989-7012-9fac-350f304f2a18",
+    "type": "aspect",
+    "slug": null,
+    "headline": "# Orchestrator",
+    "tags": [
+      "orchestrator",
+      "worker-dispatch",
+      "v5",
+      "aspect-dispatch",
+      "flatten-v1",
+      "supersedes-v4"
+    ],
+    "source": "worker flatten 2026-04-19 — dispatches worker, not PM",
+    "confidence": 1.0,
+    "byte_size": 5837
+  }
+]

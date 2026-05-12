@@ -1,0 +1,152 @@
+[
+  {
+    "id": "019d708d-c95e-7d13-9747-cadaf6c5c110",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Phase 2 — Self-Test Execution",
+    "tags": [
+      "skill-trainer",
+      "phase-2",
+      "self-test"
+    ],
+    "source": "skill:skill-trainer",
+    "confidence": 1.0,
+    "byte_size": 2542
+  },
+  {
+    "id": "019df0a3-54ce-7701-a6a2-ba5f84250319",
+    "type": "fact",
+    "slug": "simaris-m3-redo-2-status-2026-05-03",
+    "headline": "# memory-architect M3-redo-2 — runner launched, in flight (2026-05-03)",
+    "tags": [
+      "simaris",
+      "m3",
+      "m3-redo-2",
+      "status",
+      "in-flight",
+      "intel-overnight"
+    ],
+    "source": "memory-architect M3-redo-2 dispatch (BENCHMARKER mode), 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 6824
+  },
+  {
+    "id": "019d708d-c960-7141-b14f-63dc9dfbe653",
+    "type": "principle",
+    "slug": null,
+    "headline": "Test round-trips, not just one-way operations: create → navigate away → navigate back → verify. Skipping the return step...",
+    "tags": [
+      "loki",
+      "testing",
+      "principle",
+      "ui"
+    ],
+    "source": "suda:loki-test-round-trips",
+    "confidence": 1.0,
+    "byte_size": 155
+  },
+  {
+    "id": "019dbb4b-7006-7fd2-80ee-82eb575657e6",
+    "type": "procedure",
+    "slug": "orokin-orch-stop-check",
+    "headline": "# Orokin Orchestrator stop check",
+    "tags": [
+      "orokin",
+      "orchestrator"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 4358
+  },
+  {
+    "id": "019de3c9-21f7-7052-a087-9cbae1857553",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Test strategy: wfql — launchagent reply-slug posting",
+    "tags": [
+      "nova",
+      "mvp",
+      "test-strategy",
+      "wfql"
+    ],
+    "source": "test-engineer 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 5766
+  },
+  {
+    "id": "019dbd5b-0122-7fd3-b4f0-bdec521becfa",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Pre-dispatch verify steps: (1) identify REQUIRED platforms—parse UI/code globs, language constraints; (2) live E2E on ru...",
+    "tags": [
+      "verify",
+      "pre-dispatch",
+      "checklist",
+      "dispatch"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2460
+  },
+  {
+    "id": "019dd1c2-0750-76b1-8b79-0c50a0d7c54f",
+    "type": "lesson",
+    "slug": null,
+    "headline": "tldraw 2.x bindings: when arrow tracks shape, bind via createBindings (not props.start/end). Arrow.props.start/end stay ...",
+    "tags": [
+      "tldraw",
+      "bindings",
+      "arrow",
+      "canvas",
+      "echo-loop"
+    ],
+    "source": "vauban",
+    "confidence": 1.0,
+    "byte_size": 518
+  },
+  {
+    "id": "019dbbab-1f7e-72a3-8f1d-f022d3588b0a",
+    "type": "procedure",
+    "slug": "cavespeak-measure",
+    "headline": "# Cavespeak step 6 — measure",
+    "tags": [
+      "cavespeak",
+      "split",
+      "lod",
+      "compression"
+    ],
+    "source": "split from 019d97bc-09bc-7771-b38c-9184feb5b1f1 per split-ruleset A+D",
+    "confidence": 1.0,
+    "byte_size": 2582
+  },
+  {
+    "id": "019df4d8-d40e-75b0-aa2f-a9cca74882bd",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Harness blocks sleep N followed by another command in single Bash call. Error: Blocked: sleep N followed by <cmd>. Use M...",
+    "tags": [
+      "harness",
+      "bash",
+      "sleep",
+      "background-task",
+      "gotcha"
+    ],
+    "source": "session-4d2cf75d",
+    "confidence": 1.0,
+    "byte_size": 198
+  },
+  {
+    "id": "019dbb7d-d30a-7e53-a9d2-bb184730e14a",
+    "type": "aspect",
+    "slug": "verifier-tools-inputs",
+    "headline": "# Verifier — tools + inputs",
+    "tags": [
+      "input",
+      "tools",
+      "verifier-atom"
+    ],
+    "source": "split-from 019d97d0-4936-7061-85c4-9127f6c52d9b",
+    "confidence": 1.0,
+    "byte_size": 4506
+  }
+]

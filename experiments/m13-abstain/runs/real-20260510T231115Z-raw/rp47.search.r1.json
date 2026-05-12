@@ -1,0 +1,154 @@
+[
+  {
+    "id": "019d708d-c960-7141-b14f-618f937ffa3b",
+    "type": "procedure",
+    "slug": null,
+    "headline": "After any UI change to a running desktop app: 1) Take a screenshot with loki. 2) Visually verify the result. 3) Only the...",
+    "tags": [
+      "loki",
+      "ui",
+      "desktop-app",
+      "workflow"
+    ],
+    "source": "suda:proactive-loki-verification",
+    "confidence": 1.0,
+    "byte_size": 235
+  },
+  {
+    "id": "019d708d-c960-7141-b14f-6200bd22e883",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Run from ~/claudehub: `limbo add \"<name>\" -d \"<description>\" --action \"<what to do>\" --result \"<what done looks like>\" -...",
+    "tags": [
+      "limbo",
+      "backlog",
+      "commands"
+    ],
+    "source": "suda:backlog-capture",
+    "confidence": 1.0,
+    "byte_size": 248
+  },
+  {
+    "id": "019dee25-71d3-7b13-920e-a23298285087",
+    "type": "lesson",
+    "slug": "lotus-failure-atom-as-message-2026-05-03",
+    "headline": "# Lotus failure — treated filed atom as message to running agent (2026-05-03)",
+    "tags": [
+      "lotus",
+      "failure",
+      "communication",
+      "launchagent",
+      "subagent"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1886
+  },
+  {
+    "id": "019dbd7b-fc74-7400-9493-884624d8f4ba",
+    "type": "principle",
+    "slug": null,
+    "headline": "Verifiable: task outcome confirmable via single command.",
+    "tags": [
+      "scout",
+      "leaf",
+      "verifiable"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 56
+  },
+  {
+    "id": "019dea8d-b877-7c02-8619-0c5a6864d46c",
+    "type": "aspect",
+    "slug": null,
+    "headline": "# Gate-0 self-check — Banshee session header: show model used",
+    "tags": [
+      "lotus",
+      "gate-0",
+      "selfcheck",
+      "banshee"
+    ],
+    "source": "lotus gate-0 2026-05-02",
+    "confidence": 1.0,
+    "byte_size": 1926
+  },
+  {
+    "id": "019dcb7a-6d98-7643-8b5b-ba8e0cdfb7fd",
+    "type": "lesson",
+    "slug": null,
+    "headline": "claude -p hook preamble fix: use --output-format json. Wrap reply in structured envelope {\"result\":\"...\"}. Immune to Use...",
+    "tags": [
+      "claude",
+      "subprocess",
+      "hooks",
+      "output-format",
+      "gotcha",
+      "simaris",
+      "rust"
+    ],
+    "source": "session-70480494-3380-4377-8d8c-d8b043516318",
+    "confidence": 1.0,
+    "byte_size": 255
+  },
+  {
+    "id": "019de3c9-21f7-7052-a087-9cbae1857553",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Test strategy: wfql — launchagent reply-slug posting",
+    "tags": [
+      "nova",
+      "mvp",
+      "test-strategy",
+      "wfql"
+    ],
+    "source": "test-engineer 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 5766
+  },
+  {
+    "id": "019dbdd8-af16-7c53-9def-ad99adad1074",
+    "type": "fact",
+    "slug": null,
+    "headline": "Task result fields: RESULT (done|blocked), TASK (id), SUMMARY (≤1 line). Optional: BLOCK_REASON (when blocked), SPAWNED ...",
+    "tags": [
+      "orokin",
+      "orchestrator",
+      "task-result",
+      "schema"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 155
+  },
+  {
+    "id": "019dea7d-e000-7ca1-9739-6acf3e0b4b19",
+    "type": "fact",
+    "slug": null,
+    "headline": "# Item a — Per-agent navigation: PASS",
+    "tags": [
+      "banshee",
+      "ui-v2",
+      "verifier-walk",
+      "item:a",
+      "verdict:pass"
+    ],
+    "source": "verifier-walk",
+    "confidence": 1.0,
+    "byte_size": 577
+  },
+  {
+    "id": "019de4b2-da27-7710-80e4-85ede0e806f4",
+    "type": "aspect",
+    "slug": "banshee-story-01-agent-list",
+    "headline": "# Story 01 — Agent list view",
+    "tags": [
+      "banshee",
+      "user-story",
+      "simon"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1295
+  }
+]

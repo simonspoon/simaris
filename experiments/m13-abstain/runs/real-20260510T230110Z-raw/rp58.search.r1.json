@@ -1,0 +1,158 @@
+[
+  {
+    "id": "019dbc95-ca2e-72f3-b0ce-631a5e21942e",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Lazy load beats eager dump",
+    "tags": [
+      "caching",
+      "knowledge-loading",
+      "harness-design",
+      "performance"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2387
+  },
+  {
+    "id": "019de3be-107d-78d3-8aff-2ae399ee06d5",
+    "type": "lesson",
+    "slug": null,
+    "headline": "MISREAD USER-NEED [attacks 019de3ba-7b82-7240-8e7f-2a8a87a1ad11 hyp-2]: BranchThread is framed as satisfying a user need...",
+    "tags": [
+      "nova",
+      "devil",
+      "critique",
+      "user-need-provenance"
+    ],
+    "source": "devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 469
+  },
+  {
+    "id": "019d708d-c95c-7de2-a39c-4618f1973eae",
+    "type": "principle",
+    "slug": null,
+    "headline": "Stop and consult user when: agent purpose is ambiguous or overlaps an existing agent; unclear which tools or model to us...",
+    "tags": [
+      "agent-composer",
+      "escalation",
+      "principle",
+      "decision"
+    ],
+    "source": "skill:agent-composer",
+    "confidence": 1.0,
+    "byte_size": 2329
+  },
+  {
+    "id": "019d708d-c95f-7c41-b0f6-5fca79749a30",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Capture learned knowledge",
+    "tags": [
+      "knowledge-capture",
+      "documentation",
+      "gotcha"
+    ],
+    "source": "skill:update-docs",
+    "confidence": 1.0,
+    "byte_size": 501
+  },
+  {
+    "id": "019df411-5510-71a0-be1f-2e76604fb6a2",
+    "type": "aspect",
+    "slug": "simaris-decoupled-work-items-2026-05-04",
+    "headline": "# Decoupled work items — M3-redo-5 / M6 / M7 (2026-05-04)",
+    "tags": [
+      "decoupled",
+      "knowledge-program",
+      "m5",
+      "m6",
+      "m7",
+      "simaris",
+      "work-item"
+    ],
+    "source": "lotus + devil concurrence under delegation 2026-05-04",
+    "confidence": 1.0,
+    "byte_size": 2440
+  },
+  {
+    "id": "019d708d-c95f-7c41-b0f6-5fd8b5b3c3e0",
+    "type": "fact",
+    "slug": null,
+    "headline": "# Verification Orchestrator",
+    "tags": [
+      "verification",
+      "orchestrator",
+      "qa",
+      "routing"
+    ],
+    "source": "skill:verification-orchestrator",
+    "confidence": 1.0,
+    "byte_size": 2409
+  },
+  {
+    "id": "019de616-25dd-77f2-bc9d-dc684b68bd96",
+    "type": "fact",
+    "slug": null,
+    "headline": "Banshee pair_tool_nodes: filter phantom assistant + tool_result-user events server-side. Drop assistant event if content...",
+    "tags": [
+      "banshee",
+      "pair-tool-nodes",
+      "filter",
+      "assistant",
+      "tool-result"
+    ],
+    "source": "session-f343978e",
+    "confidence": 1.0,
+    "byte_size": 610
+  },
+  {
+    "id": "019d708d-c95d-7b22-9628-e06bb3bc5dd9",
+    "type": "fact",
+    "slug": null,
+    "headline": "nyx is a CLI tool for searching and browsing past Claude Code conversation history. It indexes conversations and support...",
+    "tags": [
+      "nyx",
+      "conversation-history",
+      "search",
+      "cli"
+    ],
+    "source": "skill:nyx",
+    "confidence": 1.0,
+    "byte_size": 199
+  },
+  {
+    "id": "019da9c7-62f0-7192-b871-8a33a858b3a1",
+    "type": "fact",
+    "slug": null,
+    "headline": "# Mirage recipe save body parity",
+    "tags": [
+      "mirage",
+      "recipe",
+      "api",
+      "put",
+      "post",
+      "edit",
+      "create"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2401
+  },
+  {
+    "id": "019d7506-5bef-7df2-88bb-0e473fd27b71",
+    "type": "principle",
+    "slug": null,
+    "headline": "Maintain open-source projects for downstream users even after personally moving to a successor system. Keep working code...",
+    "tags": [
+      "open-source",
+      "stewardship",
+      "maintenance",
+      "community"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2374
+  }
+]

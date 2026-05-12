@@ -1,0 +1,164 @@
+[
+  {
+    "id": "019dee25-71d3-7b13-920e-a23298285087",
+    "type": "lesson",
+    "slug": "lotus-failure-atom-as-message-2026-05-03",
+    "headline": "# Lotus failure — treated filed atom as message to running agent (2026-05-03)",
+    "tags": [
+      "lotus",
+      "failure",
+      "communication",
+      "launchagent",
+      "subagent"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1886
+  },
+  {
+    "id": "019da245-3346-7f31-8af3-0459fc7f7036",
+    "type": "aspect",
+    "slug": "lotus",
+    "headline": "# Lotus",
+    "tags": [
+      "lotus",
+      "ceo",
+      "primer",
+      "system-prompt",
+      "executive"
+    ],
+    "source": "user request 2026-04-30 — CEO pivot",
+    "confidence": 1.0,
+    "byte_size": 1905
+  },
+  {
+    "id": "019de9ec-fbb8-7ee2-9bb1-1d4187864f60",
+    "type": "lesson",
+    "slug": "lotus-devil-2026-05-02",
+    "headline": "# Devil critique — existential: is the delegation architecture a fiction?",
+    "tags": [
+      "lotus",
+      "devil",
+      "critique",
+      "session-2026-05-02"
+    ],
+    "source": "devil critique 2026-05-02",
+    "confidence": 1.0,
+    "byte_size": 1960
+  },
+  {
+    "id": "019dee54-1745-7d73-ad8a-de597a0a9028",
+    "type": "fact",
+    "slug": "simaris-m3-held-out-methodology-2026-05-03",
+    "headline": "# memory-architect M3.0 methodology note (2026-05-03)",
+    "tags": [
+      "simaris",
+      "knowledge-program",
+      "m3",
+      "held-out",
+      "methodology",
+      "memory-architect",
+      "draft",
+      "flow"
+    ],
+    "source": "memory-architect M3.0 dispatch 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 5554
+  },
+  {
+    "id": "019da7a7-a989-7012-9fac-350f304f2a18",
+    "type": "aspect",
+    "slug": null,
+    "headline": "# Orchestrator",
+    "tags": [
+      "orchestrator",
+      "worker-dispatch",
+      "v5",
+      "aspect-dispatch",
+      "flatten-v1",
+      "supersedes-v4"
+    ],
+    "source": "worker flatten 2026-04-19 — dispatches worker, not PM",
+    "confidence": 1.0,
+    "byte_size": 5837
+  },
+  {
+    "id": "019de42d-c534-7f71-b33d-24b647b4993e",
+    "type": "aspect",
+    "slug": "lotus-persona-pickup",
+    "headline": "# Persona update — session pickup behavior",
+    "tags": [
+      "lotus",
+      "persona",
+      "pickup",
+      "session-start"
+    ],
+    "source": "lotus operating model 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1213
+  },
+  {
+    "id": "019de1b1-ba83-7532-acba-0e8d3d3b9850",
+    "type": "principle",
+    "slug": null,
+    "headline": "Agent bootstrap flow: on first contact, check for part_of children. None present → run orientation Q&A. Ask one question...",
+    "tags": [
+      "agent-design",
+      "bootstrap",
+      "orientation",
+      "lotus"
+    ],
+    "source": "session-af58e313-371c-499b-b175-d6fb1b98a133",
+    "confidence": 1.0,
+    "byte_size": 364
+  },
+  {
+    "id": "019dedca-2927-7cb0-b83c-1a95685e9d81",
+    "type": "fact",
+    "slug": "simaris-briefing-2026-05-03",
+    "headline": "# Simaris briefing — Knowledge Program kickoff (2026-05-03)",
+    "tags": [
+      "simaris",
+      "briefing",
+      "kickoff",
+      "knowledge-program"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 2053
+  },
+  {
+    "id": "019dee2e-e22a-7841-abd2-95ac126e362b",
+    "type": "lesson",
+    "slug": "lotus-failure-holding-2026-05-03",
+    "headline": "# Lotus failure — said \"holding\" as if work was in flight (2026-05-03)",
+    "tags": [
+      "lotus",
+      "failure",
+      "operational-model",
+      "launchagent",
+      "recurrence"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 2083
+  },
+  {
+    "id": "019d97d0-fdc7-7380-b88f-625ca7478629",
+    "type": "aspect",
+    "slug": null,
+    "headline": "# Procedure Trainer — Caveman",
+    "tags": [
+      "procedure-trainer",
+      "caveman",
+      "aspect",
+      "testing",
+      "validation",
+      "haiku",
+      "training"
+    ],
+    "source": "caveman conversion of ~/.claude/agents/procedure-trainer.md on 2026-04-16",
+    "confidence": 1.0,
+    "byte_size": 5770
+  }
+]

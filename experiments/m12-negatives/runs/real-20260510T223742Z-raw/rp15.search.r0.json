@@ -1,0 +1,160 @@
+[
+  {
+    "id": "019de175-7c8a-7892-a42b-b6a2eb0fd3fb",
+    "type": "aspect",
+    "slug": "simaris",
+    "headline": "# Simaris",
+    "tags": [
+      "simaris",
+      "knowledge",
+      "archivist",
+      "aspect",
+      "system-prompt",
+      "sanctuary"
+    ],
+    "source": "user request 2026-04-30",
+    "confidence": 1.0,
+    "byte_size": 4004
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-cac21282a1ab",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Phase 1 — Test Generation",
+    "tags": [
+      "skill-trainer",
+      "phase-1",
+      "test-generation"
+    ],
+    "source": "skill:skill-trainer",
+    "confidence": 1.0,
+    "byte_size": 577
+  },
+  {
+    "id": "019de4db-0865-7b53-9a87-f9631247872b",
+    "type": "idea",
+    "slug": null,
+    "headline": "# Over-coverage — `cargo build --release` in S07 test #1 is ceremony, not signal",
+    "tags": [
+      "banshee",
+      "devil",
+      "gate-5",
+      "test-review",
+      "over-coverage",
+      "ceremony"
+    ],
+    "source": "banshee devil-test 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1045
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-c9e5a3d251b9",
+    "type": "fact",
+    "slug": null,
+    "headline": "The procedure-creator procedure creates new procedures as simaris knowledge units (type: procedure). Procedures teach Cl...",
+    "tags": [
+      "skill-creator",
+      "swe-team",
+      "skills"
+    ],
+    "source": "cli",
+    "confidence": 1.0,
+    "byte_size": 2523
+  },
+  {
+    "id": "019de3ac-e508-78c0-b9c2-b93fef0f0b30",
+    "type": "aspect",
+    "slug": "lotus-chief-of-staff",
+    "headline": "# Chief of Staff",
+    "tags": [
+      "lotus",
+      "chief-of-staff",
+      "routing",
+      "intake"
+    ],
+    "source": "lotus org build 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1432
+  },
+  {
+    "id": "019da5d4-f885-7b33-ae3a-3077ab381967",
+    "type": "idea",
+    "slug": null,
+    "headline": "Self-* assistant loop: observe (hooks) → store (simaris) → reflect (dream) → mutate (?). Current stack = layers 1-3. Gap...",
+    "tags": [
+      "lotus",
+      "self-evolving",
+      "mutate",
+      "architecture",
+      "hooks",
+      "simaris",
+      "dream"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 312
+  },
+  {
+    "id": "019dee54-1745-7d73-ad8a-de597a0a9028",
+    "type": "fact",
+    "slug": "simaris-m3-held-out-methodology-2026-05-03",
+    "headline": "# memory-architect M3.0 methodology note (2026-05-03)",
+    "tags": [
+      "simaris",
+      "knowledge-program",
+      "m3",
+      "held-out",
+      "methodology",
+      "memory-architect",
+      "draft",
+      "flow"
+    ],
+    "source": "memory-architect M3.0 dispatch 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 5554
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-c9f1adad05e8",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Activation protocol",
+    "tags": [
+      "skill-creator",
+      "procedure",
+      "swe-team"
+    ],
+    "source": "skill:skill-creator",
+    "confidence": 1.0,
+    "byte_size": 3052
+  },
+  {
+    "id": "019dee40-58ea-7020-b683-ff31d14052ad",
+    "type": "fact",
+    "slug": "simaris-m2-survey-mem0-2026-05-03",
+    "headline": "# survey — Mem0 (M2)",
+    "tags": [
+      "m2",
+      "memory-architect",
+      "survey",
+      "mem0"
+    ],
+    "source": "M2 survey 2026-05-03 — mem0.ai docs, github.com/mem0ai/mem0, mem0 paper arxiv 2504.19413",
+    "confidence": 1.0,
+    "byte_size": 2424
+  },
+  {
+    "id": "019de3ad-0bcc-71a1-bc32-4a4fe3fd130c",
+    "type": "aspect",
+    "slug": "devil",
+    "headline": "# Devil",
+    "tags": [
+      "lotus",
+      "devil",
+      "red-team",
+      "critic"
+    ],
+    "source": "lotus org build 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1143
+  }
+]

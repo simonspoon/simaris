@@ -1,0 +1,151 @@
+[
+  {
+    "id": "019dbf41-c4c1-71f2-9ca6-47df349fa973",
+    "type": "principle",
+    "slug": null,
+    "headline": "Task revision: explicit change note + diff proposal + reason. Never invent scope shift. Enforce decision trail.",
+    "tags": [
+      "task",
+      "revision",
+      "scope",
+      "decision-trail"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 111
+  },
+  {
+    "id": "019dbff0-fcc3-7a70-b3ba-55485862f1f3",
+    "type": "principle",
+    "slug": null,
+    "headline": "Task revision: explicit change note + diff proposal + reason. Never invent scope shift. Enforce decision trail.",
+    "tags": [
+      "task-revision",
+      "scope",
+      "decision-trail",
+      "workflow"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 111
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-c9ba9bb858b3",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Refactoring workflow",
+    "tags": [
+      "simplify",
+      "refactoring",
+      "workflow"
+    ],
+    "source": "skill:simplify",
+    "confidence": 1.0,
+    "byte_size": 2570
+  },
+  {
+    "id": "019d708d-c95f-7c41-b0f6-5f7c09e96332",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Workflow steps:",
+    "tags": [
+      "procedure",
+      "documentation",
+      "update",
+      "workflow"
+    ],
+    "source": "skill:update-docs",
+    "confidence": 1.0,
+    "byte_size": 2996
+  },
+  {
+    "id": "019dcb8d-57e0-78a2-8261-ca7d99a80217",
+    "type": "principle",
+    "slug": null,
+    "headline": "Revise task scope: explicit change note + diff proposal + reason. Never invent scope shift. Enforce decision trail.",
+    "tags": [
+      "scope",
+      "task",
+      "decision-trail",
+      "workflow"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 115
+  },
+  {
+    "id": "019dbcb0-8576-7d02-be7a-80af443ad47d",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Release doc scope: enumerate commits since last tag, classify type (feat/fix/scaffold/chore) + user-facing flag. Update ...",
+    "tags": [
+      "release",
+      "docs",
+      "changelog",
+      "procedure"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 265
+  },
+  {
+    "id": "019dbd51-a0eb-76c0-b34d-ef02ceed87a8",
+    "type": "procedure",
+    "slug": null,
+    "headline": "UI state verification checklist:",
+    "tags": [
+      "ui",
+      "testing",
+      "checklist",
+      "collapse",
+      "persistence"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 4381
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-c9054f8c4c87",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Setup-docs skill",
+    "tags": [
+      "documentation",
+      "setup-docs",
+      "skills",
+      "progressive-disclosure"
+    ],
+    "source": "skill:setup-docs",
+    "confidence": 1.0,
+    "byte_size": 4389
+  },
+  {
+    "id": "019d708d-c95f-7c41-b0f6-5f95e68da860",
+    "type": "principle",
+    "slug": null,
+    "headline": "README.md is mandatory — always read it. If no changes are needed, say so explicitly. Never silently skip it.",
+    "tags": [
+      "principle",
+      "readme",
+      "documentation"
+    ],
+    "source": "skill:update-docs",
+    "confidence": 1.0,
+    "byte_size": 111
+  },
+  {
+    "id": "019dbdd6-088e-7e01-9b14-00010048b42a",
+    "type": "principle",
+    "slug": null,
+    "headline": "Task revision require explicit change note: diff proposal + reason. Never invent scope shift. Enforce decision trail.",
+    "tags": [
+      "task",
+      "revision",
+      "scope",
+      "decision-trail"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 117
+  }
+]

@@ -1,0 +1,157 @@
+[
+  {
+    "id": "019dca84-8da1-7d62-b7f6-1b488b0af2b1",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Claude return 'Prompt is too long' → system prompt exceed model context window. Diagnose with /context. Haiku 4.5 limit ...",
+    "tags": [
+      "context-overflow",
+      "haiku",
+      "system-prompt",
+      "gotcha",
+      "diagnostic"
+    ],
+    "source": "session-e7768756-7c3d-4bc2-ac87-d0c94b77f7ab",
+    "confidence": 1.0,
+    "byte_size": 189
+  },
+  {
+    "id": "019d8c67-e8e7-7362-a4e3-b8a46b68ae7f",
+    "type": "fact",
+    "slug": null,
+    "headline": "Claude CLI / agent definition valid model options: 'claude-opus-4-7[1m]', 'sonnet', 'haiku'. Opus-4-7 replaced opus-4-6 ...",
+    "tags": [
+      "claude-cli",
+      "model",
+      "agent-definition"
+    ],
+    "source": "cli",
+    "confidence": 1.0,
+    "byte_size": 148
+  },
+  {
+    "id": "019d73a1-b4aa-7583-9f63-0a53f70fe589",
+    "type": "idea",
+    "slug": null,
+    "headline": "New knowledge type 'aspect': Captures disposition (how you think), priorities (what you weight), boundaries (where you s...",
+    "tags": [
+      "aspect",
+      "knowledge-type",
+      "naming",
+      "design"
+    ],
+    "source": "brainstorm session 2026-04-09",
+    "confidence": 1.0,
+    "byte_size": 674
+  },
+  {
+    "id": "019dbb8f-ce2d-7a30-ad15-64bd3a1d5820",
+    "type": "aspect",
+    "slug": "trainer-report",
+    "headline": "# Procedure Trainer — training report format (test plan, MANDATORY)",
+    "tags": [
+      "caveman",
+      "procedure-trainer",
+      "aspect-v2",
+      "trainer",
+      "report"
+    ],
+    "source": "split from monolith 019d97d0-fdc7-7380-b88f-625ca7478629 (task knon)",
+    "confidence": 1.0,
+    "byte_size": 1357
+  },
+  {
+    "id": "019dbb8f-cdf8-7d23-bd0c-f981f2aecb83",
+    "type": "aspect",
+    "slug": "trainer-haiku",
+    "headline": "# Procedure Trainer — Haiku dispatch (permission approvals)",
+    "tags": [
+      "caveman",
+      "procedure-trainer",
+      "aspect-v2",
+      "trainer",
+      "haiku"
+    ],
+    "source": "split from monolith 019d97d0-fdc7-7380-b88f-625ca7478629 (task knon)",
+    "confidence": 1.0,
+    "byte_size": 523
+  },
+  {
+    "id": "019d86b6-be8e-7342-a767-9a515261bc5a",
+    "type": "fact",
+    "slug": null,
+    "headline": "Correct Haiku model ID is 'claude-3-5-haiku-20241022', not 'claude-haiku-3-5-20241022'. The inverted naming causes 'mode...",
+    "tags": [
+      "claude",
+      "haiku",
+      "model-id",
+      "agents"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 164
+  },
+  {
+    "id": "019dbb8f-cd5c-7c50-8377-48151226590b",
+    "type": "aspect",
+    "slug": "trainer-role",
+    "headline": "# Procedure Trainer — role + tools + personality",
+    "tags": [
+      "caveman",
+      "procedure-trainer",
+      "aspect-v2",
+      "trainer",
+      "role"
+    ],
+    "source": "split from monolith 019d97d0-fdc7-7380-b88f-625ca7478629 (task knon)",
+    "confidence": 1.0,
+    "byte_size": 5189
+  },
+  {
+    "id": "019de4a6-5075-7b10-a568-750bc085aef3",
+    "type": "idea",
+    "slug": null,
+    "headline": "# Three challenge questions for Lotus — Banshee gate-0 assumptions",
+    "tags": [
+      "banshee",
+      "research",
+      "challenge",
+      "lotus",
+      "gate-0"
+    ],
+    "source": "banshee research 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 2273
+  },
+  {
+    "id": "019dbb8f-cd90-7ef1-8e28-293a228b9b5c",
+    "type": "aspect",
+    "slug": "trainer-phases",
+    "headline": "# Procedure Trainer — phase discipline (training loop)",
+    "tags": [
+      "caveman",
+      "procedure-trainer",
+      "aspect-v2",
+      "trainer",
+      "phases"
+    ],
+    "source": "split from monolith 019d97d0-fdc7-7380-b88f-625ca7478629 (task knon)",
+    "confidence": 1.0,
+    "byte_size": 6419
+  },
+  {
+    "id": "019de4a9-ce27-7d33-9bc7-025d388754ee",
+    "type": "idea",
+    "slug": null,
+    "headline": "# Banshee unstated assumptions — devil gate-2.5",
+    "tags": [
+      "banshee",
+      "devil",
+      "gate-2.5",
+      "assumptions"
+    ],
+    "source": "banshee devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1626
+  }
+]

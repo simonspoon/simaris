@@ -1,0 +1,158 @@
+[
+  {
+    "id": "019dea47-fb4f-76d2-8aa1-48434b1cfa07",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Worker stall detect + escalation ladder (banshee orchestrator pattern).",
+    "tags": [
+      "orchestrator",
+      "worker",
+      "stall",
+      "banshee",
+      "dispatch"
+    ],
+    "source": "session-e9401a2a-633d-4108-b9e7-2dd172bb8ea8",
+    "confidence": 1.0,
+    "byte_size": 718
+  },
+  {
+    "id": "019df4d8-d40e-75b0-aa2f-a9cca74882bd",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Harness blocks sleep N followed by another command in single Bash call. Error: Blocked: sleep N followed by <cmd>. Use M...",
+    "tags": [
+      "harness",
+      "bash",
+      "sleep",
+      "background-task",
+      "gotcha"
+    ],
+    "source": "session-4d2cf75d",
+    "confidence": 1.0,
+    "byte_size": 198
+  },
+  {
+    "id": "019de3c9-21f7-7052-a087-9cbae1857553",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Test strategy: wfql — launchagent reply-slug posting",
+    "tags": [
+      "nova",
+      "mvp",
+      "test-strategy",
+      "wfql"
+    ],
+    "source": "test-engineer 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 5766
+  },
+  {
+    "id": "019dbbab-1f7e-72a3-8f1d-f022d3588b0a",
+    "type": "procedure",
+    "slug": "cavespeak-measure",
+    "headline": "# Cavespeak step 6 — measure",
+    "tags": [
+      "cavespeak",
+      "split",
+      "lod",
+      "compression"
+    ],
+    "source": "split from 019d97bc-09bc-7771-b38c-9184feb5b1f1 per split-ruleset A+D",
+    "confidence": 1.0,
+    "byte_size": 2582
+  },
+  {
+    "id": "019de555-78f3-7700-b696-ee44aef7dc20",
+    "type": "aspect",
+    "slug": "vox-bridge-test-fixtures",
+    "headline": "# Test Fixture Catalog — vox-bridge-mvp",
+    "tags": [
+      "vox",
+      "telegram-bridge",
+      "test-strategy",
+      "fixtures"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 1936
+  },
+  {
+    "id": "019dbfeb-3955-7362-8f23-4e90992942d6",
+    "type": "principle",
+    "slug": null,
+    "headline": "Pull knowledge batch via aggregate emit, not 1:1 push. 100+ items: batch. Saves tokens, stabilizes cache, deepens synthe...",
+    "tags": [
+      "emit",
+      "batch",
+      "knowledge-retrieval",
+      "performance"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 124
+  },
+  {
+    "id": "019de44b-7bdf-70e1-92f1-9a94a2f718e1",
+    "type": "aspect",
+    "slug": null,
+    "headline": "# Orchestrator (caveman v5 — launchagent dispatch, supersedes v4 2026-04-27)",
+    "tags": [
+      "orchestrator",
+      "caveman",
+      "v5",
+      "launchagent-dispatch",
+      "supersedes-v4"
+    ],
+    "source": "lotus-pivot 2026-05-01 — pm-subagent-cmux.sh rot",
+    "confidence": 1.0,
+    "byte_size": 5892
+  },
+  {
+    "id": "019dbcb4-ff9d-7d61-8fc1-21643beacc39",
+    "type": "fact",
+    "slug": null,
+    "headline": "SQLite scales to ~100 concurrent runs. Above that, need daemon + job queue.",
+    "tags": [
+      "sqlite",
+      "scaling",
+      "concurrency",
+      "architecture"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 75
+  },
+  {
+    "id": "019dee54-1745-7d73-ad8a-de597a0a9028",
+    "type": "fact",
+    "slug": "simaris-m3-held-out-methodology-2026-05-03",
+    "headline": "# memory-architect M3.0 methodology note (2026-05-03)",
+    "tags": [
+      "simaris",
+      "knowledge-program",
+      "m3",
+      "held-out",
+      "methodology",
+      "memory-architect",
+      "draft",
+      "flow"
+    ],
+    "source": "memory-architect M3.0 dispatch 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 5554
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-c9a4f906a874",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Simplify Analysis Output Format",
+    "tags": [
+      "simplify",
+      "output-format",
+      "analysis"
+    ],
+    "source": "skill:simplify",
+    "confidence": 1.0,
+    "byte_size": 2500
+  }
+]

@@ -1,0 +1,140 @@
+[
+  {
+    "id": "019d786a-d0d1-7bc1-969b-6c87e2af4233",
+    "type": "fact",
+    "slug": null,
+    "headline": "# array_properties — style entity nodes by property type",
+    "tags": [
+      "schema",
+      "frontend",
+      "array-properties",
+      "entity-graph"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2575
+  },
+  {
+    "id": "019d708d-c95d-7b22-9628-dda6d01eeeef",
+    "type": "fact",
+    "slug": null,
+    "headline": "# orokin supported languages + visibility rules",
+    "tags": [
+      "helios",
+      "languages",
+      "visibility"
+    ],
+    "source": "skill:code-index",
+    "confidence": 1.0,
+    "byte_size": 2466
+  },
+  {
+    "id": "019dbb3e-778c-7bc0-849d-64d9ddc2a792",
+    "type": "procedure",
+    "slug": "orokin-pdm-list-flow",
+    "headline": "# PdM list flow",
+    "tags": [
+      "orokin",
+      "pdm"
+    ],
+    "source": "corpus-decomp yyvb pdm",
+    "confidence": 1.0,
+    "byte_size": 4554
+  },
+  {
+    "id": "019db109-9451-70a0-808b-9d54fb3888be",
+    "type": "aspect",
+    "slug": null,
+    "headline": "# Orokin PdM",
+    "tags": [
+      "orokin"
+    ],
+    "source": "orokin architecture bundle 2026-04-21",
+    "confidence": 1.0,
+    "byte_size": 15652
+  },
+  {
+    "id": "019d73ed-c9e2-7762-8a98-5e35d1ad767a",
+    "type": "fact",
+    "slug": null,
+    "headline": "# aspect type — four components",
+    "tags": [
+      "aspect",
+      "knowledge-type",
+      "schema"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2461
+  },
+  {
+    "id": "019dbb3e-7a97-7f52-9646-1e044006ac65",
+    "type": "procedure",
+    "slug": "orokin-init-interview-fields",
+    "headline": "# Orokin-init interview fields",
+    "tags": [
+      "orokin",
+      "init"
+    ],
+    "source": "corpus-decomp yyvb init",
+    "confidence": 1.0,
+    "byte_size": 3024
+  },
+  {
+    "id": "019dbb3e-77c4-75f0-b02f-e77d158801c2",
+    "type": "procedure",
+    "slug": "orokin-pdm-modes",
+    "headline": "# PdM invocation modes",
+    "tags": [
+      "orokin",
+      "pdm"
+    ],
+    "source": "corpus-decomp yyvb pdm",
+    "confidence": 1.0,
+    "byte_size": 4495
+  },
+  {
+    "id": "019d708d-c95f-7c41-b0f6-5e2f6c3edae1",
+    "type": "fact",
+    "slug": null,
+    "headline": "# benchmark categories + skill map",
+    "tags": [
+      "benchmark",
+      "categories",
+      "skills"
+    ],
+    "source": "skill:team-evaluator",
+    "confidence": 1.0,
+    "byte_size": 2401
+  },
+  {
+    "id": "019dabbe-54f2-72d1-8863-04d532570759",
+    "type": "fact",
+    "slug": null,
+    "headline": "# Mirage parse_faker_rules skip-unknown fallback",
+    "tags": [
+      "mirage",
+      "faker",
+      "custom-lists",
+      "parse_faker_rules",
+      "fallback",
+      "gotcha"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2575
+  },
+  {
+    "id": "019dbb3e-7b7c-7fc1-97ab-1743866e0856",
+    "type": "procedure",
+    "slug": "orokin-init-role",
+    "headline": "# Orokin-init role",
+    "tags": [
+      "orokin",
+      "init"
+    ],
+    "source": "corpus-decomp yyvb init",
+    "confidence": 1.0,
+    "byte_size": 4676
+  }
+]

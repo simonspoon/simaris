@@ -1,0 +1,151 @@
+[
+  {
+    "id": "019dbb6d-d204-7dd1-b064-74f334c387ee",
+    "type": "aspect",
+    "slug": "worker-review-verify",
+    "headline": "# Worker review — live verification self (Step 3)",
+    "tags": [
+      "caveman",
+      "worker",
+      "aspect-v2",
+      "review-verify"
+    ],
+    "source": "split from monolith 019da7a6 (task psgb)",
+    "confidence": 1.0,
+    "byte_size": 4298
+  },
+  {
+    "id": "019de541-56c2-7d01-8c7a-8109703cb868",
+    "type": "fact",
+    "slug": null,
+    "headline": "Worker report: kqrl done. IDLE_DISCONNECT_SECS=90, tokio::time::timeout on rx.recv() in run_sse_forwarder. Configurable ...",
+    "tags": [
+      "banshee",
+      "worker-report",
+      "task:kqrl"
+    ],
+    "source": "banshee orchestrator 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 184
+  },
+  {
+    "id": "019de545-7a8b-7683-b7e2-8d7338b2a047",
+    "type": "fact",
+    "slug": null,
+    "headline": "Worker report: qozz done. live-indicator done-class wired on result event. Auto-follow already present from lfqa. 56 pas...",
+    "tags": [
+      "banshee",
+      "worker-report",
+      "task:qozz"
+    ],
+    "source": "banshee orchestrator 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 135
+  },
+  {
+    "id": "019d708d-c95d-7b22-9628-e16d3c93e58d",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Guard exploration",
+    "tags": [
+      "qorvex",
+      "safety",
+      "exploration",
+      "ios"
+    ],
+    "source": "skill:qorvex-app-explorer",
+    "confidence": 1.0,
+    "byte_size": 2349
+  },
+  {
+    "id": "019d73eb-7055-70e1-8538-00cd520f528c",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Store agent knowledge in simaris",
+    "tags": [
+      "simaris",
+      "agents",
+      "knowledge-management",
+      "configuration"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2404
+  },
+  {
+    "id": "019de533-1cd9-7cf2-a8b3-485b6f2d68b6",
+    "type": "fact",
+    "slug": null,
+    "headline": "Worker report: rrpa done. api_stream_handler: subscribe to broadcast, SSE with ULID id: fields, KeepAlive 60s ping, clos...",
+    "tags": [
+      "banshee",
+      "worker-report",
+      "task:rrpa"
+    ],
+    "source": "banshee orchestrator 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 190
+  },
+  {
+    "id": "019d97d0-4936-7061-85c4-9127f6c52d9b",
+    "type": "aspect",
+    "slug": null,
+    "headline": "# Verifier — Caveman",
+    "tags": [
+      "verifier",
+      "caveman",
+      "aspect",
+      "qa",
+      "verification",
+      "khora",
+      "loki",
+      "qorvex"
+    ],
+    "source": "caveman conversion of ~/.claude/agents/verifier-agent.md on 2026-04-16",
+    "confidence": 1.0,
+    "byte_size": 11637
+  },
+  {
+    "id": "019dbd4a-0b58-7c61-87d0-12de81d434b6",
+    "type": "principle",
+    "slug": null,
+    "headline": "Stub old behavior path. Keep disabled. Instant rollback guard. Prevents regression if new approach fails.",
+    "tags": [
+      "rollback",
+      "migration",
+      "safety",
+      "refactoring"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 105
+  },
+  {
+    "id": "019dbc9c-1e4a-75b2-b003-5fc19d855466",
+    "type": "principle",
+    "slug": null,
+    "headline": "Full lifecycle inline (research→implement→verify→commit) avoids context loss at hand-off boundaries between agents.",
+    "tags": [
+      "agents",
+      "lifecycle",
+      "context",
+      "hand-off"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 121
+  },
+  {
+    "id": "019d74ee-9c4d-7060-a881-66fed419740a",
+    "type": "principle",
+    "slug": null,
+    "headline": "When a suda/simaris memory claims something doesn't work (especially platform-level limitations), verify by actually tes...",
+    "tags": [
+      "verification",
+      "knowledge-hygiene"
+    ],
+    "source": "migrated from suda",
+    "confidence": 1.0,
+    "byte_size": 2322
+  }
+]

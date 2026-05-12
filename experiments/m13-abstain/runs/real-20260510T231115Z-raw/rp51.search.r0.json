@@ -1,0 +1,158 @@
+[
+  {
+    "id": "019de4f8-7518-75b1-8042-ecb745f8aa80",
+    "type": "fact",
+    "slug": null,
+    "headline": "Worker report: coia done. GET /api/agents handler added, re-scans watch_dir, returns sorted JSON. 4 new API unit tests +...",
+    "tags": [
+      "banshee",
+      "worker-report",
+      "task:coia"
+    ],
+    "source": "banshee orchestrator 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 219
+  },
+  {
+    "id": "019dbcd2-399f-7c00-ad6d-8f585c0ddb95",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Task workflow stages",
+    "tags": [
+      "procedure",
+      "stage",
+      "task",
+      "workflow"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2477
+  },
+  {
+    "id": "019dbcde-1716-7e51-a9c5-88b0c093b6a1",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Harness backgrounds foreground Bash call without signal. Recovery: wait TaskOutput notification, use ScheduleWakeup fall...",
+    "tags": [
+      "harness",
+      "bash",
+      "background",
+      "notification",
+      "recovery"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 185
+  },
+  {
+    "id": "019d708d-c95c-7de2-a39c-4618f1973eae",
+    "type": "principle",
+    "slug": null,
+    "headline": "Stop and consult user when: agent purpose is ambiguous or overlaps an existing agent; unclear which tools or model to us...",
+    "tags": [
+      "agent-composer",
+      "escalation",
+      "principle",
+      "decision"
+    ],
+    "source": "skill:agent-composer",
+    "confidence": 1.0,
+    "byte_size": 2329
+  },
+  {
+    "id": "019de3be-107d-78d3-8aff-2ae399ee06d5",
+    "type": "lesson",
+    "slug": null,
+    "headline": "MISREAD USER-NEED [attacks 019de3ba-7b82-7240-8e7f-2a8a87a1ad11 hyp-2]: BranchThread is framed as satisfying a user need...",
+    "tags": [
+      "nova",
+      "devil",
+      "critique",
+      "user-need-provenance"
+    ],
+    "source": "devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 469
+  },
+  {
+    "id": "019dbb6d-d246-7861-a558-79cce6d8972b",
+    "type": "aspect",
+    "slug": "worker-subordinate-mode",
+    "headline": "# Worker subordinate mode",
+    "tags": [
+      "caveman",
+      "worker",
+      "aspect-v2",
+      "subordinate-mode"
+    ],
+    "source": "split from monolith 019da7a6 (task psgb)",
+    "confidence": 1.0,
+    "byte_size": 4849
+  },
+  {
+    "id": "019de409-47fa-7a61-8ee9-a67fa1292d26",
+    "type": "fact",
+    "slug": null,
+    "headline": "scope: lotus tooling survey 2026-05-01",
+    "tags": [
+      "lotus",
+      "tooling-survey",
+      "2026-05-01",
+      "discovery",
+      "simaris-observer",
+      "passive-extraction",
+      "surprise"
+    ],
+    "source": "research-lead",
+    "confidence": 1.0,
+    "byte_size": 961
+  },
+  {
+    "id": "019d708d-c95f-7c41-b0f6-5fca79749a30",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Capture learned knowledge",
+    "tags": [
+      "knowledge-capture",
+      "documentation",
+      "gotcha"
+    ],
+    "source": "skill:update-docs",
+    "confidence": 1.0,
+    "byte_size": 501
+  },
+  {
+    "id": "019d708d-c95f-7c41-b0f6-5fec67f15907",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Platform detection",
+    "tags": [
+      "detection",
+      "platform",
+      "ios",
+      "desktop",
+      "web"
+    ],
+    "source": "skill:verification-orchestrator",
+    "confidence": 1.0,
+    "byte_size": 2731
+  },
+  {
+    "id": "019d97d0-fdc7-7380-b88f-625ca7478629",
+    "type": "aspect",
+    "slug": null,
+    "headline": "# Procedure Trainer — Caveman",
+    "tags": [
+      "procedure-trainer",
+      "caveman",
+      "aspect",
+      "testing",
+      "validation",
+      "haiku",
+      "training"
+    ],
+    "source": "caveman conversion of ~/.claude/agents/procedure-trainer.md on 2026-04-16",
+    "confidence": 1.0,
+    "byte_size": 5770
+  }
+]

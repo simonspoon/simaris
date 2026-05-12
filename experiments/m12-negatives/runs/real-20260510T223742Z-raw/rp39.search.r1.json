@@ -1,0 +1,157 @@
+[
+  {
+    "id": "019dbdc3-575f-7ae2-a0c8-a25bea52c25d",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Replace system-prompt via pm-subagent-cmux.sh + claude-aspect.sh pipeline: simaris show → jq → --append-system-prompt. N...",
+    "tags": [
+      "system-prompt",
+      "subagent",
+      "pipeline",
+      "ordis"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 158
+  },
+  {
+    "id": "019d73a1-d457-71f2-b2a7-c258afeb57bf",
+    "type": "idea",
+    "slug": null,
+    "headline": "The 'simaris prime' command — router for aspect-based agents. Takes a task description, returns a composed mindset promp...",
+    "tags": [
+      "prime",
+      "router",
+      "commands",
+      "aspect",
+      "composition"
+    ],
+    "source": "brainstorm session 2026-04-09",
+    "confidence": 1.0,
+    "byte_size": 581
+  },
+  {
+    "id": "019dd10c-ce56-7880-a501-59fd72cb2d47",
+    "type": "fact",
+    "slug": null,
+    "headline": "Store LLM system prompts as simaris units. Pull into shell scripts via: simaris show <slug> --raw | tail -n +2. tail str...",
+    "tags": [
+      "simaris",
+      "orbiter",
+      "prompt-design",
+      "slug",
+      "shell-pattern"
+    ],
+    "source": "session-cf470dbd-68de-4e33-80f6-2e64f4811350",
+    "confidence": 1.0,
+    "byte_size": 208
+  },
+  {
+    "id": "019da171-a789-7071-be97-65caf9119bf8",
+    "type": "principle",
+    "slug": null,
+    "headline": "claude -p --system-prompt replace default prompt entirely. launchd subprocess: hooks no fire, CLAUDE.md no load, user pr...",
+    "tags": [
+      "claude-p",
+      "system-prompt",
+      "launchd",
+      "hooks",
+      "claude-md",
+      "automation"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2306
+  },
+  {
+    "id": "019dbd48-ef53-7412-8fe8-b395f7e3bbce",
+    "type": "principle",
+    "slug": null,
+    "headline": "External agent spawns: use --append-system-prompt flag. This is the idiomatic pattern.",
+    "tags": [
+      "claude",
+      "agents",
+      "spawning",
+      "cli"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 86
+  },
+  {
+    "id": "019d81d3-260d-7661-8352-16e9ef25339a",
+    "type": "fact",
+    "slug": null,
+    "headline": "# simaris prime command",
+    "tags": [
+      "simaris",
+      "prime",
+      "shipped",
+      "commands"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 4435
+  },
+  {
+    "id": "019de1d7-01c9-7c22-9001-620ce9686319",
+    "type": "fact",
+    "slug": null,
+    "headline": "cya function auto-loads aspect parent + part_of children at startup. Pattern: (1) simaris show \"$name\" --json → get link...",
+    "tags": [
+      "cya",
+      "aspect",
+      "system-prompt",
+      "lotus",
+      "simaris"
+    ],
+    "source": "session-a3019a40",
+    "confidence": 1.0,
+    "byte_size": 482
+  },
+  {
+    "id": "019dbc94-ce48-7123-ada3-b99003297bca",
+    "type": "lesson",
+    "slug": null,
+    "headline": "System prompt replacement per-hook creates a new cache prefix. Each replacement invalidates the prior cached prefix, bre...",
+    "tags": [
+      "hooks",
+      "system-prompt",
+      "caching",
+      "prompt-cache"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 158
+  },
+  {
+    "id": "019d708d-c960-7141-b14f-611160257a2c",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Three enforcement layers in order: 1) Directive procedure descriptions surfaced via simaris hook (procedure discovery on...",
+    "tags": [
+      "swe-team",
+      "skill-enforcement",
+      "hooks",
+      "compliance"
+    ],
+    "source": "suda:skill-enforcement-system",
+    "confidence": 1.0,
+    "byte_size": 2555
+  },
+  {
+    "id": "019dbc94-ce48-7123-ada3-b9805e67a298",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Injecting into the system prompt via hooks has two costs: it breaks prompt-cache reuse and removes the on-demand loading...",
+    "tags": [
+      "hooks",
+      "system-prompt",
+      "caching",
+      "skills"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 161
+  }
+]

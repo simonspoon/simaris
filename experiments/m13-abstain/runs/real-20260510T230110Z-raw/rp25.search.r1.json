@@ -1,0 +1,152 @@
+[
+  {
+    "id": "019dbdd9-7a86-7c11-820f-22b10d4eba25",
+    "type": "principle",
+    "slug": null,
+    "headline": "Commit when work is done. End turn only after result is emitted.",
+    "tags": [
+      "orchestrator",
+      "commit",
+      "turn",
+      "workflow"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 64
+  },
+  {
+    "id": "019d7913-eaeb-7613-93e4-3c85506c01a0",
+    "type": "procedure",
+    "slug": null,
+    "headline": "1. Send question via sendMessage",
+    "tags": [
+      "telegram",
+      "polling",
+      "async",
+      "agents"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 207
+  },
+  {
+    "id": "019dbf44-88ce-7fe0-9e2b-d1e3cd141f5d",
+    "type": "principle",
+    "slug": null,
+    "headline": "Commit when work done. End turn only after result emit.",
+    "tags": [
+      "commit",
+      "workflow",
+      "discipline"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 55
+  },
+  {
+    "id": "019dbdda-1d22-7112-9820-db7a3de95907",
+    "type": "principle",
+    "slug": null,
+    "headline": "Subprocess orchestrator turn flow: finish work sync before turn end. Commit after work complete. Turn close after final ...",
+    "tags": [
+      "orchestrator",
+      "subprocess",
+      "turn-flow",
+      "commit"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 143
+  },
+  {
+    "id": "019de3c9-21f7-7052-a087-9cbae1857553",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Test strategy: wfql — launchagent reply-slug posting",
+    "tags": [
+      "nova",
+      "mvp",
+      "test-strategy",
+      "wfql"
+    ],
+    "source": "test-engineer 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 5766
+  },
+  {
+    "id": "019dbd7e-bc53-74b0-ba1f-93fe03a9d3f9",
+    "type": "principle",
+    "slug": null,
+    "headline": "Subprocess orchestrator turn flow: finish all work sync before turn end. Commit only after work complete. Turn end after...",
+    "tags": [
+      "orchestrator",
+      "subprocess",
+      "turn-flow",
+      "commit"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 150
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-cadaf6c5c110",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Phase 2 — Self-Test Execution",
+    "tags": [
+      "skill-trainer",
+      "phase-2",
+      "self-test"
+    ],
+    "source": "skill:skill-trainer",
+    "confidence": 1.0,
+    "byte_size": 2542
+  },
+  {
+    "id": "019dbb77-1057-7183-a4bf-8fba5abad18b",
+    "type": "aspect",
+    "slug": "pdm-turn1",
+    "headline": "# PdM Turn 1 — discovery (silent)",
+    "tags": [
+      "caveman",
+      "pdm",
+      "aspect-v2",
+      "turn1",
+      "discovery"
+    ],
+    "source": "split from PdM monolith 019d91cf (task rfnw)",
+    "confidence": 1.0,
+    "byte_size": 149
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-cb61fc42cfd2",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Preference Capture Protocol",
+    "tags": [
+      "feedback",
+      "preference",
+      "procedure",
+      "suda"
+    ],
+    "source": "skill:software-engineering",
+    "confidence": 1.0,
+    "byte_size": 2830
+  },
+  {
+    "id": "019dedde-b9f3-7c91-bf82-8833b29ea34a",
+    "type": "fact",
+    "slug": "lotus-reply-simaris-charter-2026-05-03",
+    "headline": "# Lotus reply to simaris program charter (2026-05-03)",
+    "tags": [
+      "lotus",
+      "simaris",
+      "reply",
+      "charter",
+      "proceed"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1426
+  }
+]

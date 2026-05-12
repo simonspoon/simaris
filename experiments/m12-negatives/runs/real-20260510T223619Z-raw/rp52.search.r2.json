@@ -1,0 +1,159 @@
+[
+  {
+    "id": "019d708d-c960-7141-b14f-6229f6824dd6",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Review the limbo backlog with the user when deciding what to work on next.",
+    "tags": [
+      "limbo",
+      "backlog",
+      "planning"
+    ],
+    "source": "suda:backlog-capture",
+    "confidence": 1.0,
+    "byte_size": 159
+  },
+  {
+    "id": "019df404-d971-75c2-8daf-b39ecc2df11a",
+    "type": "principle",
+    "slug": "lotus-substrate-delegation-2026-05-04",
+    "headline": "# User authority delegation — substrate program (2026-05-04)",
+    "tags": [
+      "lotus",
+      "simaris",
+      "delegation",
+      "authority",
+      "knowledge-program"
+    ],
+    "source": "user delegation 2026-05-04 substrate program",
+    "confidence": 1.0,
+    "byte_size": 1492
+  },
+  {
+    "id": "019dbf3c-6cb5-7d42-a9f7-ba1788b89788",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Bundle review: split per part, check each vs acceptance criteria. Out-of-scope work spawns sibling task, not current rev...",
+    "tags": [
+      "bundles",
+      "review",
+      "scope",
+      "task-management"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 124
+  },
+  {
+    "id": "019de5b6-9fca-77c0-bb94-909a7c1fda20",
+    "type": "principle",
+    "slug": "lotus-executable-falsifiers",
+    "headline": "# Lotus principle — falsifiers must be executable",
+    "tags": [
+      "lotus",
+      "enforcement",
+      "gate-0",
+      "falsifier",
+      "reflection"
+    ],
+    "source": "lotus reflection 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 2321
+  },
+  {
+    "id": "019d9410-ecae-7fc1-8ecd-01c33532c520",
+    "type": "aspect",
+    "slug": "change-completeness",
+    "headline": "# Change Completeness Aspect",
+    "tags": [
+      "change-completeness",
+      "implementation",
+      "disposition",
+      "co-evolution"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 4614
+  },
+  {
+    "id": "019de42d-6b03-7ea0-bb3a-a0148f5dcccb",
+    "type": "principle",
+    "slug": "lotus-backlog-discipline",
+    "headline": "# Lotus backlog discipline",
+    "tags": [
+      "lotus",
+      "backlog",
+      "discipline",
+      "limbo",
+      "simaris"
+    ],
+    "source": "lotus operating model 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1520
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-cba3a357e5ec",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Status skill — force-refresh project state",
+    "tags": [
+      "status",
+      "verification",
+      "freshness",
+      "workflow"
+    ],
+    "source": "skill:status",
+    "confidence": 1.0,
+    "byte_size": 2543
+  },
+  {
+    "id": "019dedc9-1bf6-7903-8dc8-40f5da3232b2",
+    "type": "principle",
+    "slug": "lotus-priority-1",
+    "headline": "# Org priority #1 — knowledge substrate (2026-05-03)",
+    "tags": [
+      "lotus",
+      "priority",
+      "simaris",
+      "knowledge",
+      "decision"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1682
+  },
+  {
+    "id": "019dbf35-63f6-7801-8d1f-491b35101734",
+    "type": "lesson",
+    "slug": null,
+    "headline": "During spec extraction, stop and re-ask when answers are ambiguous or incomplete. Push back once; if user insists, recor...",
+    "tags": [
+      "spec",
+      "extraction",
+      "clarification"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 140
+  },
+  {
+    "id": "019df678-3245-7850-8875-c307088d56c2",
+    "type": "principle",
+    "slug": "simaris-m5-charter-note-vec-verify-deferred-2026-05-04",
+    "headline": "# Charter note — `simaris vec verify` deferred OUT OF SCOPE for M5 (2026-05-04)",
+    "tags": [
+      "simaris",
+      "m5",
+      "m5-6",
+      "charter",
+      "charter-note",
+      "vec-verify",
+      "deferred",
+      "devil-c3",
+      "knowledge-program"
+    ],
+    "source": "memory-architect M5.6.1 dispatch — devil C3 deferral",
+    "confidence": 1.0,
+    "byte_size": 3654
+  }
+]

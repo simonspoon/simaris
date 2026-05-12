@@ -1,0 +1,156 @@
+[
+  {
+    "id": "019d73a1-b4aa-7583-9f63-0a53f70fe589",
+    "type": "idea",
+    "slug": null,
+    "headline": "New knowledge type 'aspect': Captures disposition (how you think), priorities (what you weight), boundaries (where you s...",
+    "tags": [
+      "aspect",
+      "knowledge-type",
+      "naming",
+      "design"
+    ],
+    "source": "brainstorm session 2026-04-09",
+    "confidence": 1.0,
+    "byte_size": 674
+  },
+  {
+    "id": "019db0de-4e5a-7412-aa98-0d92e5ddd849",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Feature addition doctrine",
+    "tags": [
+      "feature-doctrine",
+      "contract",
+      "architecture",
+      "skin",
+      "core"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2228
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-ca35aef57922",
+    "type": "principle",
+    "slug": null,
+    "headline": "Anti-patterns to avoid:",
+    "tags": [
+      "anti-pattern",
+      "design",
+      "skill-creator"
+    ],
+    "source": "skill:skill-creator",
+    "confidence": 1.0,
+    "byte_size": 2365
+  },
+  {
+    "id": "019d91cf-b1ba-7012-8600-17ffee7bb8f2",
+    "type": "aspect",
+    "slug": "product-manager",
+    "headline": "# Product Manager",
+    "tags": [
+      "product-manager",
+      "pdm",
+      "caveman",
+      "aspect",
+      "feature",
+      "user-stories",
+      "planning"
+    ],
+    "source": "caveman conversion of PdM aspect on 2026-04-16",
+    "confidence": 1.0,
+    "byte_size": 10391
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-c9ba9bb858b3",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Refactoring workflow",
+    "tags": [
+      "simplify",
+      "refactoring",
+      "workflow"
+    ],
+    "source": "skill:simplify",
+    "confidence": 1.0,
+    "byte_size": 2570
+  },
+  {
+    "id": "019dedca-2927-7cb0-b83c-1a95685e9d81",
+    "type": "fact",
+    "slug": "simaris-briefing-2026-05-03",
+    "headline": "# Simaris briefing — Knowledge Program kickoff (2026-05-03)",
+    "tags": [
+      "simaris",
+      "briefing",
+      "kickoff",
+      "knowledge-program"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 2053
+  },
+  {
+    "id": "019dbcb1-69f1-7b42-86e9-b4c77e80cf3a",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Mirage recipe reset",
+    "tags": [
+      "mirage",
+      "recipe",
+      "reset",
+      "admin"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2362
+  },
+  {
+    "id": "019de4a4-a908-7001-82d3-86d96bf1ef24",
+    "type": "fact",
+    "slug": null,
+    "headline": "# Overlap check — does anything in the suite already render claude stream-json in a browser?",
+    "tags": [
+      "banshee",
+      "research",
+      "overlap",
+      "extend-vs-new"
+    ],
+    "source": "banshee research 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1586
+  },
+  {
+    "id": "019d73f0-61ef-7621-9597-306341e91d72",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Aspect evolution loop",
+    "tags": [
+      "aspect",
+      "evolution",
+      "marks",
+      "scan",
+      "supersedes"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2644
+  },
+  {
+    "id": "019dedde-b9f3-7c91-bf82-8833b29ea34a",
+    "type": "fact",
+    "slug": "lotus-reply-simaris-charter-2026-05-03",
+    "headline": "# Lotus reply to simaris program charter (2026-05-03)",
+    "tags": [
+      "lotus",
+      "simaris",
+      "reply",
+      "charter",
+      "proceed"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1426
+  }
+]

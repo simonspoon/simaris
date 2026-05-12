@@ -1,0 +1,158 @@
+[
+  {
+    "id": "019dbd71-d7ba-7481-8dac-49b02477eabf",
+    "type": "fact",
+    "slug": null,
+    "headline": "Agent discovers aspects via symlink. Slash command syntax requires separate .claude/commands/ harness config entry — sym...",
+    "tags": [
+      "simaris",
+      "aspects",
+      "slash-commands",
+      "harness"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 144
+  },
+  {
+    "id": "019dbb3e-7c94-7f30-a06c-c739d1a9d4eb",
+    "type": "procedure",
+    "slug": "orokin-proto-doctrine",
+    "headline": "# Orokin protocol §0 — doctrine",
+    "tags": [
+      "orokin",
+      "protocol"
+    ],
+    "source": "corpus-decomp yyvb proto",
+    "confidence": 1.0,
+    "byte_size": 5009
+  },
+  {
+    "id": "019db878-2fa3-72f2-8bc4-8ca534d56af3",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Sub-agent simaris calibration harness",
+    "tags": [
+      "simaris",
+      "calibration",
+      "harness",
+      "subagent",
+      "trace",
+      "jsonl",
+      "metrics",
+      "yyvb"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 1079
+  },
+  {
+    "id": "019dbcb6-d5dc-7ba2-aa73-0b898dee724c",
+    "type": "principle",
+    "slug": null,
+    "headline": "GUI needs dual contracts: functional (from core Command/Result) + design (wireframe/a11y). Approve functional first, the...",
+    "tags": [
+      "gui",
+      "contract",
+      "workflow",
+      "orokin"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 169
+  },
+  {
+    "id": "019d8dda-e6d7-7740-bcc1-d44b36cb1798",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Workaround — subagent nesting restriction",
+    "tags": [
+      "claude-code",
+      "subagent",
+      "nesting",
+      "workaround",
+      "headless"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 774
+  },
+  {
+    "id": "019df4d8-d40e-75b0-aa2f-a9cca74882bd",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Harness blocks sleep N followed by another command in single Bash call. Error: Blocked: sleep N followed by <cmd>. Use M...",
+    "tags": [
+      "harness",
+      "bash",
+      "sleep",
+      "background-task",
+      "gotcha"
+    ],
+    "source": "session-4d2cf75d",
+    "confidence": 1.0,
+    "byte_size": 198
+  },
+  {
+    "id": "019dbcb7-2ec1-7c43-b011-4ac422c66e99",
+    "type": "principle",
+    "slug": null,
+    "headline": "Minimal agent prompts unlock parallelism. Give each agent: contract + layer code + test harness + done-criteria. Nothing...",
+    "tags": [
+      "agents",
+      "parallelism",
+      "prompting",
+      "orchestration"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 166
+  },
+  {
+    "id": "019dbcc0-3ba3-7421-87b2-c6909ed0fdd0",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Simaris aspects need .claude/commands/ entries for slash syntax. Discoverable via Agent tool through symlink, but slash ...",
+    "tags": [
+      "simaris",
+      "aspects",
+      "slash-commands",
+      "claude"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 161
+  },
+  {
+    "id": "019da6a8-6d0f-79e1-b185-dca586586e2c",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# lotus self-* loop — hook dispatcher pattern",
+    "tags": [
+      "lotus",
+      "hook-dispatcher",
+      "self-loop",
+      "pattern"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 5933
+  },
+  {
+    "id": "019de515-be30-7943-bb53-cf6ed3c56af9",
+    "type": "fact",
+    "slug": null,
+    "headline": "# launchagent-tmux contract — verified from source 2026-05-01",
+    "tags": [
+      "vox",
+      "telegram-bridge",
+      "lotus",
+      "research",
+      "launchagent-tmux",
+      "contract"
+    ],
+    "source": "lotus research 2026-05-01 vox-tg-bridge",
+    "confidence": 1.0,
+    "byte_size": 1749
+  }
+]

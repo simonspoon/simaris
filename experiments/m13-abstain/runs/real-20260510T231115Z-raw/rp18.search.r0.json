@@ -1,0 +1,154 @@
+[
+  {
+    "id": "019d7730-6af0-7090-b585-ee18552a19fb",
+    "type": "lesson",
+    "slug": null,
+    "headline": "# Read spec path ops not derived state",
+    "tags": [
+      "graph",
+      "endpoints",
+      "spec",
+      "activation",
+      "visualization"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2485
+  },
+  {
+    "id": "019dbc9b-093c-7b80-b061-109f956a4a63",
+    "type": "principle",
+    "slug": null,
+    "headline": "Decide context system changes from data, not feel.",
+    "tags": [
+      "context",
+      "decision-making",
+      "data-driven"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 50
+  },
+  {
+    "id": "019d7730-f57e-7783-8b5d-95fec5f7777e",
+    "type": "fact",
+    "slug": null,
+    "headline": "reg.endpoints is only populated after configuration/activation. admin_import sets raw_spec and spec but leaves reg.endpo...",
+    "tags": [
+      "reg",
+      "endpoints",
+      "admin_import",
+      "setup"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 164
+  },
+  {
+    "id": "019d708d-c960-7141-b14f-61c2a6fe7203",
+    "type": "fact",
+    "slug": null,
+    "headline": "onData callback delivers Uint8Array, not a string. Pass to xterm via: new Uint8Array(data)",
+    "tags": [
+      "tauri-plugin-pty",
+      "xterm",
+      "data",
+      "gotcha"
+    ],
+    "source": "suda:tauri-plugin-pty-gotchas",
+    "confidence": 1.0,
+    "byte_size": 90
+  },
+  {
+    "id": "019dbd5b-c0a9-7d01-94e3-da3b56f12150",
+    "type": "fact",
+    "slug": null,
+    "headline": "Composed tables are safe from duplication during seed — DELETE semantics handle idempotency.",
+    "tags": [
+      "database",
+      "seeding",
+      "composed-tables"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 94
+  },
+  {
+    "id": "019dbcad-32d0-7b30-8b30-8195cd68d04e",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Mirage nested embed re-faking: shared_pools config gates pool lookup for embedded definitions — unconfigured defs fall t...",
+    "tags": [
+      "mirage",
+      "embedded",
+      "shared-pools",
+      "faking"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 176
+  },
+  {
+    "id": "019d7505-ff54-7140-844b-37d83df4971d",
+    "type": "principle",
+    "slug": null,
+    "headline": "Update/edit endpoints must apply the same input validation as their corresponding create endpoints. Inconsistent validat...",
+    "tags": [
+      "validation",
+      "consistency",
+      "mutation",
+      "api"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 172
+  },
+  {
+    "id": "019dbcae-303a-7e22-830c-e74517fef3a4",
+    "type": "fact",
+    "slug": null,
+    "headline": "Transitive def references create SQLite tables automatically, not just endpoint-response defs. Address accumulates seede...",
+    "tags": [
+      "sqlite",
+      "orokin",
+      "schema",
+      "seeding"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 152
+  },
+  {
+    "id": "019d92ca-7085-7cc1-b2af-100aa435de38",
+    "type": "lesson",
+    "slug": null,
+    "headline": "# Secondary-data Staleness Pattern",
+    "tags": [
+      "ordis",
+      "solidjs",
+      "signals",
+      "lazy-loading",
+      "secondary-data",
+      "staleness",
+      "createeffect"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 782
+  },
+  {
+    "id": "019dbd59-0885-78b1-bf46-3c7edd12de4f",
+    "type": "fact",
+    "slug": null,
+    "headline": "Transitive defs auto-spawn SQLite tables—not just endpoint-response defs. Address collects seed rows sans endpoint.",
+    "tags": [
+      "sqlite",
+      "transitive",
+      "schema",
+      "codegen"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 117
+  }
+]

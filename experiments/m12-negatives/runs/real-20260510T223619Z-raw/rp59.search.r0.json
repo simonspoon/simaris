@@ -1,0 +1,160 @@
+[
+  {
+    "id": "019d73ee-9966-7e90-9f87-69bcde69afb5",
+    "type": "principle",
+    "slug": null,
+    "headline": "All identity, judgment, expertise, and personality live in the knowledge store, not in bootstrap. Bootstrap is ignition,...",
+    "tags": [
+      "bootstrap",
+      "identity",
+      "knowledge-store",
+      "separation-of-concerns"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 130
+  },
+  {
+    "id": "019d7500-9fcd-7ba1-b29d-26647aa3ee2b",
+    "type": "fact",
+    "slug": null,
+    "headline": "# simaris scan categories",
+    "tags": [
+      "simaris",
+      "scan",
+      "categories",
+      "quality"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 4325
+  },
+  {
+    "id": "019dacde-7fd4-7721-ba6e-80a532c801fa",
+    "type": "fact",
+    "slug": null,
+    "headline": "# mirage kxlm scout — LEAF verdict",
+    "tags": [
+      "mirage",
+      "kxlm",
+      "composer",
+      "sqlite",
+      "nested-ref",
+      "scout"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2864
+  },
+  {
+    "id": "019de9ec-f16a-79d0-b81e-05d7217c8774",
+    "type": "lesson",
+    "slug": null,
+    "headline": "# Devil critique — two items lotus avoided naming in session-2026-05-02",
+    "tags": [
+      "lotus",
+      "devil",
+      "critique",
+      "session-2026-05-02"
+    ],
+    "source": "devil critique 2026-05-02",
+    "confidence": 1.0,
+    "byte_size": 1616
+  },
+  {
+    "id": "019da9e9-0d1f-7662-a692-922ea0644f1e",
+    "type": "fact",
+    "slug": null,
+    "headline": "# Mirage UI monolith — index.tsx",
+    "tags": [
+      "mirage",
+      "solidjs",
+      "ui",
+      "monolith",
+      "file-structure"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2443
+  },
+  {
+    "id": "019de408-8bea-7a80-8a83-34e3bf936758",
+    "type": "lesson",
+    "slug": "lotus-devil-retro-10",
+    "headline": "Gates 0–5 \"ran clean\" because Simon stayed in the loop: he prompted the reflection (issue #1 — lotus forgot), he asked f...",
+    "tags": [
+      "lotus",
+      "retro",
+      "devil",
+      "critique",
+      "worked-by-accident",
+      "autonomy-gap"
+    ],
+    "source": "devil retro challenge 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 571
+  },
+  {
+    "id": "019dbf3f-81f8-7b82-863d-ca5c1cb2d445",
+    "type": "aspect",
+    "slug": null,
+    "headline": "scope: defines applicability boundary of the fact. evidence: cites grounding for the claim. refs: external references.",
+    "tags": [
+      "fact",
+      "frontmatter",
+      "fields",
+      "simaris"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 118
+  },
+  {
+    "id": "019daabd-b542-7db2-8db2-5103dd6de1b1",
+    "type": "fact",
+    "slug": null,
+    "headline": "# Mirage CLI entry paths",
+    "tags": [
+      "mirage",
+      "cli",
+      "inspect",
+      "subcommand",
+      "architecture"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2556
+  },
+  {
+    "id": "019de9ec-dd18-76e1-a9bd-e42fd1377c3a",
+    "type": "lesson",
+    "slug": null,
+    "headline": "# Devil critique — five misreadings of lotus's session-2026-05-02 self-diagnosis",
+    "tags": [
+      "lotus",
+      "devil",
+      "critique",
+      "session-2026-05-02"
+    ],
+    "source": "devil critique 2026-05-02",
+    "confidence": 1.0,
+    "byte_size": 2678
+  },
+  {
+    "id": "019da0cc-10c1-7753-b524-2cc3757c20e3",
+    "type": "fact",
+    "slug": null,
+    "headline": "# claude-aspect.sh",
+    "tags": [
+      "claude-aspect",
+      "claudehub",
+      "aspect-dispatch",
+      "slug",
+      "system-prompt",
+      "wrapper"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 4400
+  }
+]

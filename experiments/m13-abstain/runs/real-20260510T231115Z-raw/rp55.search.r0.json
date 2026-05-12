@@ -1,0 +1,170 @@
+[
+  {
+    "id": "019dbdde-8926-7ce1-bdbb-03acd582ca33",
+    "type": "lesson",
+    "slug": null,
+    "headline": "simaris show omits inbound links — displays outbound only. Query inbound via simaris list --json | jq to filter units wh...",
+    "tags": [
+      "simaris",
+      "links",
+      "show",
+      "gotcha"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 150
+  },
+  {
+    "id": "019de408-a42d-7ba1-ad34-d228386407d8",
+    "type": "fact",
+    "slug": null,
+    "headline": "scope: lotus tooling survey 2026-05-01",
+    "tags": [
+      "lotus",
+      "tooling-survey",
+      "2026-05-01",
+      "priority-3",
+      "hooks",
+      "procedures",
+      "ranking"
+    ],
+    "source": "research-lead",
+    "confidence": 1.0,
+    "byte_size": 1045
+  },
+  {
+    "id": "019defa8-a593-7291-93ee-0a4558bd85dd",
+    "type": "aspect",
+    "slug": "simaris-m3-0b-bucket-plan-2026-05-03",
+    "headline": "# M3.0b sourcing bucket plan — query-curator step 1 (2026-05-03)",
+    "tags": [
+      "query-curator",
+      "m3",
+      "m3-0b",
+      "bucket-plan",
+      "sourcing",
+      "knowledge-program",
+      "flow"
+    ],
+    "source": "query-curator step 1 dispatch 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 13806
+  },
+  {
+    "id": "019df008-40b0-7d51-aaa5-0c8cfbfa6472",
+    "type": "aspect",
+    "slug": "simaris-m3-0b-redo-2026-05-03",
+    "headline": "# M3.0b LOCKED held-out query set — REDO DELTA (q31, q18, q41) — DRAFT (2026-05-03)",
+    "tags": [
+      "query-curator",
+      "m3",
+      "m3-0b",
+      "redo",
+      "step2b",
+      "knowledge-program"
+    ],
+    "source": "query-curator step 2b dispatch 2026-05-03 — fresh, post C2 amendment",
+    "confidence": 1.0,
+    "byte_size": 15188
+  },
+  {
+    "id": "019de4cd-645b-7a32-b59d-fc903735ce6f",
+    "type": "fact",
+    "slug": null,
+    "headline": "simaris list/search --json → flat array [{id, type, slug, headline, tags, source, confidence, byte_size}, ...]. No wrapp...",
+    "tags": [
+      "simaris",
+      "json",
+      "list",
+      "search",
+      "gotcha",
+      "jq"
+    ],
+    "source": "session-7b5b9542",
+    "confidence": 1.0,
+    "byte_size": 280
+  },
+  {
+    "id": "019deffb-a5c2-7e52-b9cb-49fd39c37576",
+    "type": "aspect",
+    "slug": "simaris-m3-0b-step2b-brief-2026-05-03",
+    "headline": "# M3.0b step 2b redo brief — query-curator dispatch (3 queries)",
+    "tags": [
+      "simaris",
+      "m3",
+      "m3-0b",
+      "step2b",
+      "redo",
+      "brief",
+      "query-curator"
+    ],
+    "source": "simaris session 2026-05-03 — step 2b redo brief authored post C2 amendment",
+    "confidence": 1.0,
+    "byte_size": 5107
+  },
+  {
+    "id": "019dab9a-796a-73b1-981a-a9a1da3da65c",
+    "type": "principle",
+    "slug": null,
+    "headline": "Mock data tool with regeneratable pools: use UUID PKs at generation time, not sequential integers. Sequential IDs restar...",
+    "tags": [
+      "mirage",
+      "mock-data",
+      "pk",
+      "uuid",
+      "regeneration",
+      "relational",
+      "sqlite"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2184
+  },
+  {
+    "id": "019def86-243e-7271-999d-417bbff69095",
+    "type": "aspect",
+    "slug": "query-curator",
+    "headline": "# query-curator",
+    "tags": [
+      "query-curator",
+      "aspect",
+      "role",
+      "knowledge-program",
+      "deputy"
+    ],
+    "source": "simaris session 2026-05-03 — M3 redo step 1, owner-scope draft (deputy ratification pending lotus + user)",
+    "confidence": 1.0,
+    "byte_size": 2079
+  },
+  {
+    "id": "019dbce4-53e3-7c61-bba1-6c88e973a0aa",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Classify inbound links before delete",
+    "tags": [
+      "delete",
+      "graph",
+      "links",
+      "simaris"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 4427
+  },
+  {
+    "id": "019da0cc-f284-7932-86f0-dd6283b61805",
+    "type": "fact",
+    "slug": null,
+    "headline": "simaris show <id> JSON nest unit key. Top-level keys: unit, links, slugs. Content at d['unit']['content'] not d['content...",
+    "tags": [
+      "simaris",
+      "json",
+      "schema",
+      "gotcha",
+      "caveman"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 195
+  }
+]

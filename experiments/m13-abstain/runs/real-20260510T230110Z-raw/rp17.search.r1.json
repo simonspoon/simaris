@@ -1,0 +1,151 @@
+[
+  {
+    "id": "019dbcb2-50ce-7791-a820-1ad02d8718a5",
+    "type": "principle",
+    "slug": null,
+    "headline": "Non-composed tables: pre-insert + seed + post-insert without delete-between = duplicate rows. Composed tables safe — DEL...",
+    "tags": [
+      "database",
+      "seeding",
+      "composed-tables",
+      "double-count"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 150
+  },
+  {
+    "id": "019dbd5f-dfd0-7bc1-ab69-4f1489880c65",
+    "type": "principle",
+    "slug": null,
+    "headline": "Tier A (default): commands-only req/resp. Tier B (growth): commands + events. Promote only when domain demands it.",
+    "tags": [
+      "cqrs",
+      "actor",
+      "architecture",
+      "tiers"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 114
+  },
+  {
+    "id": "019dbf3e-54e5-74b3-94c3-a4ae00e30122",
+    "type": "principle",
+    "slug": null,
+    "headline": "Schema fields differ per type—procedure ≠ aspect ≠ fact. Build type-specific frontmatter. Metadata-only keeps prose clea...",
+    "tags": [
+      "schema",
+      "frontmatter",
+      "types",
+      "simaris"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 145
+  },
+  {
+    "id": "019dbdd0-9fc9-7bd3-b1ab-24f74e08773b",
+    "type": "principle",
+    "slug": null,
+    "headline": "Schema fields differ per type — procedure ≠ aspect ≠ fact. Build type-specific frontmatter. Metadata-only keeps prose un...",
+    "tags": [
+      "schema",
+      "frontmatter",
+      "types",
+      "metadata"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 158
+  },
+  {
+    "id": "019dbcae-035e-7790-a01b-7ab918ab874f",
+    "type": "principle",
+    "slug": null,
+    "headline": "`shared_pools` does not create pools. Pools exist whenever a def has a backing table. `shared_pools` only governs whethe...",
+    "tags": [
+      "identity",
+      "pool",
+      "schema",
+      "shared-pools"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 158
+  },
+  {
+    "id": "019dbdd0-0658-75e3-b9ea-230daf76ce9c",
+    "type": "fact",
+    "slug": null,
+    "headline": "Tier A — Commands alone: request/response. Suits most apps.",
+    "tags": [
+      "commands",
+      "architecture",
+      "pattern"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 61
+  },
+  {
+    "id": "019dbcb8-4b68-7d82-96d9-1809c094539b",
+    "type": "principle",
+    "slug": null,
+    "headline": "Default to tier (A) Commands-only req/resp. Leave room to grow to tier (B) Commands + Events. Do not pre-build CQRS or A...",
+    "tags": [
+      "architecture",
+      "commands",
+      "defaults",
+      "principle"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 156
+  },
+  {
+    "id": "019dbd5f-dfd0-7bc1-ab69-4f01d329a7f6",
+    "type": "principle",
+    "slug": null,
+    "headline": "Architecture tiers: default to commands-only req/resp (tier A). Leave room to grow into commands+events (tier B). No pre...",
+    "tags": [
+      "architecture",
+      "cqrs",
+      "actor",
+      "events"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 160
+  },
+  {
+    "id": "019dbdca-c716-72c2-ba2b-f7e947c8ca3e",
+    "type": "principle",
+    "slug": null,
+    "headline": "Schema optimize retrieval precision (field query, LOD) + prompt packing over parse convenience. Serve loader, not parser...",
+    "tags": [
+      "schema",
+      "retrieval",
+      "lod",
+      "prompt-packing"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 121
+  },
+  {
+    "id": "019dbf3b-a132-7a62-93e4-9ec2bc7914f2",
+    "type": "principle",
+    "slug": null,
+    "headline": "Schema optimize retrieval precision (field query, LOD) + prompt packing over parse convenience. Serve loader, not parser...",
+    "tags": [
+      "schema",
+      "retrieval",
+      "lod",
+      "prompt-packing"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 121
+  }
+]

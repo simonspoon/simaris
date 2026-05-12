@@ -1,0 +1,166 @@
+[
+  {
+    "id": "019db79f-30cd-7d41-889e-132c10a95ef0",
+    "type": "idea",
+    "slug": null,
+    "headline": "simaris LOD (Level of Detail) feature — planned. Solve bash cap problem via progressive disclosure.",
+    "tags": [
+      "simaris",
+      "lod",
+      "level-of-detail",
+      "feature",
+      "planned",
+      "bash-cap",
+      "progressive-disclosure"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2386
+  },
+  {
+    "id": "019dbcd4-e3a0-7872-b05c-e32226a99388",
+    "type": "idea",
+    "slug": null,
+    "headline": "LOD (level-of-detail) system for simaris: multi-tier progressive disclosure so search/list stay lean while full data is ...",
+    "tags": [
+      "simaris",
+      "lod",
+      "progressive-disclosure",
+      "display"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 140
+  },
+  {
+    "id": "019d97bc-09bc-7771-b38c-9184feb5b1f1",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Convert a Simaris Unit to Cavespeak",
+    "tags": [
+      "compression",
+      "cavespeak",
+      "aspect-authoring",
+      "procedure",
+      "experiment-derived",
+      "simaris-meta"
+    ],
+    "source": "caveman experiment 2026-04-16 (post-validation)",
+    "confidence": 1.0,
+    "byte_size": 11092
+  },
+  {
+    "id": "019dedca-2927-7cb0-b83c-1a95685e9d81",
+    "type": "fact",
+    "slug": "simaris-briefing-2026-05-03",
+    "headline": "# Simaris briefing — Knowledge Program kickoff (2026-05-03)",
+    "tags": [
+      "simaris",
+      "briefing",
+      "kickoff",
+      "knowledge-program"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 2053
+  },
+  {
+    "id": "019de415-ea92-7db1-bebf-6eac2ac25aff",
+    "type": "lesson",
+    "slug": "lotus-failure-2026-05-01-3",
+    "headline": "# Lotus failure — filed Stop hook handler with non-executable content",
+    "tags": [
+      "lotus",
+      "failure",
+      "gate-0",
+      "anti-rationalization",
+      "verification"
+    ],
+    "source": "lotus self-correction 2026-05-01 #3",
+    "confidence": 1.0,
+    "byte_size": 2257
+  },
+  {
+    "id": "019d91cf-b1ba-7012-8600-17ffee7bb8f2",
+    "type": "aspect",
+    "slug": "product-manager",
+    "headline": "# Product Manager",
+    "tags": [
+      "product-manager",
+      "pdm",
+      "caveman",
+      "aspect",
+      "feature",
+      "user-stories",
+      "planning"
+    ],
+    "source": "caveman conversion of PdM aspect on 2026-04-16",
+    "confidence": 1.0,
+    "byte_size": 10391
+  },
+  {
+    "id": "019dbcc0-3ba3-7421-87b2-c6909ed0fdd0",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Simaris aspects need .claude/commands/ entries for slash syntax. Discoverable via Agent tool through symlink, but slash ...",
+    "tags": [
+      "simaris",
+      "aspects",
+      "slash-commands",
+      "claude"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 161
+  },
+  {
+    "id": "019dee54-1745-7d73-ad8a-de597a0a9028",
+    "type": "fact",
+    "slug": "simaris-m3-held-out-methodology-2026-05-03",
+    "headline": "# memory-architect M3.0 methodology note (2026-05-03)",
+    "tags": [
+      "simaris",
+      "knowledge-program",
+      "m3",
+      "held-out",
+      "methodology",
+      "memory-architect",
+      "draft",
+      "flow"
+    ],
+    "source": "memory-architect M3.0 dispatch 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 5554
+  },
+  {
+    "id": "019dbd71-d7ba-7481-8dac-49a0dff55505",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Simaris aspect slash commands need two things: symlink for agent discovery, plus .claude/commands/ entry for slash synta...",
+    "tags": [
+      "simaris",
+      "aspects",
+      "slash-commands",
+      "claude"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 122
+  },
+  {
+    "id": "019de53d-41a2-7360-a412-6c9faad28197",
+    "type": "aspect",
+    "slug": "vox-bridge-story-03-thread-context",
+    "headline": "# Story 03 — Inject Telegram thread context into lotus prompt on reply",
+    "tags": [
+      "vox",
+      "telegram-bridge",
+      "lotus",
+      "story",
+      "mvp"
+    ],
+    "source": "lotus pdm 2026-05-01 vox-tg-bridge",
+    "confidence": 1.0,
+    "byte_size": 1197
+  }
+]

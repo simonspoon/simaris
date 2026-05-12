@@ -1,0 +1,153 @@
+[
+  {
+    "id": "019dbcbd-acb1-7cd1-a7f7-41aac47f3886",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Task names must match role names exactly. Orchestrator routes by name — mismatch means task never claimed.",
+    "tags": [
+      "orchestrator",
+      "task-routing",
+      "naming"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 108
+  },
+  {
+    "id": "019dbcb7-2ec1-7c43-b011-4ac422c66e99",
+    "type": "principle",
+    "slug": null,
+    "headline": "Minimal agent prompts unlock parallelism. Give each agent: contract + layer code + test harness + done-criteria. Nothing...",
+    "tags": [
+      "agents",
+      "parallelism",
+      "prompting",
+      "orchestration"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 166
+  },
+  {
+    "id": "019dbd5f-6ef4-7872-8a60-566a251d8501",
+    "type": "principle",
+    "slug": null,
+    "headline": "Minimal agent prompts unlock parallelism — give each agent: contract, layer code, test harness, done-criteria. Nothing e...",
+    "tags": [
+      "agents",
+      "parallelism",
+      "prompting",
+      "architecture"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 166
+  },
+  {
+    "id": "019dbcb8-0197-73e3-9242-31f00a038bda",
+    "type": "principle",
+    "slug": null,
+    "headline": "Contract must carry Principal. CLI=$USER, web=session, agent=token. Auth/identity is not implicit — make it explicit in ...",
+    "tags": [
+      "contract-first",
+      "auth",
+      "identity",
+      "principal"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 135
+  },
+  {
+    "id": "019dedde-b9f3-7c91-bf82-8833b29ea34a",
+    "type": "fact",
+    "slug": "lotus-reply-simaris-charter-2026-05-03",
+    "headline": "# Lotus reply to simaris program charter (2026-05-03)",
+    "tags": [
+      "lotus",
+      "simaris",
+      "reply",
+      "charter",
+      "proceed"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1426
+  },
+  {
+    "id": "019d708d-c960-7141-b14f-62716394ee4d",
+    "type": "procedure",
+    "slug": null,
+    "headline": "On first use, the agent compiles locally via ensure_running() in agent_lifecycle.rs, running as the actual user with pro...",
+    "tags": [
+      "xctest",
+      "agents",
+      "build",
+      "runtime"
+    ],
+    "source": "suda:qorvex-agent-must-build-locally",
+    "confidence": 1.0,
+    "byte_size": 226
+  },
+  {
+    "id": "019dbd6f-fefd-7230-a94b-6609da0131f3",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Task-name must match role-name exactly. Orchestrator routes by name — mismatch means task never claimed. Silent failure....",
+    "tags": [
+      "orchestrator",
+      "routing",
+      "task-name",
+      "silent-failure"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 167
+  },
+  {
+    "id": "019d708d-c95c-7de2-a39c-45c9594f32f7",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Activation Protocol",
+    "tags": [
+      "agent-composer",
+      "procedure",
+      "activation",
+      "workflow"
+    ],
+    "source": "skill:agent-composer",
+    "confidence": 1.0,
+    "byte_size": 2830
+  },
+  {
+    "id": "019dee2e-e22a-7841-abd2-95ac126e362b",
+    "type": "lesson",
+    "slug": "lotus-failure-holding-2026-05-03",
+    "headline": "# Lotus failure — said \"holding\" as if work was in flight (2026-05-03)",
+    "tags": [
+      "lotus",
+      "failure",
+      "operational-model",
+      "launchagent",
+      "recurrence"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 2083
+  },
+  {
+    "id": "019d708d-c95c-7de2-a39c-45ee4775fc7e",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Structure agent body",
+    "tags": [
+      "agent-composer",
+      "body",
+      "structure",
+      "format"
+    ],
+    "source": "skill:agent-composer",
+    "confidence": 1.0,
+    "byte_size": 4436
+  }
+]

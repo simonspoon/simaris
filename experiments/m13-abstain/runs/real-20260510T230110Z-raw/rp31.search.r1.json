@@ -1,0 +1,157 @@
+[
+  {
+    "id": "019dee63-dac2-7b90-a746-b217e0ea147f",
+    "type": "lesson",
+    "slug": null,
+    "headline": "git worktree add <path> <branch> fails with exit 2 if parent dir missing (OS error 2). Create parent first or choose exi...",
+    "tags": [
+      "git",
+      "worktree",
+      "gotcha",
+      "cli"
+    ],
+    "source": "session-1235adaf-556c-4757-9b93-f4bf8e834274",
+    "confidence": 1.0,
+    "byte_size": 212
+  },
+  {
+    "id": "019dd591-1b89-7913-a67c-4fb72b4ac4be",
+    "type": "lesson",
+    "slug": null,
+    "headline": "drain halt: worker-subagent-cmux.sh absent from ~/claudehub/. Orchestrator hard-rule fired, 0 tasks drained. Fix: restor...",
+    "tags": [
+      "orokin",
+      "drain",
+      "worker-dispatch",
+      "blocked",
+      "recovery"
+    ],
+    "source": "session-9faebd3b-89cb-46a5-890a-aafdeb4b8c5c",
+    "confidence": 1.0,
+    "byte_size": 364
+  },
+  {
+    "id": "019dbc97-2c7a-74e1-b60f-eecca8364a94",
+    "type": "fact",
+    "slug": null,
+    "headline": "CLAUDE.md loads per-directory: global at ~/.claude/CLAUDE.md, project-level file overrides.",
+    "tags": [
+      "claude",
+      "config",
+      "claude-md"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 91
+  },
+  {
+    "id": "019de4b3-15a2-7db3-badc-794890e40ddc",
+    "type": "idea",
+    "slug": "banshee-open-questions",
+    "headline": "# Banshee — open questions for lotus (pre-limbo)",
+    "tags": [
+      "banshee",
+      "pdm",
+      "open-questions"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1831
+  },
+  {
+    "id": "019da0cc-10c1-7753-b524-2cc3757c20e3",
+    "type": "fact",
+    "slug": null,
+    "headline": "# claude-aspect.sh",
+    "tags": [
+      "claude-aspect",
+      "claudehub",
+      "aspect-dispatch",
+      "slug",
+      "system-prompt",
+      "wrapper"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 4400
+  },
+  {
+    "id": "019de408-e60b-7c73-9a31-692609cb1c8c",
+    "type": "fact",
+    "slug": null,
+    "headline": "scope: lotus tooling survey 2026-05-01",
+    "tags": [
+      "lotus",
+      "tooling-survey",
+      "2026-05-01",
+      "priority-5",
+      "launchagent",
+      "template",
+      "dispatch"
+    ],
+    "source": "research-lead",
+    "confidence": 1.0,
+    "byte_size": 1189
+  },
+  {
+    "id": "019dbc96-6f4c-7910-8f3a-0184c0b48412",
+    "type": "principle",
+    "slug": null,
+    "headline": "Static harness config → ~/.claude/ files, lazy-load native. Eager hooks push all-per-turn break prompt cache.",
+    "tags": [
+      "harness",
+      "config",
+      "hooks",
+      "prompt-cache"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 111
+  },
+  {
+    "id": "019de567-50be-75c2-97ee-13397b6556a9",
+    "type": "fact",
+    "slug": null,
+    "headline": "Banshee floor-d PASS. Agent list rows show relative last_event_at times (just now, 1m ago, 3h ago, 5h ago, 21h ago). Run...",
+    "tags": [
+      "banshee",
+      "verifier",
+      "gate-8",
+      "floor-d",
+      "last-event-at"
+    ],
+    "source": "banshee verifier 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 397
+  },
+  {
+    "id": "019dbd47-e1be-74a3-8982-2c6d62039c35",
+    "type": "principle",
+    "slug": null,
+    "headline": "Harness config lives in ~/.claude/ files. Load native tools lazily. Eager hooks that fire on every turn break prompt cac...",
+    "tags": [
+      "harness",
+      "hooks",
+      "prompt-cache",
+      "config"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 123
+  },
+  {
+    "id": "019dedca-2927-7cb0-b83c-1a95685e9d81",
+    "type": "fact",
+    "slug": "simaris-briefing-2026-05-03",
+    "headline": "# Simaris briefing — Knowledge Program kickoff (2026-05-03)",
+    "tags": [
+      "simaris",
+      "briefing",
+      "kickoff",
+      "knowledge-program"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 2053
+  }
+]

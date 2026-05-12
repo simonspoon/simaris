@@ -1,0 +1,157 @@
+[
+  {
+    "id": "019de4b2-da27-7710-80e4-85ede0e806f4",
+    "type": "aspect",
+    "slug": "banshee-story-01-agent-list",
+    "headline": "# Story 01 — Agent list view",
+    "tags": [
+      "banshee",
+      "user-story",
+      "simon"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1295
+  },
+  {
+    "id": "019dd068-b1bb-7de0-99be-3a49070a669b",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Orokin Awoken agents go rogue — create feature branch + push PR when only commit to main. Agent not properly constrain s...",
+    "tags": [
+      "orokin",
+      "agents",
+      "scope-violation",
+      "gotcha",
+      "branch",
+      "pr"
+    ],
+    "source": "session-58013677-8bce-4542-ac75-4966ad0fad8e",
+    "confidence": 1.0,
+    "byte_size": 146
+  },
+  {
+    "id": "019dee6d-fda1-78c2-a2df-01ee14cdd1d5",
+    "type": "lesson",
+    "slug": null,
+    "headline": "# tooling lesson — git worktree for parallel branch agents",
+    "tags": [
+      "git",
+      "worktree",
+      "parallel-agents",
+      "launchagent",
+      "gotcha",
+      "simaris"
+    ],
+    "source": "memory-architect M3.1 dispatch 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1197
+  },
+  {
+    "id": "019dd136-36d7-7711-8879-e65a3f99dcad",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Agent do unexpected action (create PR, stray branch, stray commit) → diagnose spec first. Ask: did spec/prompt actually ...",
+    "tags": [
+      "agents",
+      "spec",
+      "diagnosis",
+      "scope-violation",
+      "orokin"
+    ],
+    "source": "session-27fadc86-7e25-4ece-a1c9-5242d1705357",
+    "confidence": 1.0,
+    "byte_size": 247
+  },
+  {
+    "id": "019dd06a-3861-7223-a144-d9d11741bd67",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Orokin protocol files explicitly instruct 'Open PR on /core' (and all roles). Root cause of repeated agent PR creation —...",
+    "tags": [
+      "orokin",
+      "protocol",
+      "pr",
+      "root-cause",
+      "gotcha"
+    ],
+    "source": "session-18c91a5e-62e2-4ec2-b6fe-c8ac5d43b61b",
+    "confidence": 1.0,
+    "byte_size": 221
+  },
+  {
+    "id": "019de4b2-ecba-7502-bc86-0b923606af65",
+    "type": "aspect",
+    "slug": "banshee-story-04-collapsible-tools",
+    "headline": "# Story 04 — Collapsible tool nodes",
+    "tags": [
+      "banshee",
+      "user-story",
+      "simon"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1093
+  },
+  {
+    "id": "019dbccf-b118-72f3-8fd4-a0874e459c08",
+    "type": "principle",
+    "slug": null,
+    "headline": "Match release task to correct agent: planning→/pm, architecture→/tech-lead, known steps→worker, audit→/code-review.",
+    "tags": [
+      "release",
+      "agents",
+      "routing",
+      "triage"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 123
+  },
+  {
+    "id": "019dee6b-4a18-72e3-ba12-95cbb183732f",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Workspace-member isolation as a dep-cap firewall",
+    "tags": [
+      "rust",
+      "cargo",
+      "workspace",
+      "prototype",
+      "dep-surface",
+      "architecture"
+    ],
+    "source": "memory-architect M3.2 build 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1165
+  },
+  {
+    "id": "019dbcd3-bbbe-7380-ab6d-a720de18736d",
+    "type": "principle",
+    "slug": null,
+    "headline": "ScheduleWakeup belongs only in top-level/orchestrator agents. In subordinate agent: exits session early, skips RESULT bl...",
+    "tags": [
+      "schedulewakeup",
+      "subordinate",
+      "agents",
+      "gotcha"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 179
+  },
+  {
+    "id": "019de4b2-eca7-7bc3-9eab-6b32cf6d95d0",
+    "type": "aspect",
+    "slug": "banshee-story-03-timestamps",
+    "headline": "# Story 03 — Event timestamps",
+    "tags": [
+      "banshee",
+      "user-story",
+      "simon"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1113
+  }
+]

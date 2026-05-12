@@ -1,0 +1,154 @@
+[
+  {
+    "id": "019dbcad-9394-7a01-aeda-d6dee97d8006",
+    "type": "lesson",
+    "slug": null,
+    "headline": "When mirage endpoint returns non-reused nested objects, check is_shared flag on definition in recipe config before assum...",
+    "tags": [
+      "mirage",
+      "debugging",
+      "is_shared",
+      "recipe"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 146
+  },
+  {
+    "id": "019d9745-02ae-7e33-b025-0b514a3922d7",
+    "type": "fact",
+    "slug": null,
+    "headline": "virtual_roots in entity_graph.rs = endpoints whose response shape is NOT a Definition (i.e. primitive, array, or freefor...",
+    "tags": [
+      "ResponseShape",
+      "entity-graph",
+      "mirage",
+      "virtual-roots"
+    ],
+    "source": "cli",
+    "confidence": 1.0,
+    "byte_size": 159
+  },
+  {
+    "id": "019d7521-030e-7423-9346-65819e95f1ce",
+    "type": "idea",
+    "slug": null,
+    "headline": "Option B: Tree/hierarchy from endpoints — simpler to implement but less expressive for graph relationships.",
+    "tags": [
+      "graph",
+      "tree",
+      "hierarchy",
+      "visualization"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 109
+  },
+  {
+    "id": "019d92cc-2aed-7531-a900-306027a85587",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Runtime type guard extract",
+    "tags": [
+      "typescript",
+      "type-guard",
+      "unknown-array",
+      "tauri",
+      "ordis",
+      "runtime-validation"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 595
+  },
+  {
+    "id": "019d708d-c960-7141-b14f-61c2a6fe7203",
+    "type": "fact",
+    "slug": null,
+    "headline": "onData callback delivers Uint8Array, not a string. Pass to xterm via: new Uint8Array(data)",
+    "tags": [
+      "tauri-plugin-pty",
+      "xterm",
+      "data",
+      "gotcha"
+    ],
+    "source": "suda:tauri-plugin-pty-gotchas",
+    "confidence": 1.0,
+    "byte_size": 90
+  },
+  {
+    "id": "019de3be-116b-7991-b5f5-6df83fa75db4",
+    "type": "lesson",
+    "slug": null,
+    "headline": "WRONG PROBLEM [attacks README, 019de3ba-4b59-7520-b50a-f31d5f3e448e, 019de3ba-7b82-7240-8e7f-2a8a87a1ad11]: README frame...",
+    "tags": [
+      "nova",
+      "devil",
+      "critique",
+      "wrong-problem"
+    ],
+    "source": "devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 700
+  },
+  {
+    "id": "019dbdca-c716-72c2-ba2b-f7e947c8ca3e",
+    "type": "principle",
+    "slug": null,
+    "headline": "Schema optimize retrieval precision (field query, LOD) + prompt packing over parse convenience. Serve loader, not parser...",
+    "tags": [
+      "schema",
+      "retrieval",
+      "lod",
+      "prompt-packing"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 121
+  },
+  {
+    "id": "019de3d3-2c06-7512-86db-7d14c357a991",
+    "type": "lesson",
+    "slug": null,
+    "headline": "chief-of-staff is redundant on single-mission directed runs (lotus orchestrates leads directly). Pays off when: (a) port...",
+    "tags": [
+      "lotus",
+      "org",
+      "chief-of-staff",
+      "when-to-use"
+    ],
+    "source": "lotus nova spin 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 281
+  },
+  {
+    "id": "019dbf3b-a132-7a62-93e4-9ec2bc7914f2",
+    "type": "principle",
+    "slug": null,
+    "headline": "Schema optimize retrieval precision (field query, LOD) + prompt packing over parse convenience. Serve loader, not parser...",
+    "tags": [
+      "schema",
+      "retrieval",
+      "lod",
+      "prompt-packing"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 121
+  },
+  {
+    "id": "019de555-78f3-7700-b696-ee44aef7dc20",
+    "type": "aspect",
+    "slug": "vox-bridge-test-fixtures",
+    "headline": "# Test Fixture Catalog — vox-bridge-mvp",
+    "tags": [
+      "vox",
+      "telegram-bridge",
+      "test-strategy",
+      "fixtures"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 1936
+  }
+]

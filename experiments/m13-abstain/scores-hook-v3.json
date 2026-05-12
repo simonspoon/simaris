@@ -1,0 +1,79 @@
+{
+  "eval_set": {
+    "real": {
+      "hook-v2": {
+        "r_at_5": 0.2681159420289855,
+        "mrr": 0.3108695652173913,
+        "top_1": 0.21739130434782608,
+        "false_fire_rate": 1.0,
+        "hook_hit_rate": null,
+        "latency_p50": 759.5,
+        "latency_p95": 911.5,
+        "n_queries": 62,
+        "n_with_gt": 23,
+        "n_negative": 39,
+        "aggregate_score": 0.2894927536231884
+      },
+      "hook-v3": {
+        "r_at_5": 0.2536231884057971,
+        "mrr": 0.30217391304347824,
+        "top_1": 0.21739130434782608,
+        "false_fire_rate": 0.23076923076923078,
+        "hook_hit_rate": null,
+        "latency_p50": 759.0,
+        "latency_p95": 915.75,
+        "n_queries": 62,
+        "n_with_gt": 23,
+        "n_negative": 39,
+        "aggregate_score": 0.27789855072463765
+      },
+      "search": {
+        "r_at_5": 0.2681159420289855,
+        "mrr": 0.3108695652173913,
+        "top_1": 0.21739130434782608,
+        "false_fire_rate": 1.0,
+        "hook_hit_rate": null,
+        "latency_p50": 298.0,
+        "latency_p95": 448.75,
+        "n_queries": 62,
+        "n_with_gt": 23,
+        "n_negative": 39,
+        "aggregate_score": 0.2894927536231884
+      },
+      "prime": {
+        "r_at_5": 0.06521739130434782,
+        "mrr": 0.10480134116016518,
+        "top_1": 0.043478260869565216,
+        "false_fire_rate": 1.0,
+        "hook_hit_rate": null,
+        "latency_p50": 1488.0,
+        "latency_p95": 1986.75,
+        "n_queries": 62,
+        "n_with_gt": 23,
+        "n_negative": 39,
+        "aggregate_score": 0.0850093662322565
+      }
+    }
+  },
+  "method_ranks": {
+    "real": [
+      "hook-v2",
+      "search",
+      "hook-v3",
+      "prime"
+    ]
+  },
+  "top2_verdict": "insufficient-data",
+  "top2_overlap": 0,
+  "kendall_tau": null,
+  "paired_deltas": {},
+  "meta": {
+    "runs": [
+      "/Users/simonspoon/claudehub/simaris/experiments/m13-abstain/runs/real-20260510T230110Z.jsonl"
+    ],
+    "labels": [
+      "/Users/simonspoon/claudehub/simaris/experiments/m12-negatives/candidate-labels-2026-05-10.json"
+    ],
+    "n_eval_sets": 1
+  }
+}

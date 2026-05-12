@@ -1,0 +1,154 @@
+[
+  {
+    "id": "019dbb85-9585-7983-a74b-66b34c5286e6",
+    "type": "aspect",
+    "slug": "orchestrator",
+    "headline": "# Orchestrator (v2) — atom index",
+    "tags": [
+      "caveman",
+      "orchestrator",
+      "aspect-v2",
+      "parent-stub"
+    ],
+    "source": "flatten-v2:oapb",
+    "confidence": 1.0,
+    "byte_size": 1780
+  },
+  {
+    "id": "019dbcbd-dbd4-7e92-a66b-c8c47e14f3c9",
+    "type": "idea",
+    "slug": null,
+    "headline": "Orchestrator role: stateless dispatcher. Runs on trigger, polls limbo list --status open --not-blocked, spawns fresh age...",
+    "tags": [
+      "orchestrator",
+      "limbo",
+      "dispatcher",
+      "agent-isolation"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 175
+  },
+  {
+    "id": "019d930c-609c-7f73-ab03-6c44da721b01",
+    "type": "fact",
+    "slug": null,
+    "headline": "# orchestrator open mode — FIFO drain confirmed",
+    "tags": [
+      "orchestrator",
+      "open-mode",
+      "limbo",
+      "drain",
+      "confirmed"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2314
+  },
+  {
+    "id": "019dbb62-b27d-7b73-bc10-298eb17fb2cc",
+    "type": "aspect",
+    "slug": "pm-subordinate-mode",
+    "headline": "# PM subordinate mode",
+    "tags": [
+      "caveman",
+      "pm",
+      "aspect-v2",
+      "mode",
+      "subordinate"
+    ],
+    "source": "split from monolith 019d97d3 (task nsau)",
+    "confidence": 1.0,
+    "byte_size": 5461
+  },
+  {
+    "id": "019dbb85-73ef-7832-8f9f-11347845a4f4",
+    "type": "aspect",
+    "slug": "orchestrator-role",
+    "headline": "# Orchestrator role",
+    "tags": [
+      "caveman",
+      "orchestrator",
+      "aspect-v2",
+      "role"
+    ],
+    "source": "flatten-v2:oapb",
+    "confidence": 1.0,
+    "byte_size": 2549
+  },
+  {
+    "id": "019dbb4b-70dd-7603-b5eb-4b0c40509fea",
+    "type": "procedure",
+    "slug": "orokin-orch-report",
+    "headline": "# Orokin Orchestrator exit report",
+    "tags": [
+      "orokin",
+      "orchestrator"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 4428
+  },
+  {
+    "id": "019dbff1-e931-7ab0-9001-acccec303229",
+    "type": "fact",
+    "slug": null,
+    "headline": "Orchestrator result fields: RESULT=done|blocked, TASK=id, SUMMARY=≤1 line, BLOCK_REASON=present only when blocked, SPAWN...",
+    "tags": [
+      "orchestrator",
+      "orokin",
+      "results",
+      "schema"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 150
+  },
+  {
+    "id": "019dbcaf-e89b-72f2-8f3f-9667c8414053",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Orchestrator parent after decomposition: mark captured, set dependency-blocked. Cleanup walk promotes parent on child co...",
+    "tags": [
+      "orchestrator",
+      "decomposition",
+      "dependency",
+      "parent-child"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 231
+  },
+  {
+    "id": "019dbb6d-d246-7861-a558-79cce6d8972b",
+    "type": "aspect",
+    "slug": "worker-subordinate-mode",
+    "headline": "# Worker subordinate mode",
+    "tags": [
+      "caveman",
+      "worker",
+      "aspect-v2",
+      "subordinate-mode"
+    ],
+    "source": "split from monolith 019da7a6 (task psgb)",
+    "confidence": 1.0,
+    "byte_size": 4849
+  },
+  {
+    "id": "019da7a7-a989-7012-9fac-350f304f2a18",
+    "type": "aspect",
+    "slug": null,
+    "headline": "# Orchestrator",
+    "tags": [
+      "orchestrator",
+      "worker-dispatch",
+      "v5",
+      "aspect-dispatch",
+      "flatten-v1",
+      "supersedes-v4"
+    ],
+    "source": "worker flatten 2026-04-19 — dispatches worker, not PM",
+    "confidence": 1.0,
+    "byte_size": 5837
+  }
+]

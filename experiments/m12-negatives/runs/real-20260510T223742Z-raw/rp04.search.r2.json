@@ -1,0 +1,156 @@
+[
+  {
+    "id": "019de3d0-02eb-7421-9e06-84625490b7a2",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Lotus → PdM handoff has two modes, gated by direction-atom completeness.",
+    "tags": [
+      "lotus",
+      "pdm",
+      "direction",
+      "user-story",
+      "orokin"
+    ],
+    "source": "session-7ec1250c",
+    "confidence": 1.0,
+    "byte_size": 2271
+  },
+  {
+    "id": "019da245-3346-7f31-8af3-0459fc7f7036",
+    "type": "aspect",
+    "slug": "lotus",
+    "headline": "# Lotus",
+    "tags": [
+      "lotus",
+      "ceo",
+      "primer",
+      "system-prompt",
+      "executive"
+    ],
+    "source": "user request 2026-04-30 — CEO pivot",
+    "confidence": 1.0,
+    "byte_size": 1905
+  },
+  {
+    "id": "019de42d-a053-7843-906a-40babe3607a3",
+    "type": "procedure",
+    "slug": "lotus-pickup",
+    "headline": "# Lotus pickup — session start",
+    "tags": [
+      "lotus",
+      "pickup",
+      "session-start",
+      "bootstrap"
+    ],
+    "source": "lotus operating model 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1788
+  },
+  {
+    "id": "019de4cd-1a2b-7e20-9a61-8314cad75448",
+    "type": "principle",
+    "slug": "lotus-pipeline-autonomy",
+    "headline": "# Lotus pipeline autonomy — don't ask for permission mid-pipeline",
+    "tags": [
+      "lotus",
+      "authority",
+      "pipeline",
+      "autonomy"
+    ],
+    "source": "lotus 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1339
+  },
+  {
+    "id": "019dee25-71d3-7b13-920e-a23298285087",
+    "type": "lesson",
+    "slug": "lotus-failure-atom-as-message-2026-05-03",
+    "headline": "# Lotus failure — treated filed atom as message to running agent (2026-05-03)",
+    "tags": [
+      "lotus",
+      "failure",
+      "communication",
+      "launchagent",
+      "subagent"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1886
+  },
+  {
+    "id": "019de53a-2876-7801-99ad-8143db185ed5",
+    "type": "aspect",
+    "slug": "lotus-direction-vox-tg-bridge",
+    "headline": "# Lotus direction — vox Telegram→lotus bridge (post-devil)",
+    "tags": [
+      "vox",
+      "telegram-bridge",
+      "lotus",
+      "direction",
+      "post-devil"
+    ],
+    "source": "lotus direction 2026-05-01 vox-tg-bridge U-mode",
+    "confidence": 1.0,
+    "byte_size": 2733
+  },
+  {
+    "id": "019de3ac-e508-78c0-b9c2-b93fef0f0b30",
+    "type": "aspect",
+    "slug": "lotus-chief-of-staff",
+    "headline": "# Chief of Staff",
+    "tags": [
+      "lotus",
+      "chief-of-staff",
+      "routing",
+      "intake"
+    ],
+    "source": "lotus org build 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1432
+  },
+  {
+    "id": "019de42d-6b03-7ea0-bb3a-a0148f5dcccb",
+    "type": "principle",
+    "slug": "lotus-backlog-discipline",
+    "headline": "# Lotus backlog discipline",
+    "tags": [
+      "lotus",
+      "backlog",
+      "discipline",
+      "limbo",
+      "simaris"
+    ],
+    "source": "lotus operating model 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1520
+  },
+  {
+    "id": "019de3ae-12e8-7793-8377-9296f70a6a52",
+    "type": "procedure",
+    "slug": "lotus-pipeline",
+    "headline": "# Lotus pipeline — request to ship",
+    "tags": [
+      "gate",
+      "lotus",
+      "pipeline",
+      "workflow"
+    ],
+    "source": "lotus org build 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1881
+  },
+  {
+    "id": "019de4b3-15a2-7db3-badc-794890e40ddc",
+    "type": "idea",
+    "slug": "banshee-open-questions",
+    "headline": "# Banshee — open questions for lotus (pre-limbo)",
+    "tags": [
+      "banshee",
+      "pdm",
+      "open-questions"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1831
+  }
+]

@@ -1,0 +1,155 @@
+[
+  {
+    "id": "019d708d-c95e-7d13-9747-c86d9f701e32",
+    "type": "fact",
+    "slug": null,
+    "headline": "# version file locations by project type",
+    "tags": [
+      "rust",
+      "go",
+      "versioning",
+      "project-type"
+    ],
+    "source": "skill:release",
+    "confidence": 1.0,
+    "byte_size": 2450
+  },
+  {
+    "id": "019de4db-0865-7b53-9a87-f9631247872b",
+    "type": "idea",
+    "slug": null,
+    "headline": "# Over-coverage — `cargo build --release` in S07 test #1 is ceremony, not signal",
+    "tags": [
+      "banshee",
+      "devil",
+      "gate-5",
+      "test-review",
+      "over-coverage",
+      "ceremony"
+    ],
+    "source": "banshee devil-test 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1045
+  },
+  {
+    "id": "019dedc9-1bf6-7903-8dc8-40f5da3232b2",
+    "type": "principle",
+    "slug": "lotus-priority-1",
+    "headline": "# Org priority #1 — knowledge substrate (2026-05-03)",
+    "tags": [
+      "lotus",
+      "priority",
+      "simaris",
+      "knowledge",
+      "decision"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1682
+  },
+  {
+    "id": "019dbcc8-b685-78f3-8107-69011359914c",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Verify docs: run `cargo build --workspace`, confirm file count matches plan, spot-check key names in files.",
+    "tags": [
+      "verify",
+      "docs",
+      "cargo",
+      "rust"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 189
+  },
+  {
+    "id": "019de4b3-15a2-7db3-badc-794890e40ddc",
+    "type": "idea",
+    "slug": "banshee-open-questions",
+    "headline": "# Banshee — open questions for lotus (pre-limbo)",
+    "tags": [
+      "banshee",
+      "pdm",
+      "open-questions"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1831
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-c93898c10a3b",
+    "type": "fact",
+    "slug": null,
+    "headline": "# simaris docs output structure",
+    "tags": [
+      "setup-docs",
+      "structure",
+      "documentation",
+      "files"
+    ],
+    "source": "skill:setup-docs",
+    "confidence": 1.0,
+    "byte_size": 2473
+  },
+  {
+    "id": "019dee2e-e22a-7841-abd2-95ac126e362b",
+    "type": "lesson",
+    "slug": "lotus-failure-holding-2026-05-03",
+    "headline": "# Lotus failure — said \"holding\" as if work was in flight (2026-05-03)",
+    "tags": [
+      "lotus",
+      "failure",
+      "operational-model",
+      "launchagent",
+      "recurrence"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 2083
+  },
+  {
+    "id": "019dbf3c-6cb5-7d42-a9f7-ba1788b89788",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Bundle review: split per part, check each vs acceptance criteria. Out-of-scope work spawns sibling task, not current rev...",
+    "tags": [
+      "bundles",
+      "review",
+      "scope",
+      "task-management"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 124
+  },
+  {
+    "id": "019df404-d971-75c2-8daf-b39ecc2df11a",
+    "type": "principle",
+    "slug": "lotus-substrate-delegation-2026-05-04",
+    "headline": "# User authority delegation — substrate program (2026-05-04)",
+    "tags": [
+      "lotus",
+      "simaris",
+      "delegation",
+      "authority",
+      "knowledge-program"
+    ],
+    "source": "user delegation 2026-05-04 substrate program",
+    "confidence": 1.0,
+    "byte_size": 1492
+  },
+  {
+    "id": "019d708d-c95d-7b22-9628-e0c49a970c76",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Orient yourself using progressive-disclosure project docs before writing code: check for docs/INDEX.md, read it, match y...",
+    "tags": [
+      "onboarding",
+      "documentation",
+      "workflow"
+    ],
+    "source": "skill:project-docs-explore",
+    "confidence": 1.0,
+    "byte_size": 265
+  }
+]

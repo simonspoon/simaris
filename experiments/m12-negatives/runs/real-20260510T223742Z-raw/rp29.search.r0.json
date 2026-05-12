@@ -1,0 +1,151 @@
+[
+  {
+    "id": "019dbd74-0088-7751-b2ea-a02fb359d9dd",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Invoke orokin-init scaffold shell script with project config flags. Exit codes map to aspect block contract states.",
+    "tags": [
+      "orokin",
+      "scaffold",
+      "init",
+      "cli"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 193
+  },
+  {
+    "id": "019dee6b-4a18-72e3-ba12-95cbb183732f",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Workspace-member isolation as a dep-cap firewall",
+    "tags": [
+      "rust",
+      "cargo",
+      "workspace",
+      "prototype",
+      "dep-surface",
+      "architecture"
+    ],
+    "source": "memory-architect M3.2 build 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1165
+  },
+  {
+    "id": "019d7915-2ee7-7ed0-ad35-5d9f797ebcf8",
+    "type": "procedure",
+    "slug": null,
+    "headline": "vox ask enables async human input in agent pipelines by sending a question via Telegram bot and blocking until the user ...",
+    "tags": [
+      "vox",
+      "telegram",
+      "human-in-the-loop"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 246
+  },
+  {
+    "id": "019dbb3e-786b-71f2-a156-05d81c642098",
+    "type": "procedure",
+    "slug": "orokin-pdm-role",
+    "headline": "# PdM role",
+    "tags": [
+      "orokin",
+      "pdm"
+    ],
+    "source": "corpus-decomp yyvb pdm",
+    "confidence": 1.0,
+    "byte_size": 2793
+  },
+  {
+    "id": "019dbcc2-da18-7fd2-8437-2c05e0367f7e",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Dual-file template setup (aspect + script) risks version drift. Pin version in .orokin/VERSION; check at aspect startup ...",
+    "tags": [
+      "orokin",
+      "aspect",
+      "template",
+      "version-drift"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 148
+  },
+  {
+    "id": "019de4a9-d9ab-7fb1-a229-80a69d22c0d0",
+    "type": "idea",
+    "slug": null,
+    "headline": "# Banshee wrong-problem critique — devil gate-2.5",
+    "tags": [
+      "banshee",
+      "devil",
+      "gate-2.5",
+      "wrong-problem"
+    ],
+    "source": "banshee devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1806
+  },
+  {
+    "id": "019de445-81b1-70b0-89c4-550571199a85",
+    "type": "principle",
+    "slug": "lotus-decisiveness",
+    "headline": "# Lotus authority — infra rot pivots are autonomous",
+    "tags": [
+      "lotus",
+      "authority",
+      "decisiveness",
+      "infra-rot"
+    ],
+    "source": "simon-direction 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 891
+  },
+  {
+    "id": "019dd06a-3861-7223-a144-d9d11741bd67",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Orokin protocol files explicitly instruct 'Open PR on /core' (and all roles). Root cause of repeated agent PR creation —...",
+    "tags": [
+      "orokin",
+      "protocol",
+      "pr",
+      "root-cause",
+      "gotcha"
+    ],
+    "source": "session-18c91a5e-62e2-4ec2-b6fe-c8ac5d43b61b",
+    "confidence": 1.0,
+    "byte_size": 221
+  },
+  {
+    "id": "019dee2e-e22a-7841-abd2-95ac126e362b",
+    "type": "lesson",
+    "slug": "lotus-failure-holding-2026-05-03",
+    "headline": "# Lotus failure — said \"holding\" as if work was in flight (2026-05-03)",
+    "tags": [
+      "lotus",
+      "failure",
+      "operational-model",
+      "launchagent",
+      "recurrence"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 2083
+  },
+  {
+    "id": "019dbb3e-7a2c-7fa3-803d-fe8450021ee5",
+    "type": "procedure",
+    "slug": "orokin-init-done-summary",
+    "headline": "# Orokin-init done summary",
+    "tags": [
+      "orokin",
+      "init"
+    ],
+    "source": "corpus-decomp yyvb init",
+    "confidence": 1.0,
+    "byte_size": 4760
+  }
+]

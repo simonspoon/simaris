@@ -1,0 +1,147 @@
+[
+  {
+    "id": "019d708d-c95c-7de2-a39c-4618f1973eae",
+    "type": "principle",
+    "slug": null,
+    "headline": "Stop and consult user when: agent purpose is ambiguous or overlaps an existing agent; unclear which tools or model to us...",
+    "tags": [
+      "agent-composer",
+      "escalation",
+      "principle",
+      "decision"
+    ],
+    "source": "skill:agent-composer",
+    "confidence": 1.0,
+    "byte_size": 2329
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-cb61fc42cfd2",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Preference Capture Protocol",
+    "tags": [
+      "feedback",
+      "preference",
+      "procedure",
+      "suda"
+    ],
+    "source": "skill:software-engineering",
+    "confidence": 1.0,
+    "byte_size": 2830
+  },
+  {
+    "id": "019d786e-183d-71f3-aab9-08d7b8eb5a2c",
+    "type": "principle",
+    "slug": null,
+    "headline": "For destructive CLI commands (delete, reset, etc.), require explicit user confirmation/approval before execution — not j...",
+    "tags": [
+      "cli",
+      "safety",
+      "destructive-commands",
+      "confirmation"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 171
+  },
+  {
+    "id": "019dbbab-1e63-7df3-b46b-c1520e578bcd",
+    "type": "procedure",
+    "slug": "cavespeak-voice",
+    "headline": "# Cavespeak voice rules",
+    "tags": [
+      "cavespeak",
+      "split",
+      "lod",
+      "compression"
+    ],
+    "source": "split from 019d97bc-09bc-7771-b38c-9184feb5b1f1 per split-ruleset A+D",
+    "confidence": 1.0,
+    "byte_size": 4387
+  },
+  {
+    "id": "019d708d-c960-7141-b14f-636bdf916bb1",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Basic usage TypeScript claude-agent-sdk",
+    "tags": [
+      "agent-sdk",
+      "typescript",
+      "api",
+      "streaming"
+    ],
+    "source": "suda:agent-sdk-for-ordis-pipelines",
+    "confidence": 1.0,
+    "byte_size": 4637
+  },
+  {
+    "id": "019de1bc-ee48-7e11-ae96-8fe51ac4cc2f",
+    "type": "aspect",
+    "slug": "lotus-priority",
+    "headline": "# Priority Signal (2026-04-30)",
+    "tags": [
+      "lotus",
+      "priority",
+      "orientation"
+    ],
+    "source": "orientation 2026-04-30",
+    "confidence": 1.0,
+    "byte_size": 658
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-cbeb2dfc7a0c",
+    "type": "principle",
+    "slug": null,
+    "headline": "If a command fails or a tool is unavailable, report it explicitly — do not silently skip it.",
+    "tags": [
+      "error-handling",
+      "transparency",
+      "reporting"
+    ],
+    "source": "skill:status",
+    "confidence": 1.0,
+    "byte_size": 94
+  },
+  {
+    "id": "019dbd5b-0122-7fd3-b4f0-bdec521becfa",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Pre-dispatch verify steps: (1) identify REQUIRED platforms—parse UI/code globs, language constraints; (2) live E2E on ru...",
+    "tags": [
+      "verify",
+      "pre-dispatch",
+      "checklist",
+      "dispatch"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2460
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-cbb29ad637f7",
+    "type": "principle",
+    "slug": null,
+    "headline": "NEVER use cached or previously loaded data. Re-run every command fresh, even if you 'just ran it.' Do not assume branch,...",
+    "tags": [
+      "freshness",
+      "caching",
+      "correctness"
+    ],
+    "source": "skill:status",
+    "confidence": 1.0,
+    "byte_size": 151
+  },
+  {
+    "id": "019dbb3e-7d36-79f0-b318-03ea35e57f40",
+    "type": "procedure",
+    "slug": "orokin-proto-init",
+    "headline": "# Orokin protocol §INIT — new project bootstrap (standalone)",
+    "tags": [
+      "orokin",
+      "protocol"
+    ],
+    "source": "corpus-decomp yyvb proto",
+    "confidence": 1.0,
+    "byte_size": 6787
+  }
+]

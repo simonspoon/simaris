@@ -1,0 +1,154 @@
+[
+  {
+    "id": "019dbcd2-68d2-7740-b19a-0777f97b0ff9",
+    "type": "fact",
+    "slug": null,
+    "headline": "Orchestrator task result format: RESULT (done|blocked), TASK (id), SUMMARY (one line max), optional BLOCK_REASON, option...",
+    "tags": [
+      "orchestrator",
+      "task",
+      "result-format",
+      "protocol"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 184
+  },
+  {
+    "id": "019dbd7c-e1fd-77f3-a7bd-ddfec7f3f427",
+    "type": "fact",
+    "slug": null,
+    "headline": "Orokin Orchestrator task result format: RESULT (done|blocked), TASK (id), SUMMARY (≤1 line), optional BLOCK_REASON, opti...",
+    "tags": [
+      "orokin",
+      "orchestrator",
+      "task-result",
+      "format"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 185
+  },
+  {
+    "id": "019dbb6d-d246-7861-a558-79cce6d8972b",
+    "type": "aspect",
+    "slug": "worker-subordinate-mode",
+    "headline": "# Worker subordinate mode",
+    "tags": [
+      "caveman",
+      "worker",
+      "aspect-v2",
+      "subordinate-mode"
+    ],
+    "source": "split from monolith 019da7a6 (task psgb)",
+    "confidence": 1.0,
+    "byte_size": 4849
+  },
+  {
+    "id": "019da7a7-a989-7012-9fac-350f304f2a18",
+    "type": "aspect",
+    "slug": null,
+    "headline": "# Orchestrator",
+    "tags": [
+      "orchestrator",
+      "worker-dispatch",
+      "v5",
+      "aspect-dispatch",
+      "flatten-v1",
+      "supersedes-v4"
+    ],
+    "source": "worker flatten 2026-04-19 — dispatches worker, not PM",
+    "confidence": 1.0,
+    "byte_size": 5837
+  },
+  {
+    "id": "019dbdd8-af16-7c53-9def-ad8bcfda1d6a",
+    "type": "fact",
+    "slug": null,
+    "headline": "Orokin Orchestrator task result format: RESULT (done|blocked), TASK (id), SUMMARY (≤1 line), optional BLOCK_REASON, opti...",
+    "tags": [
+      "orokin",
+      "orchestrator",
+      "task-result",
+      "format"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 172
+  },
+  {
+    "id": "019dbff1-e931-7ab0-9001-acb3ab1c223a",
+    "type": "fact",
+    "slug": null,
+    "headline": "Orokin Orchestrator returns structured result with fields: RESULT (done|blocked), TASK (id), SUMMARY (≤1 line), BLOCK_RE...",
+    "tags": [
+      "format",
+      "orchestrator",
+      "orokin",
+      "results"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 162
+  },
+  {
+    "id": "019dbb85-74eb-71c3-8b03-99edcc6757ac",
+    "type": "aspect",
+    "slug": "orchestrator-worker-dispatch",
+    "headline": "# Orchestrator tick — run worker subprocess",
+    "tags": [
+      "caveman",
+      "orchestrator",
+      "aspect-v2",
+      "worker-dispatch"
+    ],
+    "source": "flatten-v2:oapb",
+    "confidence": 1.0,
+    "byte_size": 1555
+  },
+  {
+    "id": "019dbf43-aa86-7b90-887e-a5c4544e7e21",
+    "type": "fact",
+    "slug": null,
+    "headline": "Orokin Orchestrator task result schema: RESULT (done|blocked), TASK (id), SUMMARY (≤1 line), BLOCK_REASON (if blocked), ...",
+    "tags": [
+      "orokin",
+      "orchestrator",
+      "schema",
+      "task-result"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 165
+  },
+  {
+    "id": "019dbff1-e931-7ab0-9001-acccec303229",
+    "type": "fact",
+    "slug": null,
+    "headline": "Orchestrator result fields: RESULT=done|blocked, TASK=id, SUMMARY=≤1 line, BLOCK_REASON=present only when blocked, SPAWN...",
+    "tags": [
+      "orchestrator",
+      "orokin",
+      "results",
+      "schema"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 150
+  },
+  {
+    "id": "019dbd86-10f5-7962-86a6-a9a4eb872e27",
+    "type": "fact",
+    "slug": null,
+    "headline": "Subordinate result format: RESULT (done|blocked) + TASK + SUMMARY (one line) required; BLOCK_REASON if blocked; SPAWNED ...",
+    "tags": [
+      "subordinate",
+      "result-format",
+      "orchestrator",
+      "caveman"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 158
+  }
+]

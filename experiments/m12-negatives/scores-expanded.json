@@ -1,0 +1,79 @@
+{
+  "eval_set": {
+    "real": {
+      "hook": {
+        "r_at_5": 0.2681159420289855,
+        "mrr": 0.3108695652173913,
+        "top_1": 0.21739130434782608,
+        "false_fire_rate": 1.0,
+        "hook_hit_rate": 1.0,
+        "latency_p50": 854.5,
+        "latency_p95": 1136.0,
+        "n_queries": 62,
+        "n_with_gt": 23,
+        "n_negative": 39,
+        "aggregate_score": 0.2894927536231884
+      },
+      "hook-v2": {
+        "r_at_5": 0.2681159420289855,
+        "mrr": 0.3108695652173913,
+        "top_1": 0.21739130434782608,
+        "false_fire_rate": 1.0,
+        "hook_hit_rate": null,
+        "latency_p50": 852.5,
+        "latency_p95": 1130.0,
+        "n_queries": 62,
+        "n_with_gt": 23,
+        "n_negative": 39,
+        "aggregate_score": 0.2894927536231884
+      },
+      "search": {
+        "r_at_5": 0.2681159420289855,
+        "mrr": 0.3108695652173913,
+        "top_1": 0.21739130434782608,
+        "false_fire_rate": 1.0,
+        "hook_hit_rate": null,
+        "latency_p50": 337.5,
+        "latency_p95": 563.75,
+        "n_queries": 62,
+        "n_with_gt": 23,
+        "n_negative": 39,
+        "aggregate_score": 0.2894927536231884
+      },
+      "search-no-vec": {
+        "r_at_5": 0.07246376811594203,
+        "mrr": 0.13563317716958118,
+        "top_1": 0.043478260869565216,
+        "false_fire_rate": 1.0,
+        "hook_hit_rate": null,
+        "latency_p50": 201.0,
+        "latency_p95": 256.0,
+        "n_queries": 62,
+        "n_with_gt": 23,
+        "n_negative": 39,
+        "aggregate_score": 0.1040484726427616
+      }
+    }
+  },
+  "method_ranks": {
+    "real": [
+      "hook",
+      "hook-v2",
+      "search",
+      "search-no-vec"
+    ]
+  },
+  "top2_verdict": "insufficient-data",
+  "top2_overlap": 0,
+  "kendall_tau": null,
+  "paired_deltas": {},
+  "meta": {
+    "runs": [
+      "experiments/m12-negatives/runs/real-20260510T223742Z.jsonl"
+    ],
+    "labels": [
+      "experiments/m12-negatives/candidate-labels-2026-05-10.json"
+    ],
+    "n_eval_sets": 1
+  }
+}

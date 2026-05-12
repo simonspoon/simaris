@@ -1,0 +1,153 @@
+[
+  {
+    "id": "019dbc39-f428-73d3-8c54-3b176cfa4ed4",
+    "type": "fact",
+    "slug": null,
+    "headline": "# limbo list filter blocked — use --blocked flag",
+    "tags": [
+      "limbo",
+      "blocked",
+      "filter",
+      "gotcha",
+      "status"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2391
+  },
+  {
+    "id": "019de3d3-2c06-7512-86db-7d14c357a991",
+    "type": "lesson",
+    "slug": null,
+    "headline": "chief-of-staff is redundant on single-mission directed runs (lotus orchestrates leads directly). Pays off when: (a) port...",
+    "tags": [
+      "lotus",
+      "org",
+      "chief-of-staff",
+      "when-to-use"
+    ],
+    "source": "lotus nova spin 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 281
+  },
+  {
+    "id": "019dbdcc-b47a-7773-8509-aea378625507",
+    "type": "principle",
+    "slug": null,
+    "headline": "Fix graph layout: touch all four—rank logic, edge metadata thread, renderer branch, arrow variant. Skip one, patch break...",
+    "tags": [
+      "graph",
+      "layout",
+      "rank",
+      "renderer",
+      "edge-metadata"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 123
+  },
+  {
+    "id": "019de4b2-ecba-7502-bc86-0b923606af65",
+    "type": "aspect",
+    "slug": "banshee-story-04-collapsible-tools",
+    "headline": "# Story 04 — Collapsible tool nodes",
+    "tags": [
+      "banshee",
+      "user-story",
+      "simon"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1093
+  },
+  {
+    "id": "019d8d22-a893-7f30-9ac3-99ee1a27fb97",
+    "type": "fact",
+    "slug": null,
+    "headline": "# limbo codebase structure",
+    "tags": [
+      "limbo",
+      "go",
+      "cobra",
+      "signals",
+      "tree",
+      "file-locking"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2671
+  },
+  {
+    "id": "019de4b2-ec94-7fd3-a856-f67ea7c28803",
+    "type": "aspect",
+    "slug": "banshee-story-02-timeline",
+    "headline": "# Story 02 — Per-agent timeline view",
+    "tags": [
+      "banshee",
+      "user-story",
+      "simon"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1250
+  },
+  {
+    "id": "019dbcaa-11e8-7633-a268-a7b348f63a47",
+    "type": "principle",
+    "slug": null,
+    "headline": "Task rubric: verify (not multi-layer), contain (no coord), single (one concern). All fail → split.",
+    "tags": [
+      "task",
+      "rubric",
+      "split",
+      "scope"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 100
+  },
+  {
+    "id": "019de4b2-eca7-7bc3-9eab-6b32cf6d95d0",
+    "type": "aspect",
+    "slug": "banshee-story-03-timestamps",
+    "headline": "# Story 03 — Event timestamps",
+    "tags": [
+      "banshee",
+      "user-story",
+      "simon"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1113
+  },
+  {
+    "id": "019dbcd6-d343-77b1-80d9-f744121ce9ba",
+    "type": "principle",
+    "slug": null,
+    "headline": "Use part_of for atoms that belong to an identified cluster family. Use related_to for standalone atoms that share tags b...",
+    "tags": [
+      "linking",
+      "part_of",
+      "related_to",
+      "knowledge-graph"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 139
+  },
+  {
+    "id": "019dbd87-5e53-7482-8558-66acc38a8982",
+    "type": "principle",
+    "slug": null,
+    "headline": "don't trust show for inbound edge count — run live graph query to verify before marking unit orphaned.",
+    "tags": [
+      "simaris",
+      "graph",
+      "orphan",
+      "verify"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 104
+  }
+]

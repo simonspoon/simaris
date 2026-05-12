@@ -1,0 +1,166 @@
+[
+  {
+    "id": "019de4cd-645b-7a32-b59d-fc903735ce6f",
+    "type": "fact",
+    "slug": null,
+    "headline": "simaris list/search --json → flat array [{id, type, slug, headline, tags, source, confidence, byte_size}, ...]. No wrapp...",
+    "tags": [
+      "simaris",
+      "json",
+      "list",
+      "search",
+      "gotcha",
+      "jq"
+    ],
+    "source": "session-7b5b9542",
+    "confidence": 1.0,
+    "byte_size": 280
+  },
+  {
+    "id": "019dbdde-8926-7ce1-bdbb-03acd582ca33",
+    "type": "lesson",
+    "slug": null,
+    "headline": "simaris show omits inbound links — displays outbound only. Query inbound via simaris list --json | jq to filter units wh...",
+    "tags": [
+      "simaris",
+      "links",
+      "show",
+      "gotcha"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 150
+  },
+  {
+    "id": "019de6ab-b7c0-7ae3-9ce1-bb6160821a2e",
+    "type": "preference",
+    "slug": null,
+    "headline": "Skip tags/frontmatter on knowledge units under ~200B. Schema overhead exceeds queryability gain at that size. Pure conte...",
+    "tags": [
+      "simaris",
+      "preference",
+      "metadata",
+      "schema",
+      "tiny-units",
+      "caveman"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 176
+  },
+  {
+    "id": "019defa8-a593-7291-93ee-0a4558bd85dd",
+    "type": "aspect",
+    "slug": "simaris-m3-0b-bucket-plan-2026-05-03",
+    "headline": "# M3.0b sourcing bucket plan — query-curator step 1 (2026-05-03)",
+    "tags": [
+      "query-curator",
+      "m3",
+      "m3-0b",
+      "bucket-plan",
+      "sourcing",
+      "knowledge-program",
+      "flow"
+    ],
+    "source": "query-curator step 1 dispatch 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 13806
+  },
+  {
+    "id": "019dbcd5-8617-7062-b416-21588f9be6d5",
+    "type": "idea",
+    "slug": null,
+    "headline": "Small-units graph architecture motivates size limits — unit bloat degrades graph traversal and relevance filtering.",
+    "tags": [
+      "knowledge-graph",
+      "small-units",
+      "body-size",
+      "architecture"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 117
+  },
+  {
+    "id": "019d708d-c95f-7c41-b0f6-5e4f5202b67f",
+    "type": "fact",
+    "slug": null,
+    "headline": "# scoring rubric — 0-3 per dimension",
+    "tags": [
+      "scoring",
+      "rubric",
+      "metrics"
+    ],
+    "source": "skill:team-evaluator",
+    "confidence": 1.0,
+    "byte_size": 4292
+  },
+  {
+    "id": "019df008-40b0-7d51-aaa5-0c8cfbfa6472",
+    "type": "aspect",
+    "slug": "simaris-m3-0b-redo-2026-05-03",
+    "headline": "# M3.0b LOCKED held-out query set — REDO DELTA (q31, q18, q41) — DRAFT (2026-05-03)",
+    "tags": [
+      "query-curator",
+      "m3",
+      "m3-0b",
+      "redo",
+      "step2b",
+      "knowledge-program"
+    ],
+    "source": "query-curator step 2b dispatch 2026-05-03 — fresh, post C2 amendment",
+    "confidence": 1.0,
+    "byte_size": 15188
+  },
+  {
+    "id": "019d8f55-45a1-7633-8939-c255e5f850d9",
+    "type": "lesson",
+    "slug": null,
+    "headline": "# JSON.stringify Key-Order Trap",
+    "tags": [
+      "solidjs",
+      "javascript",
+      "json-stringify",
+      "row-comparison",
+      "gotcha"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2434
+  },
+  {
+    "id": "019dee49-2097-7b82-9ab8-3f232be7c4a0",
+    "type": "aspect",
+    "slug": "simaris-m3-brief-held-out-2026-05-03",
+    "headline": "# M3.0 brief — held-out query set authoring + contamination protocol",
+    "tags": [
+      "simaris",
+      "knowledge-program",
+      "m3",
+      "brief",
+      "held-out",
+      "memory-architect",
+      "flow"
+    ],
+    "source": "simaris session 2026-05-03 — M3 kickoff",
+    "confidence": 1.0,
+    "byte_size": 2838
+  },
+  {
+    "id": "019d93e1-c7f6-76f1-9d31-80d7cbf42e6a",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# axum body-size middleware: handling LengthLimitError correctly",
+    "tags": [
+      "axum",
+      "rust",
+      "middleware",
+      "LengthLimitError",
+      "body-limit",
+      "error-handling"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 1531
+  }
+]

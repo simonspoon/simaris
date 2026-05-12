@@ -1,0 +1,152 @@
+[
+  {
+    "id": "019de3be-1040-7ad0-86f6-b514b3f6b258",
+    "type": "lesson",
+    "slug": null,
+    "headline": "MISREAD USER-NEED [attacks 019de3ba-7b82-7240-8e7f-2a8a87a1ad11 hyp-3]: Research assumes Simon will run 'nova inbox huma...",
+    "tags": [
+      "nova",
+      "devil",
+      "critique",
+      "user-need-poll"
+    ],
+    "source": "devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 458
+  },
+  {
+    "id": "019de3be-109c-7080-930a-0f52e0e0bdb8",
+    "type": "lesson",
+    "slug": null,
+    "headline": "MISREAD USER-NEED [attacks 019de3ba-7b82-7240-8e7f-2a8a87a1ad11, 019de3ba-65b2-7853-956d-3f5fdf6fb120]: Nova conflates t...",
+    "tags": [
+      "nova",
+      "devil",
+      "critique",
+      "user-need-conflation"
+    ],
+    "source": "devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 510
+  },
+  {
+    "id": "019de3ba-7b82-7240-8e7f-2a8a87a1ad11",
+    "type": "fact",
+    "slug": null,
+    "headline": "Nova user-need hypotheses (testable, from README + code inspection 2026-05-01):",
+    "tags": [
+      "nova",
+      "research",
+      "user-need",
+      "hypothesis"
+    ],
+    "source": "research-lead 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 824
+  },
+  {
+    "id": "019de445-67c0-7fe3-b3a6-2228692d180d",
+    "type": "aspect",
+    "slug": "nova-use-case-consultation",
+    "headline": "# Nova use case — multi-agent opinion routing",
+    "tags": [
+      "nova",
+      "use-case",
+      "multi-agent",
+      "consultation"
+    ],
+    "source": "simon-direction 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 791
+  },
+  {
+    "id": "019ddc5c-5b07-7c31-a2d6-f92d1a96c572",
+    "type": "idea",
+    "slug": null,
+    "headline": "Nova project at ~/claudehub/nova. Email-shaped async messaging between simaris aspect slugs and humans. LAN daemon, laun...",
+    "tags": [
+      "nova",
+      "agents",
+      "async-messaging",
+      "inbox",
+      "project"
+    ],
+    "source": "session-dbdaa003",
+    "confidence": 1.0,
+    "byte_size": 515
+  },
+  {
+    "id": "019de3b9-9d4c-7a60-b3ee-817e73b8d343",
+    "type": "aspect",
+    "slug": "nova",
+    "headline": "# Nova project root",
+    "tags": [
+      "nova",
+      "project",
+      "root"
+    ],
+    "source": "research-lead 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 205
+  },
+  {
+    "id": "019de3be-1149-74f0-b112-f5afa220fa9e",
+    "type": "lesson",
+    "slug": null,
+    "headline": "SIMPLER ALTERNATIVE: The core nova use case — agent writes result, Simon reads it later — is already solved by simaris. ...",
+    "tags": [
+      "nova",
+      "devil",
+      "critique",
+      "simpler-alternative"
+    ],
+    "source": "devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 622
+  },
+  {
+    "id": "019de3be-116b-7991-b5f5-6df83fa75db4",
+    "type": "lesson",
+    "slug": null,
+    "headline": "WRONG PROBLEM [attacks README, 019de3ba-4b59-7520-b50a-f31d5f3e448e, 019de3ba-7b82-7240-8e7f-2a8a87a1ad11]: README frame...",
+    "tags": [
+      "nova",
+      "devil",
+      "critique",
+      "wrong-problem"
+    ],
+    "source": "devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 700
+  },
+  {
+    "id": "019dbcdc-1717-74e3-86d5-cc5d0eb83c54",
+    "type": "principle",
+    "slug": null,
+    "headline": "Dynamic notification titles over static improve informativeness. Agent picks title per message; agent has contextual rea...",
+    "tags": [
+      "notifications",
+      "agents",
+      "ux",
+      "dynamic"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 154
+  },
+  {
+    "id": "019de3be-105d-7412-896e-ccd71a96d774",
+    "type": "lesson",
+    "slug": null,
+    "headline": "MISREAD USER-NEED [attacks 019de3ba-7b82-7240-8e7f-2a8a87a1ad11 hyp-3, 019de3b9-f831-7912-8a80-47b055255a03]: Hypothesis...",
+    "tags": [
+      "nova",
+      "devil",
+      "critique",
+      "user-need-slug-identity"
+    ],
+    "source": "devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 504
+  }
+]

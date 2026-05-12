@@ -1,0 +1,149 @@
+[
+  {
+    "id": "019d751f-ec69-7041-bc00-372ad0463970",
+    "type": "aspect",
+    "slug": null,
+    "headline": "Convert agent → knowledge units: split disposition (decision patterns, personality, approach) from workflow (process ste...",
+    "tags": [
+      "agents",
+      "knowledge-extraction",
+      "aspect",
+      "procedure"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 195
+  },
+  {
+    "id": "019dbc9b-a904-7ce1-8f84-24c986f0e505",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Steps: (1) map flow orchestrator→PM→agents, (2) per layer log context reloads (code/task/prompt), (3) mark necessary vs ...",
+    "tags": [
+      "multi-agent",
+      "audit",
+      "procedure",
+      "context-reloads"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 281
+  },
+  {
+    "id": "019de1b1-ba83-7532-acba-0e8d3d3b9850",
+    "type": "principle",
+    "slug": null,
+    "headline": "Agent bootstrap flow: on first contact, check for part_of children. None present → run orientation Q&A. Ask one question...",
+    "tags": [
+      "agent-design",
+      "bootstrap",
+      "orientation",
+      "lotus"
+    ],
+    "source": "session-af58e313-371c-499b-b175-d6fb1b98a133",
+    "confidence": 1.0,
+    "byte_size": 364
+  },
+  {
+    "id": "019dcb96-8e85-79a1-9fb8-5267d3f40ca5",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Session continuation flow:",
+    "tags": [
+      "session",
+      "continuation",
+      "hooks",
+      "workflow"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 220
+  },
+  {
+    "id": "019dbcd2-39a0-76b0-9174-cf903e2f8576",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Plan stage has three sub-components: (1) approach — how to solve it, (2) test_strategy — how to verify correctness, (3) ...",
+    "tags": [
+      "workflow",
+      "planning",
+      "risk"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 225
+  },
+  {
+    "id": "019dcb96-8e85-79a1-9fb8-5243f3f8d889",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Multi-phase project ship log pattern. Store progress rows in procedure unit. Load on next session via hook to prevent st...",
+    "tags": [
+      "project",
+      "ship-log",
+      "multi-phase",
+      "session",
+      "workflow"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 245
+  },
+  {
+    "id": "019d708d-c960-7141-b14f-6229f6824dd6",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Review the limbo backlog with the user when deciding what to work on next.",
+    "tags": [
+      "limbo",
+      "backlog",
+      "planning"
+    ],
+    "source": "suda:backlog-capture",
+    "confidence": 1.0,
+    "byte_size": 159
+  },
+  {
+    "id": "019de4b2-da27-7710-80e4-85ede0e806f4",
+    "type": "aspect",
+    "slug": "banshee-story-01-agent-list",
+    "headline": "# Story 01 — Agent list view",
+    "tags": [
+      "banshee",
+      "user-story",
+      "simon"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1295
+  },
+  {
+    "id": "019dbc9c-7e81-77e3-8663-ac1d17e6354f",
+    "type": "principle",
+    "slug": null,
+    "headline": "Subagents: parallelizable context-gather (researcher), narrow ops (committer). Inline: sequential work (implement, test,...",
+    "tags": [
+      "subagent",
+      "agents",
+      "parallelism",
+      "workflow"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 167
+  },
+  {
+    "id": "019d708d-c95f-7c41-b0f6-5fca79749a30",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Capture learned knowledge",
+    "tags": [
+      "knowledge-capture",
+      "documentation",
+      "gotcha"
+    ],
+    "source": "skill:update-docs",
+    "confidence": 1.0,
+    "byte_size": 501
+  }
+]

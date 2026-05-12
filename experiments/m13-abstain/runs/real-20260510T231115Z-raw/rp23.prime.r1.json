@@ -1,0 +1,907 @@
+{
+  "task": "Alright, let's talk about some changes I want to make for Banshee. First off, I want it in dark mode. Then I want the session list to be on the left-hand side, like a navigation, ordered by last response timestamp. For each one, I guess you know, list out the title or whatever you're using now, but then for space savings, put whether it's running or not underneath, and then the last activity timestamp. Yeah, and then when you choose one, it just shows it on the right-hand screen.",
+  "sections": [
+    {
+      "label": "Aspects",
+      "units": [
+        {
+          "id": "019de49f-26a2-78d1-a4eb-0016f8fa479a",
+          "content": "# Banshee\n\nWeb service to watch dispatched subagents from any browser (phone via Tailscale).\n\nRead-only structured UI over `/tmp/launchagent-*.jsonl` streams (already produced by launchagent-tmux via `tee`). Renders structured timeline of claude stream-json events (assistant text, tool_use, tool_result, status).\n\n## Origin\n2026-05-01 lotus convo. Defect named: `watch-subagents.sh` is tmux-only; can't view subagents from phone or remote machine. Banshee fills the remote/structured gap; existing tmux watcher remains for local terminal use.\n\n## Scope (MVP)\n- List active + recent agents from `/tmp/launchagent-*.jsonl`\n- Per-agent timeline view: tool calls (collapsible), assistant text, results, status\n- SSE-tail of jsonl per agent\n- No auth (localhost / Tailscale only)\n- No controls (read-only)\n\n## Stack\n- Backend: Rust + axum + SSE\n- Frontend: vanilla JS + minimal CSS\n- Distribution: brew tap (matches suite pattern)\n- Path: `~/claudehub/banshee/`\n\n## Naming\nWarframe Banshee — sonar reveals enemies through walls. Subagents through the terminal wall.\n\n## Precedent\n- `simaris-server` dashboard (atom 019dd5d5) — Rust web service pattern in suite.\n- `vauban-server` HTTP routes (atom 019dd570) — another in-suite reference.\n",
+          "tags": [
+            "banshee",
+            "project-root",
+            "lotus"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4a7-1896-7ee0-89b8-f885c0a6fc40",
+          "content": "# Banshee — lotus scope decisions (post-research)\n\nResearch-lead raised 3 challenges (atom 019de4a5-0bdc). Lotus answers below. These are within `lotus-authority` (scope decisions on a project lotus owns); not user-visible tradeoffs.\n\n## Q1 — Zombie / stale agent detection\n**Decision:** Don't detect dead. Show timestamps, let user judge.\n\nUI surfaces per-agent: `started_at` (first event) and `last_event_at`. No \"dead/running\" state machine. Stale badge applied client-side at >10min idle, purely cosmetic. The `result` event when it arrives flips state to `done`.\n\nWhy: read-only-honest. Inferring death from absence is error-prone (long thinking pauses, sleep, network blip). UI lies less when it shows what it knows.\n\n## Q2 — Task label / agent identity\n**Decision:** Read both `.jsonl` AND companion `.pretty`. Use `task:` header from `.pretty` for the human-readable label. Fall back to UUID short-prefix when `.pretty` missing or empty.\n\nWhy: UUID-only list is cryptic and the data exists. Cost is one extra fopen per agent.\n\n## Q3 — Restart UX / kill criterion\n**Decision (split):**\n- Defer launchd service / state persistence to v2. v1 = manual `banshee serve`, run as needed.\n- Falsifier added to gate-0: \"Banshee crashes more than 1x/week of casual use\" → fix or archive.\n- Original Tailscale-latency falsifier stays — separate concern.\n\nWhy: don't conflate transport reliability with server reliability. Each gets its own kill condition.\n\n## Consequences for pdm\n- Data layer: watch `/tmp/launchagent-*.jsonl` AND `/tmp/launchagent-*.pretty`.\n- Backend models: `Agent { id, task_label?, started_at, last_event_at, status: Running|Done|Error }`.\n- Per-agent stream view: timeline of `assistant`, `tool_use`, `tool_result`, `result` events. Expand-collapse on tool nodes.\n- No daemon/service mode in v1. CLI `banshee serve [--bind 0.0.0.0:PORT]`.\n",
+          "tags": [
+            "banshee",
+            "lotus",
+            "scope-decision"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4ad-7822-70b3-aae8-08bb0b13c204",
+          "content": "# Banshee — scope v2 (post-devil, supersedes scope v1)\n\nSupersedes: `019de4a7-1896` (lotus scope decisions v1) and revises gate-0 (`019de49f-545c`) kill criterion.\nDriven by: devil gate-2.5 atoms `019de4a9-ca4e` (misreads), `019de4a9-ce27` (assumptions), `019de4a9-d9ab` (wrong-problem), `019de4a9-dcf4` (lotus failure).\n\n## Accepted revisions\n\n### 1. Task label — read from `.jsonl`, not `.pretty`\nDrop `.pretty` parsing. The first `user` message in the `.jsonl` IS the task — already structured JSON, no escape contract needed. `.pretty` companion file is informational only; Banshee does not depend on it.\n\n### 2. No \"recent\" — active only\nv1 lists agents whose `.jsonl` exists in the watched dir. `/tmp` is cleared on macOS reboot — that's fine, the spec no longer claims persistence. Drop the word \"recent\" from project root and pdm stories.\n\n### 3. SSE — broadcast + heartbeat + idle disconnect\n- Single tail per `.jsonl` file → broadcast channel → N SSE clients.\n- Heartbeat every 60s (SSE comment line `: ping\\n\\n`).\n- Server closes connection if no client read for 90s.\n- Each event gets `id: <ulid>`. Client may send `Last-Event-ID` header to resume — server replays from in-memory ring buffer of last 256 events per agent.\n- Document: at-least-once with replay-on-reconnect within ring buffer window. Outside the window: gap acknowledged in UI (\"events older than buffer not available\").\n\n### 4. No staleness badge — only timestamps\nDrop the 10-min stale badge entirely. UI shows `last_event_at` (relative time) and `started_at`. User judges. The system never says \"stuck\" or \"stale\" or \"alive.\"\n\n### 5. Stream source — env var contract\nWatched dir = `$BANSHEE_STREAM_DIR` if set, else platform default. macOS default: `/tmp`. Glob: `launchagent-*.jsonl`. Document the coupling: Banshee watches launchagent-tmux's output; other producers must write into the same dir with the same naming for now.\n\n### 6. Hard floor for \"structured\" UI (kill if not met)\nPdM stories must deliver all four:\n- a. Per-agent navigation: list view → click → timeline view (URL-addressable per agent)\n- b. Tool nodes collapsible: tool_use + tool_result hidden by default; expand on click\n- c. Timestamps on every event\n- d. `last_event_at` (relative) visible in the agent list\n\nIf MVP frontend ships as a `<pre>` block of raw JSON, Banshee is killed and replaced by a `launchagent serve` text-dump variant (per devil's steelman, `019de4a9-d9ab`).\n\n### 7. Revised gate-0 kill criterion (supersedes v1)\n❌ v1: \"Simon opens Banshee URL ≥3× in 7 days.\"\n✅ v2: **\"Within 14 days of MVP shipping, Simon successfully diagnoses ≥1 multi-agent issue from the phone view that he could not have diagnosed from `launchagent log` alone.\"**\nUtility-based, not reachability-based. Devil's lotus-failure callout (`019de4a9-dcf4`) accepted — count metrics passed even when the tool fails its purpose.\n\n### 8. Server lifecycle — no service in v1, but crash-quiet\nv1 = manual `banshee serve [--bind ADDR:PORT]`, brew binary. No launchd. But: server must not panic on bad jsonl line — log + skip. Crash-on-startup falsifier from gate-0 stays.\n\n## Out of scope (deferred, not killed)\n- Auth (localhost / Tailscale only is fine)\n- Persistent state (last viewed agent in cookie — v2)\n- Controls (kill/restart agent — v2 if v1 earns it)\n- Cross-platform Windows file watching — v2 (Mac-first since launchagent-tmux is Mac-first)\n- Direct claude -p stream support outside launchagent — env var contract handles this when needed\n",
+          "tags": [
+            "banshee",
+            "lotus",
+            "scope-decision",
+            "v2"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4b2-bbd4-7f31-8ebb-d1a9a8765ffd",
+          "content": "# Banshee — MVP feature framing\n\n## Feature\nBrowser-based read-only observer for active launchagent subagents — viewable from phone over Tailscale.\n\n## User value\nSimon can watch what any running subagent is doing — its tool calls, assistant output, current status — from any browser, without being in a tmux session on the host machine. When multiple agents run concurrently, he can navigate to each independently and follow their timelines.\n\n## Problem it solves\n`watch-subagents.sh` is tmux-only. Phone or remote machine = blind. Banshee fills the gap without replacing the terminal watcher.\n\n## In scope (scope v2 — 019de4ad-7822)\n- Agent list: active agents, task label, last_event_at (relative)\n- Per-agent timeline: assistant text, tool calls, tool results, result event — chronological\n- Tool nodes collapsible (hidden by default, expand on click)\n- Timestamps on every event\n- SSE live tail per agent — phone updates without refresh\n- Reconnect + ring buffer replay (256 events, at-least-once)\n- Stream source: `$BANSHEE_STREAM_DIR` or macOS `/tmp` default; glob `launchagent-*.jsonl`\n- Task label: first `user` message in `.jsonl`; fallback UUID short-prefix\n- CLI: `banshee serve [--bind ADDR:PORT]`\n- Distribution: single binary via brew tap\n\n## Out of scope (MVP)\n- Auth (Tailscale provides network-level access control)\n- Controls — read-only; no kill/restart\n- State persistence across server restarts\n- Staleness badge — show timestamps; user judges\n- `.pretty` companion file parsing — dropped in scope v2\n- \"Recent\" agents — active only; /tmp clears on reboot\n- Windows / cross-platform (macOS-first, deferred)\n- launchd / service mode — manual `banshee serve` only\n\n## Kill criterion (scope v2)\nWithin 14 days of MVP shipping: Simon successfully diagnoses ≥1 multi-agent issue from the phone view that he could not have diagnosed from `launchagent log` alone.\n\n## Hard floor — structured UI (non-negotiable)\nIf MVP ships as a `<pre>` raw JSON dump, Banshee is killed.\nAll four must ship:\na. Per-agent navigation: list → click → timeline (URL-addressable)\nb. Tool nodes collapsible (hidden by default)\nc. Timestamps on every event\nd. last_event_at visible in agent list\n\n## Source atoms\n- Project root: banshee (019de49f-26a2)\n- Scope v2: 019de4ad-7822\n- Gate-0: 019de49f-545c\n- Devil: 019de4a9-ca4e, 019de4a9-ce27, 019de4a9-d9ab\n",
+          "tags": [
+            "banshee",
+            "feature",
+            "framing"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4b2-da27-7710-80e4-85ede0e806f4",
+          "content": "# Story 01 — Agent list view\n\nAs Simon, I want to open Banshee in a browser and see a list of all currently active agents with their task label and recency, so that I can assess what work is running at a glance before drilling into any specific agent.\n\n## Acceptance criteria\n1. Page loads and shows one row per `launchagent-*.jsonl` file currently in the watched directory\n2. Each row shows a human-readable task label (derived from the first `user` message in the `.jsonl`) or UUID short-prefix when extraction fails\n3. Each row shows `last_event_at` as a relative time (e.g. \"3m ago\") updated without a full page reload\n4. Each row shows agent status: Running (no `result` event yet) or Done (result event received)\n5. Each row is clickable and navigates to that agent's timeline at a stable, URL-addressable path (e.g. `/agent/<id>`)\n6. If no `.jsonl` files exist in the watched dir, an empty-state message is shown — not a blank page\n7. The list updates (new agents appear, done agents flip status) without requiring a manual page refresh\n\n## Out of scope\n- \"Recent\" / past-session agents\n- Staleness badge or inferred \"stuck\" state\n- Agent controls (kill, restart)\n- Auth\n- Sorting configuration UI (default order is implementation decision)\n\n## Dependency\nNone — entry point story.\n",
+          "tags": [
+            "banshee",
+            "user-story",
+            "simon"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4b2-eca7-7bc3-9eab-6b32cf6d95d0",
+          "content": "# Story 03 — Event timestamps\n\nAs Simon, I want every event in the timeline to show when it occurred, so that I can understand the chronology of an agent's activity and identify pauses that might indicate a problem.\n\n## Acceptance criteria\n1. Every rendered event (assistant text, tool node, result) has a visible timestamp\n2. The timeline header shows `started_at` — the time of the first event in the session\n3. Timestamps are derived from data in the `.jsonl` stream (e.g. the `timestamp` field on `user` messages or event envelope fields) — not synthesized by the server or browser\n4. If an event has no parseable timestamp field, the UI shows a \"—\" or \"no timestamp\" indicator rather than a fabricated or blank value\n5. Timestamp display is either absolute (HH:MM:SS local) or relative (\"2m ago\") — either is acceptable; both acceptable if shown together\n\n## Out of scope\n- Timezone conversion UI (local time or UTC — implementation choice)\n- Timestamp editing or correction\n- Sub-second precision display\n\n## Dependency\nStory 02 (timeline view must exist before timestamps can be placed on it).\n",
+          "tags": [
+            "banshee",
+            "user-story",
+            "simon"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4b3-0384-7e42-b7d7-e3bfe3495a84",
+          "content": "# Story 08 — Stream directory configuration\n\nAs Simon, I want to configure which directory Banshee watches via an environment variable, so that I can use Banshee with any agent runner that follows the `launchagent-*.jsonl` naming convention — not just the default `/tmp` path.\n\n## Acceptance criteria\n1. If `BANSHEE_STREAM_DIR` is set, Banshee watches that directory for `launchagent-*.jsonl` files — overrides the platform default\n2. If `BANSHEE_STREAM_DIR` is not set, Banshee defaults to macOS `/tmp`\n3. If the configured directory does not exist at startup, Banshee logs a clear error message naming the missing path and exits — it does not silently watch nothing\n4. The `BANSHEE_STREAM_DIR` variable and the `launchagent-*.jsonl` glob are documented in `banshee --help` or `banshee serve --help` output\n5. `banshee serve` startup output identifies the effective watch directory (covered also by Story 07 AC-4) — no silent configuration\n\n## Out of scope\n- Watching multiple directories simultaneously (v2)\n- Configurable glob pattern (v2)\n- Non-JSONL stream format support\n\n## Dependency\nStory 07 (CLI serve must exist before env var config is surfaced at startup).\n",
+          "tags": [
+            "banshee",
+            "user-story",
+            "simon"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4b7-d20d-7de2-8c2a-636b159e1fd1",
+          "content": "# Banshee — scope v3 (post-pdm, supersedes v2 §1)\n\nSupersedes: scope v2 (`019de4ad-7822`) §1 only — task label source. All other §s of v2 stand.\nDriven by: pdm open questions (`019de4b3-15a2`) and confirmed by inspection of real `/tmp/launchagent-*.jsonl`.\n\n## v2 §1 was wrong\nScope v2 §1 said: \"the first `user` message in the `.jsonl` IS the task.\" Inspection: the first `user` event contains a `tool_result`, not the task prompt. Research-lead's atom (`019de4a3-77bf`) already documented \"task description lives in `.pretty`, NOT in JSONL.\" Lotus failure — filed as retro item.\n\n## Q1 — Task label source (revised)\n**Decision:** launchagent-tmux now writes a sidecar `/tmp/launchagent-<sid>.task` containing the raw task text — no parsing risk, no escape contract. Banshee reads `.task` directly. Edited launchagent-tmux 2026-05-01 (line 187 + 227 + cleanup).\n\nIf `.task` missing for an agent (older streams pre-edit), Banshee falls back to UUID short-prefix. Add a soft \"(no task label)\" marker so the fallback is visible, not silent.\n\n## Q2 — Default port\n**Decision: 4848.**\nSurvey of suite ports: simaris-server 3535, nova 8470, vauban TBD. 4848 avoids known collisions, memorable, in mac-friendly app range. Override via `--bind ADDR:PORT`.\n\n## Q3 — `started_at` and per-event timestamps\nInspection: `system/init`, `assistant`, `hook_*`, `rate_limit_event` have NO `timestamp`. Only `user` (tool_result) events carry `timestamp` (ISO-8601 UTC).\n\n**Decision:**\n- Agent-level `started_at` = file mtime when Banshee first observed the `.jsonl`.\n- Agent-level `last_event_at` = file mtime of last successful read.\n- Per-event timestamp displayed = event's own `timestamp` if present, else Banshee's read-time. UI shows one timestamp; tooltip distinguishes `claude-clock` vs `received-at`.\n\n## Q4 — Gap indicator UX\n**Decision:** Inline separator in the timeline at the gap point:\n```\n── events older than buffer not available ──\n```\nPlain text, matches launchagent's existing separator style. No count of missing events (we don't know).\n\n## Q5 — Agent list ordering\n**Decision: Running before Done, then by `last_event_at` desc.** Done agents sink to bottom. Recently-active running agents on top. Matches phone monitoring use case (primary motivation).\n\n## Implementation consequences for pm\n- Data layer: watch `/tmp/launchagent-*.jsonl` AND read `.task` companion at agent registration time.\n- Story 01 AC: include \"(no task label)\" fallback when `.task` missing.\n- Story 02 AC: timestamp tooltip distinguishing two clocks.\n- Story 06 AC: gap indicator literal text per Q4.\n- Story 07 AC: default port 4848.\n",
+          "tags": [
+            "banshee",
+            "lotus",
+            "scope-decision",
+            "v3"
+          ],
+          "full": false
+        },
+        {
+          "id": "019da245-3346-7f31-8af3-0459fc7f7036",
+          "content": "# Lotus\n\nCEO. Owns /Users/simonspoon/claudehub/. Main user interface. Decides. Delegates.\n\n## Domain\n\nAll projects under ~/claudehub/ — your portfolio. Know them. Triage them. Move them.\n\n## Mode\n\nUser asks → you answer or dispatch. No \"let me check with...\" — decide. Then make org execute.\n\nOrg roster (tools):\n- simaris — knowledge, aspects, procedures\n- limbo — task store\n- launchagent — spawn subordinate\n- subagents (Agent tool) — quick in-process work\n- child aspects (part_of lotus) — your specialist deputies\n\n## Decisions\n\nYou make them. User sets direction; you pick path. Surface tradeoffs only when stakes high or user-visible.\n\n## Bootstrap (first contact only)\n\nIf no orientation child aspect exists under part_of lotus → run orientation. Ask user one at a time, wait for answer:\n\n1. Portfolio — which projects under ~/claudehub/ active? On hold? Archive?\n2. Authority — what needs user sign-off (ship, spend, hire-agent) vs lotus autonomous?\n3. Cadence — daily standup? weekly review? on-demand only?\n4. Org chart — which deputies exist or want spawned? (eng-lead, pm, qa-lead, archivist=simaris...) Routing prefs per intent.\n5. Reporting — terse status / full report / dashboard / silent?\n6. Priority signal — how user flags urgency? (P0/P1, deadlines, vibes?)\n\nAfter each answer: capture as child aspect.\n\n## Self-evolve\n\nPersona grows by atoms. Never rewrite parent stub. Pattern:\n\n1. `simaris add \"<decision>\" --type aspect --tags lotus,<topic> --source \"orientation YYYY-MM-DD\"`\n2. `simaris link <new-id> lotus --rel part_of`\n3. Slug if often-cited: `simaris slug set lotus-<topic> <id>`\n\nRe-load context: `simaris prime \"lotus CEO context\"` pulls parent + part_of children.\n\n## Voice\n\nExecutive. Ultra terse. Decisive. No hedging. No trailing summary. Visual > prose. One topic, wait confirm.\n\nUser vague → one sharp question. User clear → execute.",
+          "tags": [
+            "lotus",
+            "ceo",
+            "primer",
+            "system-prompt",
+            "executive"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de49f-545c-7b50-be29-38e599f0f88a",
+          "content": "# Gate-0 self-check — Banshee MVP\n\n## Assumption\nRead-only SSE-tail of `/tmp/launchagent-*.jsonl`, rendered as a structured per-agent timeline in a browser, solves Simon's \"can't watch subagents from phone\" defect.\n\n## Falsifier\nAny of:\n- jsonl files have gaps or interleaving that make UI misleading vs ground truth\n- claude stream-json schema variance (different versions, different agent modes) breaks rendering\n- the UI is more painful than `tmux attach` over SSH on a phone\n- Tailscale-on-phone latency makes SSE unusable\n\n## Kill-criterion\nSimon does not open the Banshee URL ≥3 distinct times within 7 days of MVP shipping. If unused, archive — no pivot.\n\n## Lotus accountability\nThis is gate-0 per `lotus-gate-0-selfcheck`. Lotus owns the scope decision: read-only, no controls, no auth, single-binary brew distribution. If those choices prove wrong, lotus failure — not pdm/pm/orchestrator.\n",
+          "tags": [
+            "banshee",
+            "gate-0",
+            "selfcheck",
+            "lotus"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4b2-ec94-7fd3-a856-f67ea7c28803",
+          "content": "# Story 02 — Per-agent timeline view\n\nAs Simon, I want to navigate to a specific agent and see its full event timeline in chronological order, so that I can follow exactly what that agent did and is currently doing.\n\n## Acceptance criteria\n1. Each agent has a stable, URL-addressable view (e.g. `/agent/<session-id>`) — bookmarkable and shareable\n2. Timeline renders events in chronological order: assistant text blocks, tool_use/tool_result nodes, and the final result event\n3. System/init events and hook events are excluded from the visible timeline — they are noise for the oversight use case\n4. Timeline scrolls vertically; no horizontal overflow on a phone viewport (360px+ width)\n5. A back navigation element (link or button) returns to the agent list without losing list state\n6. If the agent ID in the URL does not exist (file gone or bad URL), an explicit \"agent not found\" message is shown — not a blank page or unhandled error\n\n## Out of scope\n- Event type filter controls (v2)\n- Agent controls (kill/restart)\n- Search within timeline (v2)\n- Side-by-side multi-agent view (v2)\n\n## Dependency\nStory 01 (list view) — timeline is reachable via list navigation. URL-direct access works independently but list is the discovery path.\n",
+          "tags": [
+            "banshee",
+            "user-story",
+            "simon"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4b2-ecba-7502-bc86-0b923606af65",
+          "content": "# Story 04 — Collapsible tool nodes\n\nAs Simon, I want tool calls to appear as collapsed nodes in the timeline by default and expand on click, so that I can skim agent activity without being buried in tool input/output noise.\n\n## Acceptance criteria\n1. Each `tool_use` + its matching `tool_result` are rendered as a single collapsed node — not two separate blocks\n2. Collapsed node shows at minimum: tool name (e.g. \"Bash\") and whether the result was an error\n3. Clicking a collapsed node expands it inline to show tool input and full result output\n4. Clicking an expanded node collapses it again\n5. Expand/collapse state is not reset when the user scrolls the page\n6. Assistant text blocks are never collapsed — always fully visible\n7. The `result` (final session result) event is never collapsed\n\n## Out of scope\n- Expand-all / collapse-all button (v2)\n- Persistent expand state across page loads (v2)\n- Keyboard shortcuts for expand/collapse (v2)\n- Syntax highlighting of tool input/output (v2)\n\n## Dependency\nStory 02 (timeline view must exist before tool nodes can be placed in it).\n",
+          "tags": [
+            "banshee",
+            "user-story",
+            "simon"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4b3-0347-7c63-8b2d-9fdefe86de58",
+          "content": "# Story 05 — Live SSE tail\n\nAs Simon, I want the agent timeline to update in real-time as the agent emits new events, so that I can watch progress live from my phone without manually refreshing.\n\n## Acceptance criteria\n1. New events appear in the open timeline within ~2 seconds of being written to the `.jsonl` file — no manual refresh required\n2. The page shows a visible \"live\" indicator (e.g. a colored dot or badge) when the SSE connection is active\n3. The live indicator changes appearance when the connection is not active (disconnected or agent is Done)\n4. When scrolled to the bottom, the timeline auto-follows new events (new content stays visible)\n5. When scrolled up (reading older events), auto-follow is paused — new events do not scroll the view\n6. When a `result` event arrives, the agent status flips to Done and the live indicator stops — no further tail needed\n7. The server sends SSE heartbeat comments every 60 seconds to prevent proxy/phone NAT timeout\n\n## Out of scope\n- WebSocket-based streaming (SSE only for MVP)\n- Push notifications to phone lock screen\n- Multiple simultaneous live timelines in split view\n\n## Dependency\nStory 02 (timeline view must exist before live tail can deliver into it).\n",
+          "tags": [
+            "banshee",
+            "user-story",
+            "simon"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4b3-035a-77f2-9454-802131669818",
+          "content": "# Story 06 — Reconnect and event replay\n\nAs Simon, I want the browser to automatically reconnect after a network drop and recover any events I missed within the replay window, so that Tailscale hiccups don't silently corrupt my view of an agent's activity.\n\n## Acceptance criteria\n1. When the SSE connection drops, the browser reconnects automatically using the `EventSource` reconnect mechanism with the `Last-Event-ID` header\n2. On reconnect, the server replays events the client missed (from the per-agent in-memory ring buffer, capacity 256 events) since the last received event ID\n3. Replayed events are inserted at the correct timeline position — not appended as duplicates at the bottom\n4. Each SSE event carries an `id:` field (ULID or sequence number) so the client can track position\n5. If the missed events are outside the ring buffer window (gap exceeds buffer capacity), the UI shows an explicit gap indicator — e.g. \"⚠ Events before this point may be missing\" — not a silently incomplete timeline\n6. The server closes the SSE connection if no client read has occurred in 90 seconds\n\n## Out of scope\n- Persistent replay across server restarts (ring buffer is in-memory only)\n- Disk-based gap filling (v2)\n- Client-configurable ring buffer size\n\n## Dependency\nStory 05 (SSE connection must exist before reconnect behavior is meaningful).\n",
+          "tags": [
+            "banshee",
+            "user-story",
+            "simon"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4b3-036f-7303-b638-c66285b6794b",
+          "content": "# Story 07 — CLI serve command and brew distribution\n\nAs Simon, I want to start Banshee with a single `banshee serve` command and install it via brew, so that I can get it running on any machine in under a minute without build tooling.\n\n## Acceptance criteria\n1. `banshee serve` starts the server, prints the URL it is listening on, and begins watching the effective stream directory\n2. `banshee serve --bind ADDR:PORT` overrides the default bind address and port\n3. Default bind is `0.0.0.0:<PORT>` so the UI is reachable over Tailscale without additional flags\n4. Server startup prints the effective stream watch directory (resolved `$BANSHEE_STREAM_DIR` or platform default)\n5. `brew install simonspoon/tap/banshee` installs the binary — validates full brew distribution path end-to-end\n6. The installed binary is self-contained (no separate web/ directory required after install)\n7. Server does not panic on a malformed or empty JSONL line — it logs the bad line and skips it, continuing to serve\n8. Server exits cleanly on Ctrl-C and SIGTERM — no hung process\n\n## Out of scope\n- launchd service / auto-start on login (v2)\n- Windows distribution\n- Background / daemon mode (v2)\n- TLS / HTTPS (Tailscale handles transport security)\n\n## Dependency\nNone — operational entry point.\n",
+          "tags": [
+            "banshee",
+            "user-story",
+            "simon"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4d2-503f-7530-b31f-42c2e3803458",
+          "content": "# Test Strategy — Story 01: Agent List View\n\nStory: 019de4b2-da27 | Tasks: bfgy (registry), coia (/api/agents), bzek (list UI), djak (auto-refresh)\nLEAF check: every test targets a named function/component, runs as single cargo test or curl, asserts specific field values, completes in seconds.\n\n## Phase 1 — Unit tests\n\n### Happy path\n1. `GET /api/agents` with 2 fixture .jsonl + .task pairs in watched dir → 200 JSON array length==2, each entry has fields: id, task_label, status, last_event_at, started_at  \n   Type: unit | `cargo test registry::test_api_agents_returns_two_entries`  \n   Assert: array.len()==2; each object has exactly those five keys; status values are \"Running\" or \"Done\"\n\n2. Agent with .task sidecar → task_label equals exact .task file content (not UUID prefix)  \n   Type: unit | `cargo test registry::test_task_label_from_sidecar`  \n   Assert: task_label == \"Summarize this repo\" (content of fixture .task); no substring or truncation\n\n3. Agent without .task sidecar → task_label == \"(no task label)\" exactly  \n   Type: unit | `cargo test registry::test_task_label_fallback_no_sidecar`  \n   Assert: string equals \"(no task label)\" — not empty string, not UUID, not null  \n   Ref: scope v3 §Q1 fallback contract\n\n4. Agent list ordering — Running agent appears before Done agent; two Running agents ordered by last_event_at desc  \n   Type: unit | `cargo test registry::test_agent_list_sort_order`  \n   Assert: response[0].status==\"Running\"; response[1].status==\"Done\"; among two Running agents, higher last_event_at is index 0\n\n5. 0-byte .jsonl file — agent registers as Running, last_event_at is null, no panic  \n   Type: unit | `cargo test registry::test_zero_byte_jsonl_registers_running`  \n   Assert: entry present, status==\"Running\", last_event_at field is JSON null\n\n### Failure modes\n6. Watched dir contains zero .jsonl files → GET /api/agents returns 200 empty array `[]`  \n   Type: unit | `cargo test registry::test_empty_watched_dir_returns_empty_array`  \n   Assert: HTTP 200; body == \"[]\"; no 404 or 500  \n   Ref: devil 019de4a9-ca4e misread #2 (\"recent\" implies persistence; empty post-reboot must not crash or 404)\n\n7. .task sidecar contains embedded newlines (heredoc-style task text) → task_label reads full multi-line content without truncation  \n   Type: unit | `cargo test registry::test_task_label_multiline_sidecar`  \n   Assert: task_label contains both lines of fixture; no truncation at first \\n  \n   Ref: devil 019de4a9-ca4e misread #1 (heredoc breaks naive line-based parsing — .task sidecar avoids it but content itself may be multi-line)\n\n8. Done agent (has result event) in list alongside Running agent → Done agent at index 1  \n   Type: unit | `cargo test registry::test_done_agent_sorts_below_running`  \n   Assert: response[0].status==\"Running\"; response[1].status==\"Done\" regardless of file mtime order\n\n## Phase 2 — Integration tests\n\n9. Agent row href == /agent/<session-id> (URL-addressable, floor item a)  \n   Type: integration | `cargo test integration::test_list_row_links_to_agent_path`  \n   Assert: <a> href attribute equals \"/agent/<id>\"; not \"/agent/\" alone; not \"#\"\n\n10. New .jsonl file created in watched dir → new agent row appears without page reload  \n    Type: integration | `cargo test integration::test_list_auto_refresh_new_agent_appears`  \n    Assert: polling interval delivers new row DOM element within 5s of file creation; document.readyState unchanged (no reload)\n\n## Phase 3 — Verification commands\n- `cargo test registry::` — all unit tests for bfgy/coia\n- `cargo test integration::test_list` — integration pass for bzek/djak\n- `curl -s http://localhost:4848/api/agents | jq 'length'` — smoke: returns integer ≥0\n\n## Fixture requirements\n- `fixtures/agents/running-with-task.jsonl` (assistant event, no result) + `.task` file containing \"Summarize this repo\"\n- `fixtures/agents/done-with-task.jsonl` (has result event) + `.task`\n- `fixtures/agents/no-task-sidecar.jsonl` (no companion .task)\n- `fixtures/agents/multiline.task` (two-line task text with embedded \\n)\n- `fixtures/agents/empty.jsonl` (0 bytes)\n- `fixtures/agents/dir-empty/` (directory with zero .jsonl files)\n",
+          "tags": [
+            "banshee",
+            "test-strategy",
+            "story:01"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4d2-6371-7600-91e1-5642dff99460",
+          "content": "# Test Strategy — Story 02: Per-agent Timeline View\n\nStory: 019de4b2-ec94 | Tasks: lomm (/api/agents/:id/history), gtbs (timeline page), mdbi (mobile responsive)\nLEAF: each test targets a named handler/component, runs as single cargo test or curl, asserts specific response shape, completes in seconds.\n\n## Phase 1 — Unit tests\n\n### Happy path\n1. `GET /api/agents/:id/history` with known ID → 200 JSON array of events in chronological order  \n   Type: unit | `cargo test api::test_history_returns_ordered_events`  \n   Assert: array[0] is earlier event; array[n-1] is later event; ordering by event sequence index ascending\n\n2. system/init and hook_started/hook_response events are excluded from history response  \n   Type: unit | `cargo test api::test_history_filters_system_and_hook_events`  \n   Assert: no entry in response has type==\"system\" with subtype==\"init\"; no entry has type==\"system\" with subtype in [\"hook_started\",\"hook_response\"]  \n   Floor item check (noise filtering, AC-3)\n\n3. assistant text block present in history with correct text content  \n   Type: unit | `cargo test api::test_history_includes_assistant_text`  \n   Assert: at least one entry with type==\"assistant\"; entry.content is non-empty string matching fixture text\n\n4. result event present in history for completed agent  \n   Type: unit | `cargo test api::test_history_includes_result_event`  \n   Assert: last entry has type==\"result\"; entry.subtype==\"success\" or \"error_max_turns\"\n\n5. Timeline page at /agent/<id> renders events in DOM in same order as history API  \n   Type: integration | `cargo test integration::test_timeline_event_order_matches_api`  \n   Assert: DOM event node sequence indices match API response sequence\n\n### Failure modes\n6. `GET /api/agents/unknown-id/history` → 404 with body containing \"agent not found\"  \n   Type: unit | `cargo test api::test_history_unknown_id_returns_404`  \n   Assert: HTTP status 404; body string contains \"not found\" (case-insensitive)  \n   Assert: no 200 with empty array (must be explicit 404)\n\n7. `/agent/<bad-uuid>` in browser → renders \"agent not found\" message, not blank page, not panic  \n   Type: integration | `cargo test integration::test_timeline_unknown_agent_shows_error`  \n   Assert: HTTP 200 for the page shell; page DOM contains non-empty error message element; no empty <body>\n\n8. .jsonl file with only system/init event → history returns 200 empty array (all events filtered)  \n   Type: unit | `cargo test api::test_history_all_filtered_returns_empty_array`  \n   Assert: 200; body == \"[]\"; not 404\n\n## Phase 2 — Integration tests\n\n9. /agent/<id> URL accessed directly (no list navigation) → page loads with correct agent timeline  \n   Type: integration | `cargo test integration::test_timeline_url_direct_access`  \n   Assert: page title or heading contains agent ID; event list is non-empty for fixture with events  \n   Floor item **a** (URL-addressable)\n\n10. Back navigation element on timeline page links back to agent list  \n    Type: integration | `cargo test integration::test_timeline_back_link_points_to_root`  \n    Assert: <a> or button href == \"/\" or \"/agents\"; present in DOM; not absent on 404 state\n\n## Phase 3 — Verification commands\n- `cargo test api::test_history` — all unit tests for lomm\n- `cargo test integration::test_timeline` — integration for gtbs\n- `curl -s http://localhost:4848/api/agents/<id>/history | jq 'map(.type) | unique'` — smoke: types exclude \"system\"\n- Manual: open /agent/<id> at 360px viewport in khora; confirm no horizontal scrollbar (floor item a, mobile path)\n\n## Fixture requirements\n- `fixtures/agents/full-run.jsonl` — sequence: system/init → hook_started → hook_response → assistant(text) → tool_use → tool_result → assistant(text) → result\n- `fixtures/agents/hooks-run.jsonl` — focused: hook_started + hook_response only (for noise-filter test)\n- `fixtures/agents/init-only.jsonl` — single system/init event only (for all-filtered empty array test)\n",
+          "tags": [
+            "banshee",
+            "test-strategy",
+            "story:02"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4d2-65c5-7131-ac1c-466114551d97",
+          "content": "# Test Strategy — Story 03: Event Timestamps\n\nStory: 019de4b2-eca7 | Tasks: sxgi (BE extraction), xtfh (FE display)\nLEAF: each test targets sxgi or xtfh directly, runs as single cargo test, asserts specific field values, fast.\n\n## Phase 1 — Unit tests\n\n### Happy path\n1. user event with ISO-8601 `timestamp` field → history entry has clock_source==\"claude-clock\" and timestamp value matches field exactly  \n   Type: unit | `cargo test timestamps::test_user_event_uses_claude_clock`  \n   Assert: entry.clock_source == \"claude-clock\"; entry.timestamp == \"2026-05-01T10:00:00Z\" (fixture value); not server-assigned time\n\n2. assistant event with no `timestamp` field → history entry has clock_source==\"received-at\" and timestamp is a valid ISO-8601 string assigned by server  \n   Type: unit | `cargo test timestamps::test_assistant_event_uses_received_at`  \n   Assert: entry.clock_source == \"received-at\"; entry.timestamp parses as valid ISO-8601; not null\n\n3. Timeline header shows started_at == file mtime at first observation  \n   Type: unit | `cargo test timestamps::test_started_at_equals_file_mtime`  \n   Assert: /api/agents/:id/history response includes started_at field; value equals OS file mtime of .jsonl at registry time (within 1s tolerance)\n\n4. Every event in history response has a timestamp field (never absent)  \n   Type: unit | `cargo test timestamps::test_all_events_have_timestamp`  \n   Assert: for each entry in response, entry.timestamp is non-null string; iterate all fixture event types\n\n5. Frontend tooltip text distinguishes \"claude-clock\" vs \"received-at\" for each event  \n   Type: integration | `cargo test integration::test_timestamp_tooltip_shows_clock_source`  \n   Assert: event DOM node has title or data attribute containing clock_source value; \"claude-clock\" for user events; \"received-at\" for assistant events\n\n### Failure modes\n6. Event with timestamp field value \"NOT-A-DATE\" → entry.timestamp == null; UI shows \"—\" not the garbage string  \n   Type: unit | `cargo test timestamps::test_malformed_timestamp_yields_dash`  \n   Assert: history entry.timestamp == null; frontend renders \"—\" literal; no fabricated time value  \n   Ref: devil 019de4a9-ce27 assumption #3 (silent gaps from unreliable data)\n\n7. Event with null timestamp field → entry.timestamp == null; UI shows \"—\"  \n   Type: unit | `cargo test timestamps::test_null_timestamp_field_yields_dash`  \n   Assert: same as above; no panic, no fallback to current time\n\n8. Stream where ALL events lack timestamp → every displayed event shows \"—\" under received-at fallback  \n   Type: unit | `cargo test timestamps::test_all_events_no_timestamp_all_received_at`  \n   Assert: every history entry has clock_source==\"received-at\"; every entry.timestamp is valid ISO-8601 (server assigned); UI shows them; no event shows \"—\" when received-at is available\n\n## Phase 2 — Integration tests\n\n9. Tooltip renders correct distinguishing text for mixed-clock event sequence  \n   Type: integration | `cargo test integration::test_timestamp_tooltip_mixed_clocks`  \n   Assert: first event (user, claude-clock) tooltip contains \"claude\"; second event (assistant, received-at) tooltip contains \"received\"\n\n## Phase 3 — Verification commands\n- `cargo test timestamps::` — all sxgi unit tests\n- `cargo test integration::test_timestamp` — xtfh integration\n- `curl -s http://localhost:4848/api/agents/<id>/history | jq '[.[] | has(\"timestamp\")] | all'` — smoke: every event has timestamp key\n\n## Fixture requirements\n- `fixtures/events/user-with-timestamp.jsonl` — single user message with `\"timestamp\": \"2026-05-01T10:00:00Z\"`\n- `fixtures/events/assistant-no-timestamp.jsonl` — single assistant event, no timestamp field\n- `fixtures/events/malformed-timestamp.jsonl` — user event with `\"timestamp\": \"NOT-A-DATE\"`\n- `fixtures/events/null-timestamp.jsonl` — user event with `\"timestamp\": null`\n- `fixtures/events/no-timestamps-run.jsonl` — full run sequence, zero events have timestamp field\n",
+          "tags": [
+            "banshee",
+            "test-strategy",
+            "story:03"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4d2-691c-7201-9286-a90d9166a8ef",
+          "content": "# Test Strategy — Story 04: Collapsible Tool Nodes\n\nStory: 019de4b2-ecba | Tasks: fjiw (BE tool pairing), hvmf (FE collapsible)\nLEAF: each test targets fjiw or hvmf; single cargo test command; asserts specific DOM state or JSON shape; fast.\n\n## Phase 1 — Unit tests\n\n### Happy path\n1. History endpoint returns tool_use + matching tool_result as single type==\"tool_node\" object  \n   Type: unit | `cargo test tool_nodes::test_tool_use_result_paired_as_node`  \n   Assert: history response has NO entry with type==\"tool_use\" or type==\"tool_result\" separately; entry with type==\"tool_node\" present; contains tool_name, is_error, input, result_content fields\n\n2. tool_node.is_error==false for successful tool call  \n   Type: unit | `cargo test tool_nodes::test_tool_node_success_flag`  \n   Assert: entry.is_error == false; entry.result_content is non-empty string\n\n3. tool_node.is_error==true for errored tool call  \n   Type: unit | `cargo test tool_nodes::test_tool_node_error_flag`  \n   Assert: entry.is_error == true; entry.tool_name present; entry.result_content present (may be error message)\n\n4. tool_node collapsed by default in DOM — input and result_content not visible  \n   Type: integration | `cargo test integration::test_tool_node_collapsed_by_default`  \n   Assert: tool node container has CSS class or display:none on content; tool name IS visible; input/result NOT visible without click\n\n5. Clicking collapsed node expands it; clicking expanded node collapses it  \n   Type: integration | `cargo test integration::test_tool_node_toggle_expand_collapse`  \n   Assert: after click 1 — content visible; after click 2 — content hidden; DOM state matches both assertions  \n   Floor item **b**\n\n### Failure modes\n6. tool_use event with no matching tool_result in stream (in-flight/incomplete) → rendered as tool_node with result_content==null, collapsed  \n   Type: unit | `cargo test tool_nodes::test_unpaired_tool_use_renders_as_node`  \n   Assert: type==\"tool_node\"; result_content==null; is_error==false; no panic  \n   Ref: devil 019de4a9-ca4e misread #3 (in-flight tools during concurrent view)\n\n7. Scroll position after expand — expand state NOT reset when user scrolls page  \n   Type: integration | `cargo test integration::test_tool_node_state_survives_scroll`  \n   Assert: expand node, scroll to top of page, scroll back — node still expanded; no collapse triggered by scroll\n\n8. assistant text block — never collapsed, always visible in DOM regardless of node type  \n   Type: integration | `cargo test integration::test_assistant_text_never_collapsed`  \n   Assert: all DOM nodes with type==\"assistant\" have no collapse class/display:none; visible without interaction  \n   Story 04 AC-6\n\n9. result event — never collapsed  \n   Type: integration | `cargo test integration::test_result_event_never_collapsed`  \n   Assert: DOM node for result event has no collapse toggle; content always visible  \n   Story 04 AC-7\n\n## Phase 2 — Integration tests\n\n10. Mixed event timeline (assistant + tool_node + result) — only tool_node starts collapsed  \n    Type: integration | `cargo test integration::test_mixed_timeline_only_tool_nodes_collapsed`  \n    Assert: count of collapsed DOM nodes == count of tool_nodes in fixture; assistant and result nodes have no collapse state\n\n## Phase 3 — Verification commands\n- `cargo test tool_nodes::` — all fjiw unit tests\n- `cargo test integration::test_tool_node` — hvmf integration\n- `curl -s http://localhost:4848/api/agents/<id>/history | jq '[.[] | select(.type == \"tool_use\" or .type == \"tool_result\")] | length'` — smoke: must return 0 (all paired)\n\n## Fixture requirements\n- `fixtures/events/tool-pair-success.jsonl` — tool_use + tool_result(is_error=false)\n- `fixtures/events/tool-pair-error.jsonl` — tool_use + tool_result(is_error=true, content=\"error: permission denied\")\n- `fixtures/events/tool-use-unpaired.jsonl` — tool_use only, stream ends before result\n- `fixtures/events/mixed-run.jsonl` — assistant text + tool_use + tool_result + assistant text + result\n",
+          "tags": [
+            "banshee",
+            "test-strategy",
+            "story:04"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4d2-6abe-7573-a0c7-8e1757c68999",
+          "content": "# Test Strategy — Story 05: Live SSE Tail\n\nStory: 019de4b3-0347 | Tasks: eduq (file tail), rrpa (SSE endpoint), lfqa (EventSource), qozz (live indicator + scroll)\nLEAF: each test names specific task component; runs as cargo test or curl; asserts observable SSE stream behavior; deterministic (mock clock for heartbeat).\n\n## Phase 1 — Unit tests\n\n### Happy path\n1. `GET /api/agents/:id/stream` → response Content-Type header == \"text/event-stream\"; Cache-Control: no-cache  \n   Type: unit | `cargo test sse::test_stream_endpoint_content_type`  \n   Assert: Content-Type == \"text/event-stream\"; response does not close immediately for running agent\n\n2. Each SSE event carries `id:` field in ULID format (26-char base32)  \n   Type: unit | `cargo test sse::test_sse_event_id_is_ulid`  \n   Assert: id field matches regex `[0-7][0-9A-HJKMNP-TV-Z]{25}`; monotonically increasing across events in sequence\n\n3. New line appended to .jsonl → SSE broadcast emits the parsed event within 2s  \n   Type: integration | `cargo test integration::test_tail_emits_new_line_within_2s`  \n   Assert: subscriber receives event; elapsed time from write to receipt < 2000ms; event content matches written JSON  \n   Story 05 AC-1\n\n4. result event in stream → SSE stream closes after emitting it; no further events  \n   Type: integration | `cargo test integration::test_stream_closes_on_result_event`  \n   Assert: stream sends result event then sends no more data; connection closes cleanly\n\n5. Broadcast channel: 2 simultaneous SSE subscribers both receive same new event  \n   Type: integration | `cargo test integration::test_sse_fanout_two_subscribers`  \n   Assert: both subscriber channels receive identical event data within 2s of .jsonl write; no blocking  \n   Ref: devil 019de4a9-ca4e misread #3 (two tabs = two blocking threads without fanout — this test proves fanout model)\n\n### Failure modes\n6. `GET /api/agents/unknown-id/stream` → 404  \n   Type: unit | `cargo test sse::test_stream_unknown_agent_returns_404`  \n   Assert: HTTP 404; not a hanging connection; not 200 with empty stream\n\n7. SSE heartbeat `: ping\\n\\n` sent after 60s idle (no new .jsonl writes)  \n   Type: unit | `cargo test sse::test_heartbeat_sent_at_60s`  \n   Assert: with injected mock clock advancing 60s, subscriber receives SSE comment line containing \"ping\"; no event data in heartbeat  \n   Story 05 AC-7 — use mock time injection, not real sleep\n\n8. Auto-follow paused when user scrolled up — new events do NOT forcibly scroll viewport  \n   Type: integration | `cargo test integration::test_auto_follow_paused_when_scrolled_up`  \n   Assert: after scrolling to position > 0px from bottom, new event injected — scrollTop unchanged; event appended to DOM but not visible without scroll\n\n## Phase 2 — Integration tests\n\n9. Live indicator shows active dot when EventSource readyState==OPEN; changes when disconnected  \n   Type: integration | `cargo test integration::test_live_indicator_reflects_sse_state`  \n   Assert: on connect — indicator DOM element has class \"live\" or \"connected\"; on close — class changes to \"done\" or \"disconnected\"\n\n10. Auto-follow: when at bottom, new event appended → viewport scrolls to show new content  \n    Type: integration | `cargo test integration::test_auto_follow_at_bottom`  \n    Assert: scrollTop + clientHeight ≈ scrollHeight after new event; within 100px tolerance\n\n## Phase 3 — Verification commands\n- `cargo test sse::` — all eduq/rrpa unit tests\n- `cargo test integration::test_sse` — lfqa/qozz integration\n- `curl -N http://localhost:4848/api/agents/<id>/stream` — smoke: observe `: ping` within 60s, `id:` prefix on events\n\n## Fixture requirements\n- `fixtures/agents/running-with-task.jsonl` + `.task` (reused from S01) — for SSE tail test\n- Writable temp dir so tests can append lines to .jsonl during test execution\n- 2 subscriber channels (mpsc or broadcast mock) for fanout test\n",
+          "tags": [
+            "banshee",
+            "test-strategy",
+            "story:05"
+          ],
+          "full": false
+        }
+      ]
+    },
+    {
+      "label": "Procedures",
+      "units": [
+        {
+          "id": "019d75c7-39f5-7ed3-9727-8dc64b164750",
+          "content": "---\ntrigger: \"graph selection change fires\"\ncheck: \"sidebar scrolls to match graph-selected node\"\ncadence: \"ship-once\"\ncaveat: \"data-entity attr must exist on list items before effect can target element\"\nprereq:\n  - list items rendered with data-entity attribute\n  - selection signal wired to graph\nrefs:\n  - 019d74ee-d6a8-7a13-b9f8-1d3f24d26680\n  - 019d708d-c95e-7d13-9747-cb8217693295\n  - 019d708d-c95d-7b22-9628-df9cb65c4447\n  - 019d75ee-c71d-7ab0-984a-881962061241\n  - 019d708d-c95e-7d13-9747-c9534de4a822\n  - 019d7503-1ace-7a30-8380-c59525bb3907\n  - 019d78f9-c9ae-7e40-9421-af913e35524f\n  - 019d75c2-5626-78c0-96cb-9c60a8ba200c\n  - 019d75c5-f01c-7de2-8b5c-c3a2a8659755\n  - 019dbb4b-70dd-7603-b5eb-4b0c40509fea\n  - 019dbbab-1e63-7df3-b46b-c1520e578bcd\n  - 019d708d-c95d-7b22-9628-deebf1ad7a00\n  - 019d7915-4c90-7a12-8551-a00617cd50d4\n  - 019d9745-2997-78d0-b0e6-4510686d34f1\n  - 019dbb4b-6fe5-7d91-8697-1e21123550ba\n  - 019d751a-6a43-7693-b4cb-7a9f32108882\n  - 019d708d-c95f-7c41-b0f6-5dd109ea67ba\n  - 019dbbab-1ffb-7512-84c0-b74310b51b1d\n  - 019d708d-c95d-7b22-9628-e010f0edc920\n  - 019d75c7-39f5-7ed3-9727-8dc64b164750\n  - 019dbb4b-7c99-7121-851e-16656a1f0e16\n  - 019d708d-c95d-7b22-9628-e1ac9eda9e5c\n  - 019dbbab-1f7e-72a3-8f1d-f022d3588b0a\n  - 019d708d-c95e-7d13-9747-c97ae3b53698\n  - 019db576-de18-7bd0-b2dc-06935204e79d\n  - 019d93e1-c7f6-76f1-9d31-80d7cbf42e6a\n  - 019dbb3e-78dc-7960-8117-227de5b14b70\n  - 019dbb3e-7757-77a2-ac8d-e11b7e674669\n  - 019dbcaa-afb7-7c23-af4c-55fa5136e709\n  - 019d708d-c95d-7b22-9628-de7b49424bee\n  - 019d708d-c95f-7c41-b0f6-5fec67f15907\n  - 019d708d-c95e-7d13-9747-c9054f8c4c87\n  - 019d708d-c95e-7d13-9747-c85fa02c045e\n  - 019d8815-b648-79e0-ad2b-dc1a8a6cd2b5\n  - 019dbb4b-7e46-7672-9d62-8d48d0a93b91\n  - 019d708d-c95f-7c41-b0f6-5f5e94f3b94e\n  - 019dbb4b-7e6d-7192-815a-e5eb12fcddfc\n  - 019d7502-d956-7e62-9f4d-46f30458a1d3\n  - 019d8975-8c2d-76a3-a1fb-a1dd5479992d\n  - 019d708d-c95f-7c41-b0f6-5f07e83c07a4\n  - 019d7873-eb38-7a62-b72f-e6bcaa9281fa\n  - 019dbbab-1edc-7113-83c2-3f4c51be0a88\n  - 019d708d-c95c-7de2-a39c-45c9594f32f7\n  - 019d708d-c95d-7b22-9628-e149db2091ac\n  - 019d73f0-c72a-7502-8fa4-f54387eb9960\n  - 019d7875-d508-7ee1-8d70-1f64d5cad388\n  - 019d751a-87be-7542-a514-75849e309e92\n  - 019d708d-c95e-7d13-9747-c83b383247e1\n  - 019da8d1-15c3-7941-88de-1cab9db4ee30\n  - 019d91ab-2a7e-7361-a114-fcef62b4848b\n---\n\n# Sync sidebar selection with graph node selection\n\nSync sidebar/list selection with graph node selection: add `data-entity` attribute to list items, then use `createEffect` to watch selection signal and call `scrollIntoView()` on the matching element. Keeps view in sync when selection changes from graph interaction.\n",
+          "tags": [
+            "sidebar",
+            "graph",
+            "selection",
+            "solidjs"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d75ef-8eef-71b1-b0ad-29f1c10c520a",
+          "content": "---\ntrigger: \"SolidJS UI freeze observed\"\ncheck: \"no duplicate listeners, cleanup handlers verified\"\ncadence: \"on-demand\"\ncaveat: \"deduplicate init calls before audit cleanup handlers\"\nprereq:\n  - SolidJS component source accessible\nrefs: []\n---\n\n# SolidJS freeze debug steps\n\n1. grep for components sharing the same listener or init function\n2. trace Show/If conditional unmounts that may trigger premature cleanup\n3. audit onCleanup handlers for undeclared variable references or stale code\n4. check for duplicate event listeners registered on each poll/render cycle\n\nFix: deduplicate init calls first, then verify cleanup handlers.\n",
+          "tags": [
+            "solidjs",
+            "debugging",
+            "oncleanup",
+            "event-listeners"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d81f1-3085-7c40-b0cf-5b6425cad05f",
+          "content": "---\ntrigger: \"add new plugin to Ordis\"\ncheck: \"plugin loads, binaryMissing fallback shows\"\ncadence: \"per-plugin\"\ncaveat: \"omit BUNDLED_PLUGINS registration — plugin no-load\"\nprereq:\n  - Tauri lib.rs accessible\n  - SolidJS frontend with pluginLoader.ts\nrefs: []\n---\n\n# Ordis new plugin implementation pattern\n\n1. Rust: add `run_<tool>` Tauri command in lib.rs that shells out via `Command::new(\"<tool>\")`, returns stdout or maps err to 'Failed to run <tool>: {e}'.\n2. Frontend store: `<tool>Store.ts` — SolidJS signals, `binaryMissing` signal detected via error.includes('Failed to run <tool>'), `parseJson<T>` helper that strips non-JSON prefix via `raw.search(/[{\\[]/)]`.\n3. Plugin component: `onMount(() => refreshAll())`, Show/fallback for binaryMissing.\n4. Register in pluginLoader.ts BUNDLED_PLUGINS array.\n\nExisting examples: ivaraPlugin, dantePlugin, simarisPlugin.\n",
+          "tags": [
+            "ordis",
+            "plugin",
+            "tauri",
+            "solidjs",
+            "pattern"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d8976-5696-76c2-84e7-cf554bc85ef0",
+          "content": "---\ntrigger: \"diagnose SolidJS input focus-loss\"\ncheck: \"grep hits zero in component file\"\ncadence: \"on-bug\"\ncaveat: \"Show/ternary swaps input element — wrap, not swap\"\nprereq:\n  - component file accessible\nrefs:\n  - 019dbb62-ac50-7e13-a87e-736ee828db54\n  - 019dbb62-b183-7c51-8cbd-101a9160c51c\n  - 019d97ce-038c-7203-8e98-73c08d9a6786\n  - 019db109-9471-7452-b29b-8b4271c6e443\n  - 019dbb62-af24-73f0-bbae-341d15db25b6\n  - 019dbb62-ae3e-7fb2-b48c-303df4dc4851\n  - 019dbb62-b33b-7a53-ad21-a744289ae537\n  - 019dbb62-acba-7152-bec6-966d11576ee6\n  - 019dbb62-b200-7653-b781-a90b14cfd728\n  - 019da0de-e366-7e21-a3c2-4ff7a63efe64\n  - 019d708d-c95d-7b22-9628-dfbd6f3ba3fd\n  - 019dbab7-43cc-7220-87e4-4a71b2ed87f3\n  - 019dbb3e-7a2c-7fa3-803d-fe8450021ee5\n  - 019d8976-5696-76c2-84e7-cf554bc85ef0\n  - 019dbb3e-778c-7bc0-849d-64d9ddc2a792\n  - 019dbb3e-75cf-7690-a3ab-1664af10857e\n  - 019d708d-c95d-7b22-9628-df1fb37a1e66\n  - 019dbb3e-798b-7ca2-b948-f411bc6e395e\n  - 019d708d-c95f-7c41-b0f6-5dc6f114d03a\n  - 019dbb3e-763c-7351-ace1-557e41506a1f\n  - 019d8e28-0ec1-7ab0-8701-5fd25a302b6d\n  - 019d7573-4aa9-7d61-96d4-71862233f382\n  - 019d7617-f2ac-77d0-8db5-4de2c013b382\n  - 019d8815-e944-7aa3-93fa-ddf0c1a858e8\n  - 019d7506-9922-7771-a7a5-1127240127de\n  - 019d751e-0af8-75f3-9b94-999b69436239\n  - 019d7615-f06a-7e30-883a-eecaaf6ba1ce\n  - 019d902e-db0b-79e1-b667-ef478b2c28be\n  - 019d708d-c95d-7b22-9628-e031a9e2880a\n  - 019d772f-d0fa-7420-90e6-124bd79dd926\n  - 019d708d-c95d-7b22-9628-e040970d09e4\n  - 019d708d-c95d-7b22-9628-e0505dfa528a\n  - 019d8fee-d6c2-7880-acd5-480450e6f3d4\n  - 019d8ef6-53c9-7be1-9adf-e6789f4d9fb1\n  - 019d708d-c95f-7c41-b0f6-5e2f6c3edae1\n  - 019d708d-c95e-7d13-9747-ca2ec1f3f212\n  - 019d708d-c95e-7d13-9747-ca7252b4d02e\n  - 019d708d-c95e-7d13-9747-cb2232e96c6d\n  - 019d8d23-75eb-78a3-95de-86bcbddaa64b\n  - 019d708d-c95e-7d13-9747-cb98f483bc27\n  - 019d78f5-add8-7052-823f-ac26ce70c41a\n  - 019d7616-5247-7383-be4c-4c934c18feec\n  - 019d7506-ea09-7343-90b2-5312c5da8c7f\n  - 019d7872-ca93-7632-a4b1-b80d383bc5dd\n  - 019d78f4-077e-7380-8a1a-5f0466349dee\n  - 019d817f-b2c0-7ed0-bb04-674e617eb466\n  - 019d7504-391b-7f70-a003-10dff83087be\n  - 019d7871-2638-7d63-ba92-3497bbafbf9b\n  - 019d75c3-f4af-76e1-99d5-105a69484e96\n  - 019d73e8-78b6-7570-a20a-f10d389c5445\n---\n\n# SolidJS input focus-loss diagnosis\n\nGrep the component file for:\n\n1. `createSignal` inside `{(() => {` blocks — signals re-created on reactive update\n2. `const [A-Z]\\w* = ` component definitions inside render/IIFE scope — new identity each update\n3. `Show`/ternary/`&&` that swaps the `<input>` element itself rather than wrapping it\n\nAny hit is a likely culprit. Fix by hoisting signals to component level and moving component definitions to module scope.\n",
+          "tags": [
+            "solidjs",
+            "focus-loss",
+            "debugging",
+            "diagnosis"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d930e-6903-7b81-85e0-1cce285a9b23",
+          "content": "---\ntrigger: \"unit test SolidJS createMemo layout without DOM\"\ncheck: \"pure fn passes pnpm vitest run, no JSDOM\"\ncadence: \"as-needed\"\ncaveat: \"test pure fn, not reactive wrapper\"\nprereq:\n  - vitest installed via pnpm\nrefs:\n  - 019dbb62-b2fc-78b0-ad63-537955f5d04f\n  - 019dbb62-af99-78f3-8d3e-6ac3718f6c10\n  - 019dbb62-ad62-7230-ab4f-a88ca8a1b960\n  - 019d97d0-4936-7061-85c4-9127f6c52d9b\n  - 019dbb62-add0-7f70-b96d-ea6fe0828de5\n  - 019dbb6d-d290-7740-b1cd-f13743aa5b5e\n  - 019dbb62-b08e-7531-8806-890074abe6d6\n  - 019db109-9522-7642-aab3-6a3ee149c44d\n  - 019dbb62-ae78-7110-97cb-7c58744e9ee1\n  - 019db109-94e7-7fe1-8896-df5db838949b\n  - 019d8e06-291a-7f61-8fce-4bd045ac6dc8\n  - 019d708d-c95d-7b22-9628-df4d6efc48d8\n  - 019dbb3e-7e8c-7492-afa8-3d39c0df9b08\n  - 019d708d-c95d-7b22-9628-e0e9f14bfd99\n  - 019d930e-6903-7b81-85e0-1cce285a9b23\n  - 019d708d-c95e-7d13-9747-c9a4f906a874\n  - 019dbb3e-77fa-79a0-8448-857b98e91449\n  - 019d708d-c95e-7d13-9747-cb61fc42cfd2\n  - 019d73f4-a9a8-71e3-9fa7-37cfbf359ed8\n  - 019dbb3e-77c4-75f0-b02f-e77d158801c2\n  - 019d708d-c95f-7c41-b0f6-5db016bdbcda\n  - 019d7613-d69b-7b62-a5b1-5d28ef888cb9\n  - 019d708d-c95f-7c41-b0f6-5df8705a6156\n  - 019d930d-4fbb-70b1-8fd3-21a4cde9fb0e\n  - 019d708d-c95f-7c41-b0f6-60aff8a9330e\n  - 019d8815-a36c-7d01-ab83-d0d2ab5f2c7e\n  - 019d7512-2562-7e90-ba87-4e0e6dab0478\n  - 019d73ec-f0cf-71a1-9ce8-bbe2539d7823\n  - 019d927d-6fa5-71b0-9e0b-9a628a229eb5\n  - 019da0a4-6a43-7e32-99fe-570a042bd5bf\n  - 019d708d-c95e-7d13-9747-cb1d195e86ab\n  - 019d84ca-e6dc-7d72-b9cb-b8350bc3fd03\n  - 019d708d-c95e-7d13-9747-cbf4fb626f73\n  - 019d8ebb-1d15-7ca2-b62d-1d88d34e0399\n  - 019d708d-c95d-7b22-9628-dff3f4af67f5\n  - 019d7500-9fcd-7ba1-b29d-26647aa3ee2b\n  - 019d708d-c95e-7d13-9747-ca6170684709\n  - 019d708d-c95f-7c41-b0f6-5fbbc437838a\n  - 019d8472-a36d-7971-9c4f-dfb15975e1ff\n  - 019d708d-c95f-7c41-b0f6-604e96c73db2\n  - 019d8197-b3dd-7f21-942d-96842c647ff3\n  - 019d7512-9a62-7b60-b71d-8979ae4b4ac5\n  - 019d75eb-3db2-7fe1-9aa2-e6e61ab41d03\n  - 019d7617-205c-77a3-b109-caf737be5a99\n  - 019d7874-419b-7c42-ad7c-bff3c49d2ee6\n  - 019d73e5-e493-73e1-b3b4-369fe7607783\n  - 019d7614-97fa-7952-90b9-8ecc88e7dc6c\n  - 019d75ed-fae6-7b20-9ccc-d80362058a65\n  - 019d75ec-671e-7c41-967e-d76f525b504d\n  - 019d8d41-5ff6-7111-8472-d45ec051a1a1\n---\n\n# Test SolidJS createMemo layout without DOM\n\nTo unit test SolidJS `createMemo` layout algorithms without a DOM: extract the core computation into a pure function (e.g. `computeDagPositions(entities, relationships) → positions[]`), then wrap it in `createMemo` in production. Test the pure function with Vitest (`pnpm vitest run`) — no JSDOM, no reactive context needed. The `createMemo` is just a thin reactive wrapper around the pure logic.\n",
+          "tags": [
+            "solidjs",
+            "createMemo",
+            "vitest",
+            "unit-test",
+            "layout",
+            "testing",
+            "pure-function"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d93e1-c7f6-76f1-9d31-80d7cbf42e6a",
+          "content": "---\ntrigger: \"implement axum body-size middleware with LengthLimitError\"\ncheck: \"413 return or forward-path on size-exceed, no silent empty body\"\ncadence: \"per-impl\"\ncaveat: \"unwrap_or_default silently empties body on size-exceed\"\nprereq:\n  - http-body-util in [dependencies] not [dev-dependencies]\n  - \"`use std::error::Error as _;` in scope\"\nrefs: []\n---\n\n# axum body-size middleware: handling LengthLimitError correctly\n\n1. If you use LengthLimitError in production (non-test) scope, promote http-body-util from [dev-dependencies] to [dependencies] in Cargo.toml — Cargo will not resolve transitive dev-only deps at production scope.\n2. axum::body::to_bytes(body, limit) returns Err(e) on size exceeded — it does NOT truncate. Never call .unwrap_or_default() — that silently produces an empty body, causing downstream 400 errors.\n3. To detect LengthLimitError from the returned error (axum_core::Error has no public downcast_ref): use err.source().and_then(|s| s.downcast_ref::<LengthLimitError>()).is_some(). Requires `use std::error::Error as _;` in scope.\n4. On LengthLimitError: either return a 413 response, or log a warning and forward the original body through without buffering (substitute-and-forward path).\n5. On all other body-read errors: do NOT reconstruct Response::from_parts(parts, Body::empty()) — the original parts may carry status 200 and a Content-Length header, making the client interpret the empty body as success. Use the same substitute-and-forward sentinel path, varying only the log message.\n",
+          "tags": [
+            "axum",
+            "rust",
+            "middleware",
+            "LengthLimitError",
+            "body-limit",
+            "error-handling"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d9d43-9a74-7c92-90cb-2d2ccc615b00",
+          "content": "---\ntrigger: \"add wheel zoom to SVG in JSX\"\ncheck: \"wheel preventDefault fires, no passive block\"\ncadence: \"ship-once\"\ncaveat: \"JSX onWheel registers passive — blocks preventDefault\"\nprereq:\n  - SolidJS onMount available\nrefs: []\n---\n\n# SVG wheel zoom — use ref + addEventListener\n\nSVG wheel zoom: JSX onWheel register passive — block preventDefault. Use ref + onMount addEventListener('wheel', handler, {passive:false}) instead. Pattern: const svgRef; onMount(() => svgRef.addEventListener('wheel', onWheel, {passive:false})).\n",
+          "tags": [
+            "svg",
+            "wheel",
+            "zoom",
+            "passive",
+            "solidjs",
+            "onmount",
+            "addeventlistener"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d9e1c-3b48-7c50-ae0a-54328911afed",
+          "content": "---\ntrigger: \"implement SVG drag-pan\"\ncheck: \"pointer events flow past element boundary, no mouseleave cancel\"\ncadence: \"ship-once\"\ncaveat: \"release capture on pointerUp\"\nprereq:\n  - SVG element with pointerDown handler\nrefs:\n  - 019d708d-c95f-7c41-b0f6-6143e30b07af\n  - 019d708d-c95f-7c41-b0f6-5e1122e6cd3a\n  - 019dbbab-1f2f-78f2-84aa-cab30686d00e\n  - 019d708d-c960-7141-b14f-638ec90d1e69\n  - 019dbbab-1f56-78b0-91fe-1cecfdf3d7a9\n  - 019db458-0176-7ae0-9e68-988ee93030e7\n  - 019dbb3e-7f77-7600-b8a2-1c18a4e9298a\n  - 019d708d-c960-7141-b14f-614ed3f3ec5b\n  - 019dbb3e-7b44-7bd1-a582-c0febc179cdc\n  - 019d708d-c95e-7d13-9747-c9111a02a195\n  - 019d708d-c95e-7d13-9747-c8d5ed30f9ff\n  - 019dbc9f-8090-7951-b44d-7192c3ed1a20\n  - 019dbb4b-7e9e-7462-bbed-4c4a86a16e36\n  - 019d774c-413a-70a0-883e-a03f069b5048\n  - 019dbb3e-7d36-79f0-b318-03ea35e57f40\n  - 019dbb4b-706e-7453-a81c-f9813bb7e29a\n  - 019dbb4b-704a-7f31-9c05-aa46bfa93f8d\n  - 019d72da-d36e-7423-a294-0f2b3fac3b85\n  - 019dacbd-46e7-7061-86f9-152fd3c07e07\n  - 019d75ea-35b8-79e0-bbcc-a72b62d9a42f\n  - 019d708d-c95e-7d13-9747-cbc84ed68ee8\n  - 019d73f0-c72a-7502-8fa4-f5596e5fbf2c\n  - 019db36a-fae1-7c73-8d12-6a5a111e5058\n  - 019d8dda-e6d7-7740-bcc1-d44b36cb1798\n  - 019d708d-c95d-7b22-9628-e0047a4b626d\n  - 019d708d-c95f-7c41-b0f6-5e5fb79e0adf\n  - 019da10c-a152-7c03-834e-1f6eb96983a8\n  - 019d708d-c95d-7b22-9628-e0d4976ba2bb\n  - 019d708d-c95c-7de2-a39c-464923dfcfd9\n  - 019d708d-c95f-7c41-b0f6-5de87bfb7f93\n  - 019dbb3e-7da5-7172-8442-9696b32012e1\n  - 019d708d-c95e-7d13-9747-cba3a357e5ec\n  - 019d7874-fbc8-7af3-a3e8-5fa850292270\n  - 019d73e5-94ad-7f43-a4d1-37e3b25a9391\n  - 019da0a4-c9ff-7b91-93f8-444ffc817b83\n  - 019d8472-b3d4-75b1-8a7b-c11f89fd517e\n  - 019d708d-c95e-7d13-9747-c879b3db5430\n  - 019dbb4b-7df8-7e82-8326-12cf498bcfa6\n  - 019d708d-c95e-7d13-9747-c9ba9bb858b3\n  - 019d93e7-96de-74e2-ac71-70e96119a2df\n  - 019d708d-c95e-7d13-9747-c9f1adad05e8\n  - 019dbb3e-7a97-7f52-9646-1e044006ac65\n  - 019dbca1-bb9e-7d01-bb65-a6a33de607d9\n  - 019d9e1c-3b48-7c50-ae0a-54328911afed\n  - 019dbb3e-76a9-7362-9a0c-e3850a896c97\n  - 019dbb3e-7ec5-72d1-acd7-f2f3a61c59ec\n  - 019d708d-c95e-7d13-9747-cadaf6c5c110\n  - 019dbb4b-7d61-78c2-a722-a51645e358d2\n  - 019db329-0968-77c3-be6c-d004caeb0f8c\n  - 019d708d-c95d-7b22-9628-de285e0b1990\n---\n\n# SVG drag pointer capture\n\nSVG drag: use `setPointerCapture(e.pointerId)` on pointerDown for reliable pointer tracking. Keeps events flowing even when cursor leaves element. Release with `releasePointerCapture` on pointerUp. Enables clean drag-pan without mouseleave cancellation.\n",
+          "tags": [
+            "svg",
+            "drag",
+            "pointer-capture",
+            "solidjs",
+            "pan-zoom"
+          ],
+          "full": false
+        },
+        {
+          "id": "019da1b1-af6b-7831-9c5b-b9e760a547a3",
+          "content": "---\ntrigger: \"add animated createEffect, need skip first-mount\"\ncheck: \"mount sets state without animation; subsequent updates animate\"\ncadence: \"per-effect\"\ncaveat: \"plain let binding, not signal — no reactive tracking needed\"\nprereq:\n  - createEffect wrapping animation call\nrefs:\n  - 019dbba2-74c5-7d72-abd0-265017dc9e88\n  - 019dbba2-74e8-7d60-824f-03475fc44e22\n  - 019dbba2-750b-77d1-b85b-bbdf574f8327\n  - 019dbba2-752d-70d0-8231-3481790c75d7\n  - 019d73b0-9f41-7081-8686-32cd20d10c55\n  - 019db862-5275-7ae1-882f-8d0357a561f8\n  - 019dabb9-a984-7b60-ba94-d1bc2ca46c7d\n  - 019da7d8-41d3-7292-a43b-2981bb931eff\n  - 019da1b1-af6b-7831-9c5b-b9e760a547a3\n  - 019d7913-ba42-74b1-ac5e-9b671305c02d\n  - 019dbb34-34d3-7090-96d7-bad85a64b16b\n  - 019db0a1-474d-73e0-8eb2-90015cca8053\n  - 019db0a1-2663-7793-9359-e73576570840\n  - 019da815-9f21-74a0-a441-6dab63c34cb2\n  - 019d925e-f7de-75d2-b1af-88c53336dcc8\n  - 019dbb9a-0d97-74b1-8f3a-b754ff8d049b\n  - 019dbb77-8148-7861-b297-76ae990cf15f\n  - 019db36d-293d-7bb2-ba0d-e7e843c72a48\n  - 019dabe0-ccd4-7da3-bdaa-34eb649327a4\n  - 019dad93-3165-7e92-b7bf-91f5d14cca1f\n  - 019da86f-66d8-7e81-bdd5-ee80f5b6cb86\n  - 019da172-c129-7112-addb-74fc79b96cc8\n  - 019da10e-09ac-7371-87cf-e246fac86307\n  - 019d8ef7-dfc0-7f00-9dd6-bc2a652cb43f\n---\n\n# First-mount guard pattern for animated createEffect\n\nFirst-mount guard pattern for animated `createEffect`: `let firstFocusFit = true`. Effect body: `if (firstFocusFit) { firstFocusFit = false; batch(setZoom, setPan); return; } animatePanZoom(...)`. Prevents animate-on-mount. Plain `let` binding (not signal) — no reactive tracking needed.\n",
+          "tags": [
+            "solidjs",
+            "createEffect",
+            "animation",
+            "mount-guard",
+            "pattern"
+          ],
+          "full": false
+        },
+        {
+          "id": "019dac21-a371-7773-8f7e-efd35f366450",
+          "content": "---\ntrigger: \"add restart-survival test to Mirage integration suite\"\ncheck: \"assert same data after stop+restart in existing dir\"\ncadence: \"ship-once\"\ncaveat: \"stop must skip workdir cleanup or dir vanishes before restart\"\nprereq:\n  - MirageServer test harness in scope\n  - integration test env configured\nrefs: []\n---\n\n# Mirage restart-survival test pattern\n\nAdd `stop_preserve_dir(self) → PathBuf` (kill child, skip workdir cleanup, return path) + `start_in_existing_dir(workdir: PathBuf, spec_rel: &str, probe: &str) → MirageServer` (start process in same dir, existing mirage.db reused). Use in integration tests: `let dir = server.stop_preserve_dir(); let server2 = MirageServer::start_in_existing_dir(dir, ...); assert same data.`\n",
+          "tags": [
+            "mirage",
+            "rust",
+            "integration-test",
+            "restart",
+            "persistence",
+            "sqlite",
+            "pattern"
+          ],
+          "full": false
+        },
+        {
+          "id": "019db329-0968-77c3-be6c-d004caeb0f8c",
+          "content": "---\ntrigger: \"existing single-crate Rust CLI needs orokin workspace split\"\ncheck: \"one command migrated, pipeline runs end-to-end\"\ncadence: \"ship-once\"\ncaveat: \"orokin-init refuses exit 4 — do by hand\"\nprereq:\n  - single-crate Rust CLI exists\n  - orokin tooling available\nrefs:\n  - 019d708d-c95f-7c41-b0f6-6143e30b07af\n  - 019d708d-c95f-7c41-b0f6-5e1122e6cd3a\n  - 019dbbab-1f2f-78f2-84aa-cab30686d00e\n  - 019d708d-c960-7141-b14f-638ec90d1e69\n  - 019dbbab-1f56-78b0-91fe-1cecfdf3d7a9\n  - 019db458-0176-7ae0-9e68-988ee93030e7\n  - 019dbb3e-7f77-7600-b8a2-1c18a4e9298a\n  - 019d708d-c960-7141-b14f-614ed3f3ec5b\n  - 019dbb3e-7b44-7bd1-a582-c0febc179cdc\n  - 019d708d-c95e-7d13-9747-c9111a02a195\n  - 019d708d-c95e-7d13-9747-c8d5ed30f9ff\n  - 019dbc9f-8090-7951-b44d-7192c3ed1a20\n  - 019dbb4b-7e9e-7462-bbed-4c4a86a16e36\n  - 019d774c-413a-70a0-883e-a03f069b5048\n  - 019dbb3e-7d36-79f0-b318-03ea35e57f40\n  - 019dbb4b-706e-7453-a81c-f9813bb7e29a\n  - 019dbb4b-704a-7f31-9c05-aa46bfa93f8d\n  - 019d72da-d36e-7423-a294-0f2b3fac3b85\n  - 019dacbd-46e7-7061-86f9-152fd3c07e07\n  - 019d75ea-35b8-79e0-bbcc-a72b62d9a42f\n  - 019d708d-c95e-7d13-9747-cbc84ed68ee8\n  - 019d73f0-c72a-7502-8fa4-f5596e5fbf2c\n  - 019db36a-fae1-7c73-8d12-6a5a111e5058\n  - 019d8dda-e6d7-7740-bcc1-d44b36cb1798\n  - 019d708d-c95d-7b22-9628-e0047a4b626d\n  - 019d708d-c95f-7c41-b0f6-5e5fb79e0adf\n  - 019da10c-a152-7c03-834e-1f6eb96983a8\n  - 019d708d-c95d-7b22-9628-e0d4976ba2bb\n  - 019d708d-c95c-7de2-a39c-464923dfcfd9\n  - 019d708d-c95f-7c41-b0f6-5de87bfb7f93\n  - 019dbb3e-7da5-7172-8442-9696b32012e1\n  - 019d708d-c95e-7d13-9747-cba3a357e5ec\n  - 019d7874-fbc8-7af3-a3e8-5fa850292270\n  - 019d73e5-94ad-7f43-a4d1-37e3b25a9391\n  - 019da0a4-c9ff-7b91-93f8-444ffc817b83\n  - 019d8472-b3d4-75b1-8a7b-c11f89fd517e\n  - 019d708d-c95e-7d13-9747-c879b3db5430\n  - 019dbb4b-7df8-7e82-8326-12cf498bcfa6\n  - 019d708d-c95e-7d13-9747-c9ba9bb858b3\n  - 019d93e7-96de-74e2-ac71-70e96119a2df\n  - 019d708d-c95e-7d13-9747-c9f1adad05e8\n  - 019dbb3e-7a97-7f52-9646-1e044006ac65\n  - 019dbca1-bb9e-7d01-bb65-a6a33de607d9\n  - 019d9e1c-3b48-7c50-ae0a-54328911afed\n  - 019dbb3e-76a9-7362-9a0c-e3850a896c97\n  - 019dbb3e-7ec5-72d1-acd7-f2f3a61c59ec\n  - 019d708d-c95e-7d13-9747-cadaf6c5c110\n  - 019dbb4b-7d61-78c2-a722-a51645e358d2\n  - 019db329-0968-77c3-be6c-d004caeb0f8c\n  - 019d708d-c95d-7b22-9628-de285e0b1990\n---\n\n# Convert single-crate Rust CLI → orokin workspace\n\nConvert existing single-crate Rust CLI → orokin: orokin-init refuse (exit 4). Do by hand. Steps:\n\n1. mv Cargo.toml → workspace root, add [workspace] members=[contract,core,cli].\n2. mkdir contract core cli.\n3. contract: pure Command enum + Result types + Error variants.\n4. core: move command logic + db + parsers. Define port traits (Store, FileWalker, GitPort, Parser). fn execute(cmd,ports)→Result.\n5. cli: mv main.rs. clap parse → Command → core::execute → render.\n6. Write .orokin/config.toml. Migrate one command first, prove pipeline end-to-end.\n",
+          "tags": [
+            "orokin",
+            "migration",
+            "rust",
+            "workspace",
+            "refactor",
+            "cli"
+          ],
+          "full": false
+        },
+        {
+          "id": "019db458-504d-7931-ad28-9996f9050160",
+          "content": "---\ntrigger: \"write SolidJS reactive code\"\ncheck: \"5 steps applied, no silent failure\"\ncadence: \"every solidjs feature\"\ncaveat: \"SolidJS swallow TDZ in Show children — blank render, no console error\"\nprereq:\n  - SolidJS project\nrefs:\n  - 019dc646-7f90-7ef1-ac3e-25a79a778a26\n  - 019d708d-c95e-7d13-9747-c84f3755de3d\n  - 019d708d-c95f-7c41-b0f6-60cc38c54a73\n  - 019d902e-1433-74c3-8c47-6206aa4b9033\n  - 019d708d-c95e-7d13-9747-c93898c10a3b\n  - 019d708d-c95d-7b22-9628-e0842ae8f59d\n  - 019d708d-c95d-7b22-9628-dfce6675955b\n  - 019d708d-c95f-7c41-b0f6-5e00e7ad4a3b\n  - 019d708d-c95c-7de2-a39c-4625f34e0f16\n  - 019d708d-c95e-7d13-9747-c86d9f701e32\n  - 019d708d-c95e-7d13-9747-ca445e9d6289\n  - 019d7570-1854-7b30-aa27-f184c3682abd\n  - 019d8dfa-6a07-7352-a679-8820ee6940de\n  - 019d7572-fc94-7a93-89cb-ccf75f461250\n  - 019d7503-d0d6-7db3-8d20-eaeb3045e2c3\n  - 019d75f0-405e-72a1-ab24-6b2bcd9bec87\n  - 019d7914-4a63-7552-821e-47047ece9885\n  - 019d708d-c95c-7de2-a39c-4618f1973eae\n  - 019d75c2-a62e-70c2-ab1f-b43bc286b9be\n  - 019da1b1-97fe-7810-8dd5-605ab86a2f59\n  - 019d708d-c95d-7b22-9628-e155d8c7dbca\n  - 019d8ebb-14a4-7a90-ade7-5e53144958f3\n  - 019d708d-c960-7141-b14f-62bf90235f5e\n  - 019d7619-8247-71a2-9758-73c33d1f0a3a\n  - 019d8e27-f5ef-7640-8506-1fc596250b57\n  - 019d900f-0c89-7a91-b7ab-c67b0aef6cc4\n  - 019d708d-c95f-7c41-b0f6-60ee5f78a80e\n  - 019dbcaa-7e77-7883-8616-584b57741cb6\n  - 019d93bd-b318-7f40-bb47-3f3bffc4eac1\n  - 019d708d-c95d-7b22-9628-de8500a55357\n  - 019d9744-bff1-76e0-bb85-2cc1e7ae5ee1\n  - 019dbb4b-7028-7e51-8dc9-f6737f624e6e\n  - 019dbb3e-7cc9-7473-93ed-5a27622ed5b5\n  - 019dbbab-1f06-7471-8cfe-9979783babde\n  - 019d708d-c95f-7c41-b0f6-5f7c09e96332\n  - 019d9e5b-0af9-7cc2-813b-423c39d0eda7\n  - 019dbb3e-7950-7e51-a5de-56c4c0417bb7\n  - 019dbb4b-7dd0-7460-ad0c-01ebe6d974a3\n  - 019db458-504d-7931-ad28-9996f9050160\n  - 019d708d-c95e-7d13-9747-cb35057624d0\n  - 019d708d-c95c-7de2-a39c-460da635ef7a\n  - 019d7514-99c8-74e3-b5ee-39f50c4382a3\n  - 019d81f1-3085-7c40-b0cf-5b6425cad05f\n  - 019d708d-c95f-7c41-b0f6-602417f61c72\n  - 019d708d-c95f-7c41-b0f6-5ffb7323383f\n  - 019dbb4b-6f83-7e71-ae41-0b2f614a38c0\n  - 019dbb3e-79bf-76c3-8ae2-2904d7dd18b8\n  - 019dbb4b-7e1e-7601-94c8-87d57c8cc8d4\n  - 019dac21-a371-7773-8f7e-efd35f366450\n  - 019dbb3e-786b-71f2-a156-05d81c642098\n---\n\n# SolidJS reactive safety pattern.\n\nSignal, memo, effect wire subtle. Wrong order fail silent.\n\nSteps:\n1. Declare ALL signal BEFORE any createMemo or createEffect that read it, same scope. TDZ ReferenceError throw → SolidJS swallow in Show children → render blank, no console error.\n2. Correlated write: wrap ALL setX call for same state transition in single `batch()`. Partial batch → effect fire with stale memo, cascade wrong state.\n3. Module-scope signal persist for app lifetime. Reset-on-navigate state: use component-level signal, or reset in `onMount`.\n4. Secondary data fetch: gate via createEffect that watch primary length + fetchedOnce flag. Example:\n   ```\n   createEffect(() => {\n     if (primary().length > 0 && !fetchedOnce) {\n       fetchSecondary();\n       fetchedOnce = true;\n     }\n   });\n   ```\n   Also call fetchSecondary from refreshAll() if fetchedOnce true.\n5. onCleanup handler: every variable read must be declared in closure. Undeclared var throw ReferenceError → corrupt reactive graph → permanent UI freeze until full reload. Strict ESM throw, not silent.\n\nApply to: any SolidJS project (mirage ui, simaris-gui, ordis app subdirectory).\n",
+          "tags": [
+            "solidjs",
+            "signals",
+            "reactive",
+            "batch",
+            "tdz",
+            "creatememo",
+            "oncleanup",
+            "procedure",
+            "caveman",
+            "dream-promoted"
+          ],
+          "full": false
+        },
+        {
+          "id": "019dbcc1-3b23-78c1-a5ab-815a3a539eeb",
+          "content": "---\ntrigger: agent migrates old callers to a new interface using a shim layer\n---\nShim layer pattern for migration: old callers route through shim to new core, delete shim when all callers migrated.",
+          "tags": [
+            "migration",
+            "shim",
+            "refactor",
+            "pattern"
+          ],
+          "full": false
+        },
+        {
+          "id": "019dbcc9-ffd5-7fa1-b4e5-361058b22c14",
+          "content": "---\ntrigger: agent converts an existing Rust CLI in-place to orokin workspace architecture\n---\nIn-place Orokin conversion for existing Rust CLI. Split into workspace [contract, core, cli]. Manual refactor only — no tooling. Est 1-2w solo.",
+          "tags": [
+            "orokin",
+            "rust",
+            "cli",
+            "refactor"
+          ],
+          "full": false
+        },
+        {
+          "id": "019dbd6d-afd2-7840-809d-243a85e5305b",
+          "content": "---\ntrigger: \"author feature spec\"\ncheck: \"six sections present in spec\"\ncadence: \"per spec\"\ncaveat: \"defaults cover deferred choices only; open-questions must name unresolved decisions\"\nprereq:\n  - feature scope known\nrefs: []\n---\n\n# Feature spec framing sections\n\nFeature spec framing sections:\n- intent: what + why\n- trigger: human / agent / both\n- surfaces: cli / gui / server\n- non-goals: explicit exclusions\n- open-questions: unresolved decisions\n- defaults: proposed values for deferred choices\n",
+          "tags": [
+            "spec",
+            "feature",
+            "framing"
+          ],
+          "full": false
+        },
+        {
+          "id": "019dc214-5aa5-7a01-8bb5-58d0579af2fc",
+          "content": "---\ntrigger: \"call claude CLI from Rust with timeout\"\ncheck: \"child killed on timeout, skeleton returned on err\"\ncadence: \"ship-once\"\ncaveat: \"store Child handle before thread spawn — kill() needs main-thread access\"\nprereq:\n  - mpsc channel created before spawn\n  - Child handle held separate from thread\nrefs: []\n---\n\n# Call claude CLI with timeout in Rust\n\nCall claude CLI with timeout in Rust: spawn thread, send `Command::new(\"claude\")` output via `mpsc::channel`, `recv_timeout(Duration::from_secs(60))`. On timeout: kill child process (store `Child` handle, call `kill()` from main thread). Pattern used in `simaris rewrite::call_claude()`. Fallback to skeleton on `Err` or timeout.\n",
+          "tags": [
+            "simaris",
+            "rust",
+            "claude-cli",
+            "subprocess",
+            "timeout",
+            "pattern"
+          ],
+          "full": false
+        },
+        {
+          "id": "019dcb9a-b599-73b0-ada0-ea0bc3e94a94",
+          "content": "---\ntrigger: agent needs to dispatch a subagent via launchagent CLI\n---\nDispatch subagents via launchagent CLI.\n\nUsage: launchagent [--model <m>] [--aspect <id|slug>] [--reply-slug <slug>] [--nova-addr <addr>] <task>\n       echo <task> | launchagent [--model <m>] [--aspect <id|slug>]\n       launchagent log <sid>\n\nFlags:\n  --model <m>          opus|sonnet|haiku or claude-* full name\n  --aspect <id|slug>   simaris aspect baked as system prompt (default: lotus)\n  --reply-slug <slug>  post agent result to nova inbox <slug> on finish\n  --nova-addr <addr>   nova daemon address (default: 127.0.0.1:8470)\n\nEnv:\n  LAUNCHAGENT_DEBUG=1  print tmux session/sid/attach hint to stderr\n  NOVA_ADDR            default nova daemon address\n  NOVA_TOKEN           bearer token for nova auth (optional)\n\nSubcommands:\n  log <sid>  pretty-print captured stream by sid prefix from /tmp/launchagent-<sid>.jsonl",
+          "tags": [
+            "subagent",
+            "launchagent",
+            "dispatch"
+          ],
+          "full": false
+        },
+        {
+          "id": "019dd796-a56b-7393-93e5-fe13bab2992b",
+          "content": "---\ntrigger: vauban canvas / tldraw integration work\n---\n**trigger:** vauban canvas / tldraw integration work\n**check:** layout stable, no editor-prop crash, no echo-loop, no hairball\n**cadence:** before adding canvas feature\n**caveat:** tldraw 2.x API differs from 1.x — verify version\n**prereq:** vauban repo, tldraw 2.x, dagre@1 via esm.sh\n\n# Vauban canvas integration — gotcha checklist\n\nSteps:\n1. tldraw editor ref. Use ref callback. Never assign editor=ref. editor prop getter-only → TypeError.\n2. tldraw shape bindings. Use createBindings for arrow→shape track. Not props.start/end. props stale, bindings live.\n3. Layout strategy. Compose four position sources priority order: pin → manual → autolayout → fallback. dagre@1 esm.sh import.\n4. Pin commands. PinItem layout-only. CanvasFile.items unchanged. Watch handler must replay pins.\n5. Graph shape. Hub-spoke = hairball at 50+ edges. Use tree-edges (parent→child) for vauban-scale graphs.\n\nSignals wrong path:\n- editor=ref crash → switch to ref callback\n- arrow snap-back → check bindings vs props\n- layout chaos → check pin precedence\n- unreadable graph → drop hub-spoke, use tree",
+          "tags": [
+            "vauban",
+            "canvas",
+            "tldraw",
+            "layout",
+            "dagre",
+            "integration",
+            "dream-promoted"
+          ],
+          "full": false
+        }
+      ]
+    },
+    {
+      "label": "Principles",
+      "units": [
+        {
+          "id": "019d7520-36f2-7e60-971e-69ceafc8fe06",
+          "content": "Edit mode navigation: use tab-based access for edit flows, wizard/sequential gating for new/guided flows. Edit users need quick navigation; sequential walkthrough helps new users learn structure.",
+          "tags": [
+            "navigation",
+            "ux",
+            "edit-mode",
+            "wizard"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d7876-9f37-74f0-9e35-bcf3cbca0cd1",
+          "content": "Two patterns for async work triggered from session boundaries: (A) Marker file + background watcher = immediate but requires daemon; (B) Scheduled poll = simpler but delayed. Choose A for responsiveness, B for operational simplicity.",
+          "tags": [
+            "async",
+            "architecture",
+            "session-boundary",
+            "pattern"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d7506-9922-7771-a7a5-1127240127de",
+          "content": "---\ntension: \"monolith vs plugin shell\"\nrefs:\n  - 019dbb62-ac50-7e13-a87e-736ee828db54\n  - 019dbb62-b183-7c51-8cbd-101a9160c51c\n  - 019d97ce-038c-7203-8e98-73c08d9a6786\n  - 019db109-9471-7452-b29b-8b4271c6e443\n  - 019dbb62-af24-73f0-bbae-341d15db25b6\n  - 019dbb62-ae3e-7fb2-b48c-303df4dc4851\n  - 019dbb62-b33b-7a53-ad21-a744289ae537\n  - 019dbb62-acba-7152-bec6-966d11576ee6\n  - 019dbb62-b200-7653-b781-a90b14cfd728\n  - 019da0de-e366-7e21-a3c2-4ff7a63efe64\n  - 019d708d-c95d-7b22-9628-dfbd6f3ba3fd\n  - 019dbab7-43cc-7220-87e4-4a71b2ed87f3\n  - 019dbb3e-7a2c-7fa3-803d-fe8450021ee5\n  - 019d8976-5696-76c2-84e7-cf554bc85ef0\n  - 019dbb3e-778c-7bc0-849d-64d9ddc2a792\n  - 019dbb3e-75cf-7690-a3ab-1664af10857e\n  - 019d708d-c95d-7b22-9628-df1fb37a1e66\n  - 019dbb3e-798b-7ca2-b948-f411bc6e395e\n  - 019d708d-c95f-7c41-b0f6-5dc6f114d03a\n  - 019dbb3e-763c-7351-ace1-557e41506a1f\n  - 019d8e28-0ec1-7ab0-8701-5fd25a302b6d\n  - 019d7573-4aa9-7d61-96d4-71862233f382\n  - 019d7617-f2ac-77d0-8db5-4de2c013b382\n  - 019d8815-e944-7aa3-93fa-ddf0c1a858e8\n  - 019d7506-9922-7771-a7a5-1127240127de\n  - 019d751e-0af8-75f3-9b94-999b69436239\n  - 019d7615-f06a-7e30-883a-eecaaf6ba1ce\n  - 019d902e-db0b-79e1-b667-ef478b2c28be\n  - 019d708d-c95d-7b22-9628-e031a9e2880a\n  - 019d772f-d0fa-7420-90e6-124bd79dd926\n  - 019d708d-c95d-7b22-9628-e040970d09e4\n  - 019d708d-c95d-7b22-9628-e0505dfa528a\n  - 019d8fee-d6c2-7880-acd5-480450e6f3d4\n  - 019d8ef6-53c9-7be1-9adf-e6789f4d9fb1\n  - 019d708d-c95f-7c41-b0f6-5e2f6c3edae1\n  - 019d708d-c95e-7d13-9747-ca2ec1f3f212\n  - 019d708d-c95e-7d13-9747-ca7252b4d02e\n  - 019d708d-c95e-7d13-9747-cb2232e96c6d\n  - 019d8d23-75eb-78a3-95de-86bcbddaa64b\n  - 019d708d-c95e-7d13-9747-cb98f483bc27\n  - 019d78f5-add8-7052-823f-ac26ce70c41a\n  - 019d7616-5247-7383-be4c-4c934c18feec\n  - 019d7506-ea09-7343-90b2-5312c5da8c7f\n  - 019d7872-ca93-7632-a4b1-b80d383bc5dd\n  - 019d78f4-077e-7380-8a1a-5f0466349dee\n  - 019d817f-b2c0-7ed0-bb04-674e617eb466\n  - 019d7504-391b-7f70-a003-10dff83087be\n  - 019d7871-2638-7d63-ba92-3497bbafbf9b\n  - 019d75c3-f4af-76e1-99d5-105a69484e96\n  - 019d73e8-78b6-7570-a20a-f10d389c5445\n---\n\n# Narrow scope, plugin extend\n\nOrdis is transitioning from monolithic orchestrator to terminal UI shell with plugins. Narrower scope increases architectural clarity and sustainability. Plugin-based extensibility handles specialized domains (Limbo, multi-terminal) as optional features rather than core bloat.\n",
+          "tags": [
+            "architecture",
+            "ordis",
+            "plugin",
+            "scope"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d7507-45c6-7f43-925d-6c20f39a7a03",
+          "content": "Keep core footprint minimal — the plugin host is the actual value, not the core binary.",
+          "tags": [
+            "architecture",
+            "design",
+            "ordis",
+            "plugin"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d751b-e317-7c70-b365-994c4fe7697b",
+          "content": "Ordis core should include only PTY management, session persistence, IPC socket interface, config management, lightweight Git integration, and agent discovery. Everything else belongs in plugins.",
+          "tags": [
+            "architecture",
+            "core",
+            "ordis",
+            "plugin"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d751c-9b84-72f1-9188-fd6f673a14c3",
+          "content": "Content viewers, project management, and multi-terminal orchestration belong in Ordis plugins, not core.",
+          "tags": [
+            "architecture",
+            "ordis",
+            "plugin",
+            "scope"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d756f-ad7f-7172-bf18-aae1c9b94ec1",
+          "content": "Edit workflows should allow direct section navigation (jump to any step), not sequential wizard flow. Reserve linear wizard pattern for New/Create workflows only.",
+          "tags": [
+            "ux",
+            "navigation",
+            "forms",
+            "wizard"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d7572-fc94-7a93-89cb-ccf75f461250",
+          "content": "---\ntension: \"static nav vs step-aware actions\"\nrefs:\n  - 019dc646-7f90-7ef1-ac3e-25a79a778a26\n  - 019d708d-c95e-7d13-9747-c84f3755de3d\n  - 019d708d-c95f-7c41-b0f6-60cc38c54a73\n  - 019d902e-1433-74c3-8c47-6206aa4b9033\n  - 019d708d-c95e-7d13-9747-c93898c10a3b\n  - 019d708d-c95d-7b22-9628-e0842ae8f59d\n  - 019d708d-c95d-7b22-9628-dfce6675955b\n  - 019d708d-c95f-7c41-b0f6-5e00e7ad4a3b\n  - 019d708d-c95c-7de2-a39c-4625f34e0f16\n  - 019d708d-c95e-7d13-9747-c86d9f701e32\n  - 019d708d-c95e-7d13-9747-ca445e9d6289\n  - 019d7570-1854-7b30-aa27-f184c3682abd\n  - 019d8dfa-6a07-7352-a679-8820ee6940de\n  - 019d7572-fc94-7a93-89cb-ccf75f461250\n  - 019d7503-d0d6-7db3-8d20-eaeb3045e2c3\n  - 019d75f0-405e-72a1-ab24-6b2bcd9bec87\n  - 019d7914-4a63-7552-821e-47047ece9885\n  - 019d708d-c95c-7de2-a39c-4618f1973eae\n  - 019d75c2-a62e-70c2-ab1f-b43bc286b9be\n  - 019da1b1-97fe-7810-8dd5-605ab86a2f59\n  - 019d708d-c95d-7b22-9628-e155d8c7dbca\n  - 019d8ebb-14a4-7a90-ade7-5e53144958f3\n  - 019d708d-c960-7141-b14f-62bf90235f5e\n  - 019d7619-8247-71a2-9758-73c33d1f0a3a\n  - 019d8e27-f5ef-7640-8506-1fc596250b57\n  - 019d900f-0c89-7a91-b7ab-c67b0aef6cc4\n  - 019d708d-c95f-7c41-b0f6-60ee5f78a80e\n  - 019dbcaa-7e77-7883-8616-584b57741cb6\n  - 019d93bd-b318-7f40-bb47-3f3bffc4eac1\n  - 019d708d-c95d-7b22-9628-de8500a55357\n  - 019d9744-bff1-76e0-bb85-2cc1e7ae5ee1\n  - 019dbb4b-7028-7e51-8dc9-f6737f624e6e\n  - 019dbb3e-7cc9-7473-93ed-5a27622ed5b5\n  - 019dbbab-1f06-7471-8cfe-9979783babde\n  - 019d708d-c95f-7c41-b0f6-5f7c09e96332\n  - 019d9e5b-0af9-7cc2-813b-423c39d0eda7\n  - 019dbb3e-7950-7e51-a5de-56c4c0417bb7\n  - 019dbb4b-7dd0-7460-ad0c-01ebe6d974a3\n  - 019db458-504d-7931-ad28-9996f9050160\n  - 019d708d-c95e-7d13-9747-cb35057624d0\n  - 019d708d-c95c-7de2-a39c-460da635ef7a\n  - 019d7514-99c8-74e3-b5ee-39f50c4382a3\n  - 019d81f1-3085-7c40-b0cf-5b6425cad05f\n  - 019d708d-c95f-7c41-b0f6-602417f61c72\n  - 019d708d-c95f-7c41-b0f6-5ffb7323383f\n  - 019dbb4b-6f83-7e71-ae41-0b2f614a38c0\n  - 019dbb3e-79bf-76c3-8ae2-2904d7dd18b8\n  - 019dbb4b-7e1e-7601-94c8-87d57c8cc8d4\n  - 019dac21-a371-7773-8f7e-efd35f366450\n  - 019dbb3e-786b-71f2-a156-05d81c642098\n---\n\nEach step in a multi-step wizard should show contextual navigation buttons in the header — early steps show Back/Next (or Next only if first), final step shows Back/Save instead of Next, all with Cancel. Avoids confusion and matches user mental model of 'current step determines available actions'.\n",
+          "tags": [
+            "wizard",
+            "navigation",
+            "ux",
+            "multi-step"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d7614-ff10-70b1-81de-b92d05062ba1",
+          "content": "Setup functions (e.g., loadProjects, setupTaskListener) must be called once at app root — not in multiple components.",
+          "tags": [
+            "initialization",
+            "architecture",
+            "solidjs",
+            "single-call"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d761a-cfbf-73c2-8324-c31891bad499",
+          "content": "---\ntension: \"use exposed route metadata vs extend backend\"\nrefs:\n  - 019dbb62-b27d-7b73-bc10-298eb17fb2cc\n  - 019dbb62-b23e-7243-b5ca-6476013c8e10\n  - 019db109-9490-7081-b409-51dbdbf728dc\n  - 019dbb62-ad99-7821-ac42-4730f4ba7816\n  - 019db109-9451-70a0-808b-9d54fb3888be\n  - 019dbb62-b014-7e63-adfa-84ff0ac61607\n  - 019dbb62-acf5-7e50-acfa-0cc42704b89a\n  - 019dbb6d-d267-74b0-a8a2-1b656bb56b64\n  - 019dbb62-af5e-7761-8949-e54aa97cd4b9\n  - 019d751a-3b43-7f73-87dc-bcd687c6d5fb\n  - 019dbb4b-7d83-7de3-9f88-3d9f49cfa689\n  - 019d708d-c95f-7c41-b0f6-5e9a0ea1fe62\n  - 019d708d-c95d-7b22-9628-e1134e8348a1\n  - 019d708d-c960-7141-b14f-636bdf916bb1\n  - 019dbb4b-7092-7351-bcab-4191205ee42a\n  - 019dbb3e-7eff-71b1-81db-778ea954c1da\n  - 019dbb3e-7b7c-7fc1-97ab-1743866e0856\n  - 019dbc9d-70b1-7c50-b400-1df168b3db87\n  - 019d8dda-1918-7053-be50-a9e399d335be\n  - 019dbc9f-2718-71d1-bdd2-2ab6590341c2\n  - 019d7506-5bef-7df2-88bb-0e473fd27b71\n  - 019d708d-c95d-7b22-9628-e16d3c93e58d\n  - 019d7915-79b3-7e83-b86b-e03e906c2c3b\n  - 019d761a-cfbf-73c2-8324-c31891bad499\n  - 019d930b-01e0-73c0-aa3c-626c40bab9dc\n  - 019d761a-14b4-70e0-a531-ed9ff746d8d9\n  - 019da0a5-4b34-7e21-8a00-40dc7e6f17c8\n  - 019d930e-79bd-77e3-a889-f2659821ec75\n  - 019d9281-e4dd-7391-8020-0708cdc490e1\n  - 019d73e6-745f-7e03-a0fc-6aa825c1aef5\n  - 019d708d-c95d-7b22-9628-dda6d01eeeef\n  - 019d9222-8053-7950-b3ab-a74473d9639f\n  - 019d8834-2a83-75d2-9706-9228a667c555\n  - 019d8197-c562-7072-9a20-14137e2f0014\n  - 019d708d-c960-7141-b14f-613e94dbd071\n  - 019d8fb3-1f8e-7a80-9d0f-0015cc47878d\n  - 019d902e-237b-7da2-9fe4-1ab8bd2cddb2\n  - 019d78f7-8d61-7570-8c9d-712ae7976895\n  - 019d708d-c960-7141-b14f-63a669982b99\n  - 019d8834-4782-7962-a2da-521549d04459\n  - 019d78fb-7d54-7761-a754-b115d85dbf54\n  - 019d75c5-0b6b-74a1-b099-0bb113fb972f\n  - 019d8d62-0a9b-7482-8631-487ffae8c8ea\n  - 019d8198-d4f3-7d63-914e-99ea91cc045d\n  - 019d7619-cb22-7b72-a9f2-5bdd50549d9f\n  - 019d7618-44cd-7ef2-8dcf-bdd56bf824d2\n  - 019d7572-9477-7141-8c37-481a60074453\n  - 019d77d1-509e-7f03-a508-354904a2b912\n  - 019d841a-c20a-71c0-9e6e-cfad9db33738\n  - 019d75eb-bfb3-7d92-897f-459f8b6f4ddf\n---\n\n# Check route metadata before modify server\n\nAPI testing/try-it-out features can often be implemented entirely on the frontend if the backend already exposes route information. Before modifying the server to support testing features, check what endpoint metadata is already available — this eliminates unnecessary backend work.\n",
+          "tags": [
+            "api",
+            "frontend",
+            "architecture",
+            "simplicity"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d78f9-c9ae-7e40-9421-af913e35524f",
+          "content": "---\ntension: \"lazy-load vs redundant fetch\"\nrefs:\n  - 019d74ee-d6a8-7a13-b9f8-1d3f24d26680\n  - 019d708d-c95e-7d13-9747-cb8217693295\n  - 019d708d-c95d-7b22-9628-df9cb65c4447\n  - 019d75ee-c71d-7ab0-984a-881962061241\n  - 019d708d-c95e-7d13-9747-c9534de4a822\n  - 019d7503-1ace-7a30-8380-c59525bb3907\n  - 019d78f9-c9ae-7e40-9421-af913e35524f\n  - 019d75c2-5626-78c0-96cb-9c60a8ba200c\n  - 019d75c5-f01c-7de2-8b5c-c3a2a8659755\n  - 019dbb4b-70dd-7603-b5eb-4b0c40509fea\n  - 019dbbab-1e63-7df3-b46b-c1520e578bcd\n  - 019d708d-c95d-7b22-9628-deebf1ad7a00\n  - 019d7915-4c90-7a12-8551-a00617cd50d4\n  - 019d9745-2997-78d0-b0e6-4510686d34f1\n  - 019dbb4b-6fe5-7d91-8697-1e21123550ba\n  - 019d751a-6a43-7693-b4cb-7a9f32108882\n  - 019d708d-c95f-7c41-b0f6-5dd109ea67ba\n  - 019dbbab-1ffb-7512-84c0-b74310b51b1d\n  - 019d708d-c95d-7b22-9628-e010f0edc920\n  - 019d75c7-39f5-7ed3-9727-8dc64b164750\n  - 019dbb4b-7c99-7121-851e-16656a1f0e16\n  - 019d708d-c95d-7b22-9628-e1ac9eda9e5c\n  - 019dbbab-1f7e-72a3-8f1d-f022d3588b0a\n  - 019d708d-c95e-7d13-9747-c97ae3b53698\n  - 019db576-de18-7bd0-b2dc-06935204e79d\n  - 019d93e1-c7f6-76f1-9d31-80d7cbf42e6a\n  - 019dbb3e-78dc-7960-8117-227de5b14b70\n  - 019dbb3e-7757-77a2-ac8d-e11b7e674669\n  - 019dbcaa-afb7-7c23-af4c-55fa5136e709\n  - 019d708d-c95d-7b22-9628-de7b49424bee\n  - 019d708d-c95f-7c41-b0f6-5fec67f15907\n  - 019d708d-c95e-7d13-9747-c9054f8c4c87\n  - 019d708d-c95e-7d13-9747-c85fa02c045e\n  - 019d8815-b648-79e0-ad2b-dc1a8a6cd2b5\n  - 019dbb4b-7e46-7672-9d62-8d48d0a93b91\n  - 019d708d-c95f-7c41-b0f6-5f5e94f3b94e\n  - 019dbb4b-7e6d-7192-815a-e5eb12fcddfc\n  - 019d7502-d956-7e62-9f4d-46f30458a1d3\n  - 019d8975-8c2d-76a3-a1fb-a1dd5479992d\n  - 019d708d-c95f-7c41-b0f6-5f07e83c07a4\n  - 019d7873-eb38-7a62-b72f-e6bcaa9281fa\n  - 019dbbab-1edc-7113-83c2-3f4c51be0a88\n  - 019d708d-c95c-7de2-a39c-45c9594f32f7\n  - 019d708d-c95d-7b22-9628-e149db2091ac\n  - 019d73f0-c72a-7502-8fa4-f54387eb9960\n  - 019d7875-d508-7ee1-8d70-1f64d5cad388\n  - 019d751a-87be-7542-a514-75849e309e92\n  - 019d708d-c95e-7d13-9747-c83b383247e1\n  - 019da8d1-15c3-7941-88de-1cab9db4ee30\n  - 019d91ab-2a7e-7361-a114-fcef62b4848b\n---\n\nIn SolidJS SPAs with multiple pages sharing the same data, use an empty-guard in each page's createEffect to lazy-load shared signals without redundant fetches: createEffect(() => { if (page() === 'target' && Object.keys(signal()).length === 0) { fetchData(); } }). If another page already populated the signal, the guard short-circuits.\n",
+          "tags": [
+            "solidjs",
+            "signals",
+            "lazy-loading",
+            "spa",
+            "createeffect",
+            "shared-state"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d7913-ba42-74b1-ac5e-9b671305c02d",
+          "content": "---\ntension: \"add backend vs reuse exposed metadata\"\nrefs:\n  - 019dbba2-74c5-7d72-abd0-265017dc9e88\n  - 019dbba2-74e8-7d60-824f-03475fc44e22\n  - 019dbba2-750b-77d1-b85b-bbdf574f8327\n  - 019dbba2-752d-70d0-8231-3481790c75d7\n  - 019d73b0-9f41-7081-8686-32cd20d10c55\n  - 019db862-5275-7ae1-882f-8d0357a561f8\n  - 019dabb9-a984-7b60-ba94-d1bc2ca46c7d\n  - 019da7d8-41d3-7292-a43b-2981bb931eff\n  - 019da1b1-af6b-7831-9c5b-b9e760a547a3\n  - 019d7913-ba42-74b1-ac5e-9b671305c02d\n  - 019dbb34-34d3-7090-96d7-bad85a64b16b\n  - 019db0a1-474d-73e0-8eb2-90015cca8053\n  - 019db0a1-2663-7793-9359-e73576570840\n  - 019da815-9f21-74a0-a441-6dab63c34cb2\n  - 019d925e-f7de-75d2-b1af-88c53336dcc8\n  - 019dbb9a-0d97-74b1-8f3a-b754ff8d049b\n  - 019dbb77-8148-7861-b297-76ae990cf15f\n  - 019db36d-293d-7bb2-ba0d-e7e843c72a48\n  - 019dabe0-ccd4-7da3-bdaa-34eb649327a4\n  - 019dad93-3165-7e92-b7bf-91f5d14cca1f\n  - 019da86f-66d8-7e81-bdd5-ee80f5b6cb86\n  - 019da172-c129-7112-addb-74fc79b96cc8\n  - 019da10e-09ac-7371-87cf-e246fac86307\n  - 019d8ef7-dfc0-7f00-9dd6-bc2a652cb43f\n---\n\nCheck what endpoint metadata the backend already exposes before modifying the server to support API testing/try-it-out features — frontend can often implement testing UI entirely without backend changes if route info is available.\n",
+          "tags": [
+            "api-testing",
+            "backend",
+            "frontend",
+            "architecture"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d7914-b8fc-7d32-a51d-ca7c52ab28d3",
+          "content": "---\ntension: \"immediate response vs operational simplicity\"\nrefs:\n  - 019da1b1-88b6-7b11-9356-6ef2a0886306\n  - 019da14f-fca6-7841-b550-38463689d2e5\n  - 019da0ac-c9b2-72a3-82d6-c35d70801bbf\n  - 019d94d4-9a15-78d2-adbd-448e2441c01b\n  - 019d9d43-a9e2-7a50-873d-271ad3574b05\n  - 019d9d03-5771-7943-83a6-5f248e6f43ba\n  - 019d9d00-563b-78f1-923b-5ad999b936ba\n  - 019d96e3-6167-7403-944f-1137b2fd7872\n  - 019d94d4-b419-7432-a2e5-721f9614804d\n  - 019d94b4-0d3d-7202-8f76-0295654a3f55\n  - 019d930a-e278-7610-95b8-ed195fd26a5f\n  - 019d927f-986b-7091-af6f-4dc0618394bb\n  - 019d904c-a474-7720-9ecd-a29a592334bb\n  - 019d900f-0322-7b90-a6d6-52361ac150d9\n  - 019d8f78-3321-7663-8773-93498db9f3f8\n  - 019d8f33-735a-75f1-b976-4c2230e93cd8\n  - 019d8e08-1834-7892-91f7-ece44a3c0b9a\n  - 019d8d43-25b3-76f0-9b9b-e8b088eacaff\n  - 019d8d43-141e-7491-ace8-6f4819f8cc35\n  - 019d8d43-0c49-7e00-819e-8cd65d45a895\n  - 019d8815-c714-7531-a3e4-49ea894717f8\n  - 019d7914-ec26-75a0-9f46-652de8f4f8e4\n  - 019d7731-370b-7720-a118-0e403b96e3ea\n  - 019d7618-e7d0-7080-806b-5f090029df06\n  - 019d75c5-a364-7241-a522-793d280d66fb\n  - 019d7505-ff54-7140-844b-37c8356e0e79\n  - 019d74fd-946e-71a0-a61d-6df2bd89c92b\n  - 019d73f2-62e5-7fc0-b0a7-e59339eeb528\n  - 019d73f2-62e5-7fc0-b0a7-e5abef02ed87\n  - 019d73e9-7729-7920-a8bf-88e90d412454\n  - 019d73bd-494d-7281-8cf4-de2c29ba11b9\n  - 019d73bd-28b7-7d52-81c7-5a2acee20681\n  - 019da1b1-7605-7602-9d1f-cb2ed17fd0c0\n  - 019d8976-3fde-7402-82f5-8c27488d270d\n  - 019d92cb-16b6-7bd0-925e-782476f18df4\n  - 019d92cb-462d-7880-9542-93fb1bd9e024\n  - 019d928e-2ae5-7c43-bd85-53b8a03c94bb\n  - 019d8f15-fa90-78c0-bc03-ad49c2d113cf\n  - 019d7914-b8fc-7d32-a51d-ca7c52ab28d3\n  - 019d7871-a7c4-71f1-834b-4598a74754a1\n  - 019d73f4-f1ec-7cf2-9f93-4574e96f3c03\n  - 019d74fe-e308-7e91-9824-ec35a8a9c609\n  - 019d751a-be4c-76f2-9f3e-d0442e249dd3\n  - 019d74fd-e8c9-7210-979a-185c99ba5838\n  - 019d74ee-a9e7-77f0-ba84-ab5ecd9a7f62\n  - 019d74ee-9c4d-7060-a881-66fed419740a\n  - 019d9e7e-3fc9-75b2-8f20-a7e89bf1d36d\n  - 019d9d43-9a74-7c92-90cb-2d2ccc615b00\n  - 019d93e6-bcce-7281-846f-28246ac070bc\n  - 019d93e3-3306-7da1-b700-20008d98c744\n---\n\n# session boundary async: marker vs poll\n\nTwo patterns for async work triggered from session boundaries: (A) Marker file + background watcher = immediate but requires daemon; (B) Scheduled poll = simpler but delayed. Choose A for responsiveness, B for operational simplicity.\n",
+          "tags": [
+            "async",
+            "architecture",
+            "session-boundaries",
+            "pattern"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d8976-3fde-7402-82f5-8c27488d270d",
+          "content": "---\ntension: \"inline signal scope vs stable component scope\"\nrefs: []\n---\n\n# SolidJS IIFE signal breaks focus\n\nIn SolidJS, calling createSignal inside a JSX IIFE ({(() => { const [s, setS] = createSignal(...); return (...JSX...) })()}) causes input focus loss. On each reactive update the IIFE re-runs, the signal is re-created, and SolidJS replaces the DOM node — moving focus to body. Fix: hoist the signal to the enclosing component scope, or extract the IIFE block into a proper sub-component.\n",
+          "tags": [
+            "solidjs",
+            "focus-loss",
+            "createSignal",
+            "iife",
+            "anti-pattern"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d8976-427d-7320-a1c6-d14210ea863a",
+          "content": "---\ntension: \"define inline vs stable identity\"\nrefs: []\n---\n\n# SolidJS component scope\n\nIn SolidJS, defining a component as a const inside another component's render path (e.g. const FieldSelect = (props) => ... inside an IIFE or inline in JSX) gives it a new function identity on every reactive update. SolidJS unmounts and remounts that entire subtree, destroying input focus. Fix: move component definitions to module scope (outside the parent component function entirely).\n",
+          "tags": [
+            "solidjs",
+            "focus-loss",
+            "component-definition",
+            "anti-pattern",
+            "render"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d8dfa-6a07-7352-a679-8820ee6940de",
+          "content": "---\ntension: \"separate shapes vs merge types\"\nrefs:\n  - 019dc646-7f90-7ef1-ac3e-25a79a778a26\n  - 019d708d-c95e-7d13-9747-c84f3755de3d\n  - 019d708d-c95f-7c41-b0f6-60cc38c54a73\n  - 019d902e-1433-74c3-8c47-6206aa4b9033\n  - 019d708d-c95e-7d13-9747-c93898c10a3b\n  - 019d708d-c95d-7b22-9628-e0842ae8f59d\n  - 019d708d-c95d-7b22-9628-dfce6675955b\n  - 019d708d-c95f-7c41-b0f6-5e00e7ad4a3b\n  - 019d708d-c95c-7de2-a39c-4625f34e0f16\n  - 019d708d-c95e-7d13-9747-c86d9f701e32\n  - 019d708d-c95e-7d13-9747-ca445e9d6289\n  - 019d7570-1854-7b30-aa27-f184c3682abd\n  - 019d8dfa-6a07-7352-a679-8820ee6940de\n  - 019d7572-fc94-7a93-89cb-ccf75f461250\n  - 019d7503-d0d6-7db3-8d20-eaeb3045e2c3\n  - 019d75f0-405e-72a1-ab24-6b2bcd9bec87\n  - 019d7914-4a63-7552-821e-47047ece9885\n  - 019d708d-c95c-7de2-a39c-4618f1973eae\n  - 019d75c2-a62e-70c2-ab1f-b43bc286b9be\n  - 019da1b1-97fe-7810-8dd5-605ab86a2f59\n  - 019d708d-c95d-7b22-9628-e155d8c7dbca\n  - 019d8ebb-14a4-7a90-ade7-5e53144958f3\n  - 019d708d-c960-7141-b14f-62bf90235f5e\n  - 019d7619-8247-71a2-9758-73c33d1f0a3a\n  - 019d8e27-f5ef-7640-8506-1fc596250b57\n  - 019d900f-0c89-7a91-b7ab-c67b0aef6cc4\n  - 019d708d-c95f-7c41-b0f6-60ee5f78a80e\n  - 019dbcaa-7e77-7883-8616-584b57741cb6\n  - 019d93bd-b318-7f40-bb47-3f3bffc4eac1\n  - 019d708d-c95d-7b22-9628-de8500a55357\n  - 019d9744-bff1-76e0-bb85-2cc1e7ae5ee1\n  - 019dbb4b-7028-7e51-8dc9-f6737f624e6e\n  - 019dbb3e-7cc9-7473-93ed-5a27622ed5b5\n  - 019dbbab-1f06-7471-8cfe-9979783babde\n  - 019d708d-c95f-7c41-b0f6-5f7c09e96332\n  - 019d9e5b-0af9-7cc2-813b-423c39d0eda7\n  - 019dbb3e-7950-7e51-a5de-56c4c0417bb7\n  - 019dbb4b-7dd0-7460-ad0c-01ebe6d974a3\n  - 019db458-504d-7931-ad28-9996f9050160\n  - 019d708d-c95e-7d13-9747-cb35057624d0\n  - 019d708d-c95c-7de2-a39c-460da635ef7a\n  - 019d7514-99c8-74e3-b5ee-39f50c4382a3\n  - 019d81f1-3085-7c40-b0cf-5b6425cad05f\n  - 019d708d-c95f-7c41-b0f6-602417f61c72\n  - 019d708d-c95f-7c41-b0f6-5ffb7323383f\n  - 019dbb4b-6f83-7e71-ae41-0b2f614a38c0\n  - 019dbb3e-79bf-76c3-8ae2-2904d7dd18b8\n  - 019dbb4b-7e1e-7601-94c8-87d57c8cc8d4\n  - 019dac21-a371-7773-8f7e-efd35f366450\n  - 019dbb3e-786b-71f2-a156-05d81c642098\n---\n\n# Keep shapes, restructure JSX\n\nWhen inverting a UI layout across differently-shaped data memos (e.g. type-first → endpoint-first), keep the separate memos and restructure only the JSX rather than merging into a unified memo type. Merging divergent shapes forces discriminated unions or optional fields, adding TypeScript complexity for no functional gain.\n",
+          "tags": [
+            "layout",
+            "memo",
+            "refactoring",
+            "solidjs",
+            "ui-architecture"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d8e27-f5ef-7640-8506-1fc596250b57",
+          "content": "---\ntension: \"mutate in place vs new instance triggers reactivity\"\nrefs:\n  - 019dc646-7f90-7ef1-ac3e-25a79a778a26\n  - 019d708d-c95e-7d13-9747-c84f3755de3d\n  - 019d708d-c95f-7c41-b0f6-60cc38c54a73\n  - 019d902e-1433-74c3-8c47-6206aa4b9033\n  - 019d708d-c95e-7d13-9747-c93898c10a3b\n  - 019d708d-c95d-7b22-9628-e0842ae8f59d\n  - 019d708d-c95d-7b22-9628-dfce6675955b\n  - 019d708d-c95f-7c41-b0f6-5e00e7ad4a3b\n  - 019d708d-c95c-7de2-a39c-4625f34e0f16\n  - 019d708d-c95e-7d13-9747-c86d9f701e32\n  - 019d708d-c95e-7d13-9747-ca445e9d6289\n  - 019d7570-1854-7b30-aa27-f184c3682abd\n  - 019d8dfa-6a07-7352-a679-8820ee6940de\n  - 019d7572-fc94-7a93-89cb-ccf75f461250\n  - 019d7503-d0d6-7db3-8d20-eaeb3045e2c3\n  - 019d75f0-405e-72a1-ab24-6b2bcd9bec87\n  - 019d7914-4a63-7552-821e-47047ece9885\n  - 019d708d-c95c-7de2-a39c-4618f1973eae\n  - 019d75c2-a62e-70c2-ab1f-b43bc286b9be\n  - 019da1b1-97fe-7810-8dd5-605ab86a2f59\n  - 019d708d-c95d-7b22-9628-e155d8c7dbca\n  - 019d8ebb-14a4-7a90-ade7-5e53144958f3\n  - 019d708d-c960-7141-b14f-62bf90235f5e\n  - 019d7619-8247-71a2-9758-73c33d1f0a3a\n  - 019d8e27-f5ef-7640-8506-1fc596250b57\n  - 019d900f-0c89-7a91-b7ab-c67b0aef6cc4\n  - 019d708d-c95f-7c41-b0f6-60ee5f78a80e\n  - 019dbcaa-7e77-7883-8616-584b57741cb6\n  - 019d93bd-b318-7f40-bb47-3f3bffc4eac1\n  - 019d708d-c95d-7b22-9628-de8500a55357\n  - 019d9744-bff1-76e0-bb85-2cc1e7ae5ee1\n  - 019dbb4b-7028-7e51-8dc9-f6737f624e6e\n  - 019dbb3e-7cc9-7473-93ed-5a27622ed5b5\n  - 019dbbab-1f06-7471-8cfe-9979783babde\n  - 019d708d-c95f-7c41-b0f6-5f7c09e96332\n  - 019d9e5b-0af9-7cc2-813b-423c39d0eda7\n  - 019dbb3e-7950-7e51-a5de-56c4c0417bb7\n  - 019dbb4b-7dd0-7460-ad0c-01ebe6d974a3\n  - 019db458-504d-7931-ad28-9996f9050160\n  - 019d708d-c95e-7d13-9747-cb35057624d0\n  - 019d708d-c95c-7de2-a39c-460da635ef7a\n  - 019d7514-99c8-74e3-b5ee-39f50c4382a3\n  - 019d81f1-3085-7c40-b0cf-5b6425cad05f\n  - 019d708d-c95f-7c41-b0f6-602417f61c72\n  - 019d708d-c95f-7c41-b0f6-5ffb7323383f\n  - 019dbb4b-6f83-7e71-ae41-0b2f614a38c0\n  - 019dbb3e-79bf-76c3-8ae2-2904d7dd18b8\n  - 019dbb4b-7e1e-7601-94c8-87d57c8cc8d4\n  - 019dac21-a371-7773-8f7e-efd35f366450\n  - 019dbb3e-786b-71f2-a156-05d81c642098\n---\n\n# SolidJS signal: produce new instance\n\nIn SolidJS, signals holding Set/Map/object values will NOT trigger reactivity if you mutate the existing instance. Always produce a new instance: setSelectedItems(prev => new Set(prev).add(item)) — never setSelectedItems(s => { s.add(item); return s; }). SolidJS uses reference equality to detect changes.\n",
+          "tags": [
+            "gotcha",
+            "mutation",
+            "reactivity",
+            "set",
+            "signals",
+            "solidjs"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d8e28-0ec1-7ab0-8701-5fd25a302b6d",
+          "content": "---\ntension: \"cascade setter convenience vs pure updater contract\"\nrefs:\n  - 019dbb62-ac50-7e13-a87e-736ee828db54\n  - 019dbb62-b183-7c51-8cbd-101a9160c51c\n  - 019d97ce-038c-7203-8e98-73c08d9a6786\n  - 019db109-9471-7452-b29b-8b4271c6e443\n  - 019dbb62-af24-73f0-bbae-341d15db25b6\n  - 019dbb62-ae3e-7fb2-b48c-303df4dc4851\n  - 019dbb62-b33b-7a53-ad21-a744289ae537\n  - 019dbb62-acba-7152-bec6-966d11576ee6\n  - 019dbb62-b200-7653-b781-a90b14cfd728\n  - 019da0de-e366-7e21-a3c2-4ff7a63efe64\n  - 019d708d-c95d-7b22-9628-dfbd6f3ba3fd\n  - 019dbab7-43cc-7220-87e4-4a71b2ed87f3\n  - 019dbb3e-7a2c-7fa3-803d-fe8450021ee5\n  - 019d8976-5696-76c2-84e7-cf554bc85ef0\n  - 019dbb3e-778c-7bc0-849d-64d9ddc2a792\n  - 019dbb3e-75cf-7690-a3ab-1664af10857e\n  - 019d708d-c95d-7b22-9628-df1fb37a1e66\n  - 019dbb3e-798b-7ca2-b948-f411bc6e395e\n  - 019d708d-c95f-7c41-b0f6-5dc6f114d03a\n  - 019dbb3e-763c-7351-ace1-557e41506a1f\n  - 019d8e28-0ec1-7ab0-8701-5fd25a302b6d\n  - 019d7573-4aa9-7d61-96d4-71862233f382\n  - 019d7617-f2ac-77d0-8db5-4de2c013b382\n  - 019d8815-e944-7aa3-93fa-ddf0c1a858e8\n  - 019d7506-9922-7771-a7a5-1127240127de\n  - 019d751e-0af8-75f3-9b94-999b69436239\n  - 019d7615-f06a-7e30-883a-eecaaf6ba1ce\n  - 019d902e-db0b-79e1-b667-ef478b2c28be\n  - 019d708d-c95d-7b22-9628-e031a9e2880a\n  - 019d772f-d0fa-7420-90e6-124bd79dd926\n  - 019d708d-c95d-7b22-9628-e040970d09e4\n  - 019d708d-c95d-7b22-9628-e0505dfa528a\n  - 019d8fee-d6c2-7880-acd5-480450e6f3d4\n  - 019d8ef6-53c9-7be1-9adf-e6789f4d9fb1\n  - 019d708d-c95f-7c41-b0f6-5e2f6c3edae1\n  - 019d708d-c95e-7d13-9747-ca2ec1f3f212\n  - 019d708d-c95e-7d13-9747-ca7252b4d02e\n  - 019d708d-c95e-7d13-9747-cb2232e96c6d\n  - 019d8d23-75eb-78a3-95de-86bcbddaa64b\n  - 019d708d-c95e-7d13-9747-cb98f483bc27\n  - 019d78f5-add8-7052-823f-ac26ce70c41a\n  - 019d7616-5247-7383-be4c-4c934c18feec\n  - 019d7506-ea09-7343-90b2-5312c5da8c7f\n  - 019d7872-ca93-7632-a4b1-b80d383bc5dd\n  - 019d78f4-077e-7380-8a1a-5f0466349dee\n  - 019d817f-b2c0-7ed0-bb04-674e617eb466\n  - 019d7504-391b-7f70-a003-10dff83087be\n  - 019d7871-2638-7d63-ba92-3497bbafbf9b\n  - 019d75c3-f4af-76e1-99d5-105a69484e96\n  - 019d73e8-78b6-7570-a20a-f10d389c5445\n---\n\n# Keep updater pure — no setter inside\n\nIn SolidJS, do NOT call other signal setters (or functions that call setters) inside a signal's updater callback (the 'prev => ...' form). The updater must be a pure function that returns the new value only. Setting other signals inside an updater causes unpredictable batching — dependents of the inner setter can fire before the outer setter's dependents resolve. Fix: read current value with signal(), compute all new values, then call all setters sequentially outside any updater.\n",
+          "tags": [
+            "solidjs",
+            "signals",
+            "updater",
+            "batching",
+            "anti-pattern",
+            "setter"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d8eba-7314-71a1-a1bc-c8a9d2bd29dc",
+          "content": "---\ntension: \"filter index vs origin index\"\nrefs: []\n---\n\n# Wrap item, track originalIndex\n\nWhen filtering a list whose indices map to a parallel boolean array (e.g. selected[]), wrap items before filtering: .map((item, i) => ({ item, originalIndex: i })).filter(...). Always use originalIndex for array access — never the filtered-list index. Select All/Deselect All must spread the full array and flip only the originalIndex slots of the filtered subset: setSelected(prev => { const next = [...prev]; filtered.forEach(({ originalIndex }) => { next[originalIndex] = flag; }); return next; }).\n",
+          "tags": [
+            "solidjs",
+            "filtering",
+            "index-mapping",
+            "boolean-array",
+            "ui"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d8ebb-14a4-7a90-ade7-5e53144958f3",
+          "content": "---\ntension: \"render-sort convenience vs set-time correctness\"\nrefs:\n  - 019dc646-7f90-7ef1-ac3e-25a79a778a26\n  - 019d708d-c95e-7d13-9747-c84f3755de3d\n  - 019d708d-c95f-7c41-b0f6-60cc38c54a73\n  - 019d902e-1433-74c3-8c47-6206aa4b9033\n  - 019d708d-c95e-7d13-9747-c93898c10a3b\n  - 019d708d-c95d-7b22-9628-e0842ae8f59d\n  - 019d708d-c95d-7b22-9628-dfce6675955b\n  - 019d708d-c95f-7c41-b0f6-5e00e7ad4a3b\n  - 019d708d-c95c-7de2-a39c-4625f34e0f16\n  - 019d708d-c95e-7d13-9747-c86d9f701e32\n  - 019d708d-c95e-7d13-9747-ca445e9d6289\n  - 019d7570-1854-7b30-aa27-f184c3682abd\n  - 019d8dfa-6a07-7352-a679-8820ee6940de\n  - 019d7572-fc94-7a93-89cb-ccf75f461250\n  - 019d7503-d0d6-7db3-8d20-eaeb3045e2c3\n  - 019d75f0-405e-72a1-ab24-6b2bcd9bec87\n  - 019d7914-4a63-7552-821e-47047ece9885\n  - 019d708d-c95c-7de2-a39c-4618f1973eae\n  - 019d75c2-a62e-70c2-ab1f-b43bc286b9be\n  - 019da1b1-97fe-7810-8dd5-605ab86a2f59\n  - 019d708d-c95d-7b22-9628-e155d8c7dbca\n  - 019d8ebb-14a4-7a90-ade7-5e53144958f3\n  - 019d708d-c960-7141-b14f-62bf90235f5e\n  - 019d7619-8247-71a2-9758-73c33d1f0a3a\n  - 019d8e27-f5ef-7640-8506-1fc596250b57\n  - 019d900f-0c89-7a91-b7ab-c67b0aef6cc4\n  - 019d708d-c95f-7c41-b0f6-60ee5f78a80e\n  - 019dbcaa-7e77-7883-8616-584b57741cb6\n  - 019d93bd-b318-7f40-bb47-3f3bffc4eac1\n  - 019d708d-c95d-7b22-9628-de8500a55357\n  - 019d9744-bff1-76e0-bb85-2cc1e7ae5ee1\n  - 019dbb4b-7028-7e51-8dc9-f6737f624e6e\n  - 019dbb3e-7cc9-7473-93ed-5a27622ed5b5\n  - 019dbbab-1f06-7471-8cfe-9979783babde\n  - 019d708d-c95f-7c41-b0f6-5f7c09e96332\n  - 019d9e5b-0af9-7cc2-813b-423c39d0eda7\n  - 019dbb3e-7950-7e51-a5de-56c4c0417bb7\n  - 019dbb4b-7dd0-7460-ad0c-01ebe6d974a3\n  - 019db458-504d-7931-ad28-9996f9050160\n  - 019d708d-c95e-7d13-9747-cb35057624d0\n  - 019d708d-c95c-7de2-a39c-460da635ef7a\n  - 019d7514-99c8-74e3-b5ee-39f50c4382a3\n  - 019d81f1-3085-7c40-b0cf-5b6425cad05f\n  - 019d708d-c95f-7c41-b0f6-602417f61c72\n  - 019d708d-c95f-7c41-b0f6-5ffb7323383f\n  - 019dbb4b-6f83-7e71-ae41-0b2f614a38c0\n  - 019dbb3e-79bf-76c3-8ae2-2904d7dd18b8\n  - 019dbb4b-7e1e-7601-94c8-87d57c8cc8d4\n  - 019dac21-a371-7773-8f7e-efd35f366450\n  - 019dbb3e-786b-71f2-a156-05d81c642098\n---\n\n# Sort at set not render\n\nIn SolidJS, when sorting a list that maps to a parallel boolean array (e.g. recipeAvailableEndpoints + recipeSelectedEndpoints), sort at set-time before building both arrays — not at render time in <For each>. Render-time sorting (e.g. [...signal()].sort() in JSX) leaves the signal unsorted, breaking index alignment. Correct pattern: sort the source array first, then build the boolean array from the sorted source, then call both setters.\n",
+          "tags": [
+            "solidjs",
+            "parallel-array",
+            "boolean-array",
+            "sorting",
+            "index-alignment",
+            "ui"
+          ],
+          "full": false
+        }
+      ]
+    },
+    {
+      "label": "Context",
+      "units": [
+        {
+          "id": "019d708d-c95d-7b22-9628-df60cf5bba39",
+          "content": "Done tasks are hidden by default. Use `--show-all` to include them. `list` supports filters: `--blocked`, `--unblocked`, `--unclaimed`, `--owner`, `-s <status>`.",
+          "tags": [
+            "limbo",
+            "filtering",
+            "done-tasks"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d708d-c95f-7c41-b0f6-611b7a174a44",
+          "content": "Orientation commands: xaku ping (daemon check), xaku tree (all workspaces/surfaces), xaku identify (current context), xaku list-workspaces.",
+          "tags": [
+            "xaku",
+            "commands",
+            "orientation"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d708d-c95f-7c41-b0f6-618b7588f8c6",
+          "content": "Workspace tabs each have their own layout tree. Tab create/switch uses batch(). Hidden panes are kept at full size with visibility:hidden to preserve xterm canvas state.",
+          "tags": [
+            "ordis",
+            "tabs",
+            "xterm",
+            "layout"
+          ],
+          "full": false
+        },
+        {
+          "id": "019d708d-c95f-7c41-b0f6-619d61cbbd05",
+          "content": "Session and layout state (including all tabs) is persisted. Workspace plugins: Projects, Settings. Session plugins (all per-pane scoped): file-browser, artifact-viewer, content-viewer.",
+          "tags": [
+            "ordis",
+            "persistence",
+            "plugin",
+            "session"
+          ],
+          "full": false
+        },
+        {
+          "id": "019ddf7c-f888-7d71-83fc-bbfc68f6322c",
+          "content": "watch-subagents.sh live at ~/.local/bin/watch-subagents.sh. Poll tmux ls every 1s, filter by prefix (default agent-), join-pane -h into current window (tiled layout). Pane titled to session name. Cleanup: drop dead sessions from seen-set so re-spawned same-name rejoins. Env: INTERVAL=<n> overrides poll rate. Must run inside tmux. Caveat: join-pane MOVES pane, not link — source session vanishes if that was its last pane.",
+          "tags": [
+            "tmux",
+            "subagent",
+            "watch-subagents",
+            "launchagent",
+            "tooling"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4b3-158f-7251-a867-b4b26b513f7e",
+          "content": "# Banshee — hard floor coverage map\n\nMaps each of scope v2's four non-negotiable \"structured UI\" floor items to the story that delivers it.\nSource: scope v2 (019de4ad-7822) §6.\n\n## Floor items → story owners\n\n### a. Per-agent navigation\nList view → click → timeline view (URL-addressable per agent)\n→ OWNED BY: Story 01 (agent list, click navigation) + Story 02 (per-agent timeline, URL-addressable)\nBoth required for the full user journey.\n\n### b. Tool nodes collapsible\ntool_use + tool_result hidden by default; expand on click\n→ OWNED BY: Story 04 (collapsible tool nodes)\n\n### c. Timestamps on every event\n→ OWNED BY: Story 03 (event timestamps)\n\n### d. last_event_at visible in agent list\n→ OWNED BY: Story 01 (agent list, AC-3: last_event_at as relative time)\n\n## Coverage verdict\nAll four floor items owned. No floor item is unassigned. Decomposition is not broken.\n\n## Kill condition\nIf any floor item ships unimplemented or shipped as raw JSON dump → per scope v2, Banshee is killed and replaced by `launchagent serve` text-dump variant (devil steelman, 019de4a9-d9ab).\n",
+          "tags": [
+            "banshee",
+            "floor-coverage"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4c2-fbfc-7143-8644-3405e6ba9c50",
+          "content": "# Banshee Story 01 decomp — Agent list view\n\nStory aspect: 019de4b2-da27-7710-80e4-85ede0e806f4\nLimbo parent: jsad\n\n## Tasks\n\n| Limbo ID | Title | Component | Verify |\n|---|---|---|---|\n| bfgy | Agent registry — FS watcher, .task sidecar, state model | backend | /api/agents returns id/task_label/status/timestamps; .task fallback shows '(no task label)' |\n| coia | GET /api/agents endpoint | backend | 200 JSON array, Running before Done, required fields present |\n| bzek | Agent list frontend — rows, navigation, empty state | frontend | Rows render, click → /agent/<id>, empty state shown |\n| djak | Agent list auto-refresh and relative time display | frontend | New agents appear without page refresh; relative time ticks |\n\n## Hard floor coverage\n- Floor item **a** (per-agent navigation): bfgy + coia + bzek cover list side\n- Floor item **d** (last_event_at in list): coia + bzek + djak cover it\n\n## Dependencies\n- bfgy blocked by: thmr (server scaffold)\n- coia blocked by: bfgy\n- bzek blocked by: coia, mshq (static embed)\n- djak blocked by: bzek\n",
+          "tags": [
+            "banshee",
+            "pm",
+            "decomp",
+            "story:01"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4c2-fdb3-70f1-9964-71f1239dbb86",
+          "content": "# Banshee Story 02 decomp — Per-agent timeline view\n\nStory aspect: 019de4b2-ec94-7fd3-a856-f67ea7c28803\nLimbo parent: jsad\n\n## Tasks\n\n| Limbo ID | Title | Component | Verify |\n|---|---|---|---|\n| lomm | GET /api/agents/:id/history endpoint | backend | 200 filtered events (no system/hook), 404 for unknown ID |\n| gtbs | Timeline page frontend — /agent/:id, chronological, back link, 404 | frontend | Events in order, back link works, 404 shows error message |\n| mdbi | Mobile-responsive layout — 360px phone viewport | frontend | No horizontal scroll at 360px; pre blocks scroll internally |\n\n## Hard floor coverage\n- Floor item **a** (timeline URL-addressable): lomm + gtbs deliver /agent/:id\n\n## Dependencies\n- lomm blocked by: bfgy (registry)\n- gtbs blocked by: lomm\n- mdbi blocked by: gtbs\n",
+          "tags": [
+            "banshee",
+            "pm",
+            "decomp",
+            "story:02"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4c3-5931-79f3-ab54-87cbcc4a64f3",
+          "content": "# Banshee — cross-story dependency DAG\n\nGenerated: 2026-05-01 PM decomp session.\nSource: limbo parent jsad, block wiring.\n\n## Story dependency order (per story aspect links)\n```\nStory 07 (CLI serve) ─────────┐\nStory 08 (stream dir) ← S07  │\nStory 01 (agent list) ────────┤  ← no story-level dep\nStory 02 (timeline)   ← S01  │\nStory 03 (timestamps) ← S02  │\nStory 04 (tool nodes) ← S02  │\nStory 05 (SSE tail)   ← S02  │\nStory 06 (reconnect)  ← S05  │\n```\n\n## Task-level critical path\n```\nozcq (scaffold)\n  → thmr (server)\n      → bfgy (registry)\n          → coia (/api/agents) → bzek (list UI) → djak (auto-refresh)\n          → lomm (/api/history)\n              → gtbs (timeline UI) → mdbi (responsive)\n              → sxgi (timestamps BE) → xtfh (timestamps FE)\n              → fjiw (tool pairing BE) → hvmf (collapsible UI)\n          → eduq (file tail)\n              → rrpa (SSE endpoint)\n                  → lfqa (EventSource) → qozz (live indicator)\n                  → bidp (ring buffer) → hmio (gap indicator)\n                  → kqrl (idle disconnect)\n      → mshq (static embed) → bzek (list UI) [converges]\n  → rals (CLI serve)\n  → mspp (stream dir env var) → gkul (missing dir check)\nthmr → yfss (brew)\n```\n\n## Floor item coverage check\n- **a** per-agent navigation: bfgy+coia+bzek (list) + lomm+gtbs (timeline) ✓\n- **b** tool nodes collapsible: fjiw+hvmf ✓\n- **c** timestamps every event: sxgi+xtfh ✓\n- **d** last_event_at in list: coia+bjek+djak ✓\n\nAll four floor items covered. Decomp not broken.\n\n## Total task count: 25 (within 25-40 target)\n- Story 01: 4 tasks\n- Story 02: 3 tasks\n- Story 03: 2 tasks\n- Story 04: 2 tasks\n- Story 05: 4 tasks\n- Story 06: 3 tasks\n- Story 07: 5 tasks\n- Story 08: 2 tasks\n",
+          "tags": [
+            "banshee",
+            "pm",
+            "deps"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de4d2-9415-7ed1-9cf1-1e241be3750f",
+          "content": "# Banshee — Test Coverage Map\n\nMaps every hard floor item and every accepted devil concern to the specific test that exercises it.\nAny empty cell = strategy is broken.\n\n## Floor items (scope v2 §6 — kill criteria if unmet)\n\n| Floor item | Requirement | Test(s) that prove correctness |\n|---|---|---|\n| **a** | Per-agent navigation: list → click → /agent/<id> URL-addressable | S01 test #9 `integration::test_list_row_links_to_agent_path` (asserts href==/agent/<id>); S02 test #9 `integration::test_timeline_url_direct_access` (direct URL loads) |\n| **b** | Tool nodes collapsed by default; expand on click | S04 test #4 `integration::test_tool_node_collapsed_by_default`; S04 test #5 `integration::test_tool_node_toggle_expand_collapse` |\n| **c** | Timestamps on every event | S03 test #4 `timestamps::test_all_events_have_timestamp`; S03 Phase 3 smoke `jq '[.[] | has(\"timestamp\")] | all'` |\n| **d** | last_event_at visible in agent list as relative time | S01 test #1 asserts last_event_at field present in /api/agents response; S01 test #5 asserts DOM relative time element |\n\n**Coverage verdict:** all four floor items have ≥1 concrete test with a specific assertion. No cell empty.\n\n## Devil misreads (019de4a9-ca4e) — accepted concerns\n\n| Misread | Concern | Test(s) that exercise it |\n|---|---|---|\n| **#1** .pretty parsing breakage | Task label parsing breaks on heredoc/embedded newlines | S01 test #7 `registry::test_task_label_multiline_sidecar` — .task sidecar with embedded \\n; asserts full content retained |\n| **#2** \"recent\" implies persistence | Post-reboot empty /tmp → Banshee must not error or show stale data | S01 test #6 `registry::test_empty_watched_dir_returns_empty_array`; S01 test #8 `integration::test_empty_dir_ui_empty_state` |\n| **#3** No fanout model / stale connections | Two tabs open = two blocking threads without broadcast | S05 test #5 `integration::test_sse_fanout_two_subscribers`; XC-3 `integration::test_multi_tab_sse_fanout` |\n| **#4** Stale badge misleads | Stale badge dropped in scope v2 | NOT TESTED — feature deleted; no test needed |\n| **#5** Kill criterion counts opens not utility | Kill criterion is metric design not code behavior | NOT TESTED — not a testable code behavior |\n\n## Devil unstated assumptions (019de4a9-ce27) — accepted concerns\n\n| Assumption | Concern | Test(s) that exercise it |\n|---|---|---|\n| **#1** Hidden glob coupling to launchagent-tmux | Env var + glob contract must be documented and enforced | S08 test #3 `cli::test_help_documents_env_var_and_glob`; S08 test #5 `config::test_missing_dir_exits_nonzero_with_path` |\n| **#2** .pretty companion always co-created | .task sidecar (v3 replacement) may be absent | S01 test #3 `registry::test_task_label_fallback_no_sidecar` — missing .task → \"(no task label)\" not panic |\n| **#3** Silent event loss on reconnect | Phone drops Tailscale, EventSource resumes from tail (misses events), gap invisible | S06 test #6 `integration::test_out_of_window_replay_shows_gap`; S06 test #7 `kqrl::test_idle_disconnect_at_90s`; XC-5 `integration::test_reconnect_replays_missed_events` |\n\n## Scope v3 decisions — each has a test\n\n| v3 decision | Test that proves correctness |\n|---|---|\n| Q1 .task sidecar → task_label | S01 test #2 (task_label from .task); S01 test #3 (fallback) |\n| Q2 Default port 4848 | S07 test #2 (--help shows 0.0.0.0:4848); S07 test #5 (startup prints URL) |\n| Q3 Dual-clock timestamp (claude-clock vs received-at) with tooltip | S03 tests #1, #2, #5 |\n| Q4 Gap indicator exact literal text | S06 test #5 `ring_buffer::test_gap_indicator_exact_text` — string equality |\n| Q5 Running before Done ordering | S01 test #4 `registry::test_agent_list_sort_order` |\n\n## Summary line\nAll 4 floor items covered. 3/5 devil misreads covered (2 deleted features, not testable). All 3 unstated assumptions covered. All 5 scope v3 decisions have a proof test.\n",
+          "tags": [
+            "banshee",
+            "test-strategy",
+            "coverage-map"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de522-e25b-7e30-b9e1-eb6fdd0efe64",
+          "content": "banshee TimelineEvent.raw_index = 0-based line position in JSONL file BEFORE filter. Gaps are intentional — noise events (system/*, hook_*, rate_limit) occupy indices between included events. Frontend: use for sort order only, not array index.",
+          "tags": [
+            "banshee",
+            "history-api",
+            "timeline",
+            "jsonl",
+            "design"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de550-b6f1-7031-8e4c-8448633fab73",
+          "content": "banshee tool_node content shape: {tool_name, is_error, input, result_content}. result_content=null if tool_use unmatched (pending). Orphan tool_result (no paired tool_use) dropped. pair_tool_nodes() runs after parse_history in api_history_handler. Preserves tool_use raw_index/timestamp/clock_source for sort order.",
+          "tags": [
+            "banshee",
+            "history-api",
+            "tool-node",
+            "api-contract"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de566-f39b-7c03-96da-04ff4a38c457",
+          "content": "---\nevidence: 'khora eval: window.location.pathname → /agent/8cf30c2f-af21-4782-a05c-9f4bd3e4a9bc after click; timeline loaded with 27 events; screenshot: floor-a-agent-timeline.png'\n---\nBanshee floor-a PASS. Agent list renders ≥1 rows. Click .agent-link → URL changes to /agent/<uuid>. Timeline visible with events and timestamps. Screenshot: ~/claudehub/banshee/verification/2026-05-01/floor-a-agent-timeline.png. Note: clicking .agent-row div directly does not navigate (no data-click handler); clicking .agent-link child does. User interaction path correct via visible link.",
+          "tags": [
+            "banshee",
+            "verifier",
+            "gate-8",
+            "floor-a",
+            "navigation"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de567-50be-75c2-97ee-13397b6556a9",
+          "content": "---\nevidence: 'khora eval: .last-event spans show: just now, just now, 1m ago, 3h ago, 5h ago etc; screenshot: floor-d-list-relative-time.png'\n---\nBanshee floor-d PASS. Agent list rows show relative last_event_at times (just now, 1m ago, 3h ago, 5h ago, 21h ago). Running agents sort before Done per scope v3. Screenshot: ~/claudehub/banshee/verification/2026-05-01/floor-d-list-relative-time.png.",
+          "tags": [
+            "banshee",
+            "verifier",
+            "gate-8",
+            "floor-d",
+            "last-event-at"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de5f4-5d3b-73c2-ac11-0eab348c28db",
+          "content": "Banshee web UI: dark mode + two-pane layout (commit 65d7f30). Sidebar left: agent list. Detail pane right: timeline. Sidebar row: line1=title, line2=status, line3=last-activity. Sort: running-first then last_event_at desc. No back-link — nav via sidebar. Mobile: stack via media query.",
+          "tags": [
+            "banshee",
+            "web-ui",
+            "layout",
+            "dark-mode"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de5f5-f5e7-74a0-9b55-17949d266217",
+          "content": "banshee test_static_root_returns_200 snaps on HTML content. Change embedded index.html structure → update assert in lib.rs. Was: resp.contains(\"<h1>Banshee</h1>\"). After sidebar redesign → resp.contains(r#\"id=\\\"sidebar\\\"\"#). Fragile to frontend refactors. Pick stable anchor (id attr better than element text).",
+          "tags": [
+            "banshee",
+            "rust-embed",
+            "test",
+            "gotcha",
+            "frontend"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de5f6-2069-75b3-bac7-dcde00ded7d9",
+          "content": "Banshee frontend: dark mode + two-pane layout (commit 65d7f30). Left sidebar = agent list (3-line rows: label, badge, last-activity). Right = detail pane. SPA routing preserved (/agent/<id>). Mobile: stack via media query <768px. No external deps — vanilla JS + CSS.",
+          "tags": [
+            "banshee",
+            "frontend",
+            "architecture",
+            "dark-mode"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de614-6145-7443-adce-46ba2bd7a8ba",
+          "content": "Banshee frontend: skip thinking-only assistant events. Assistant events with thinking blocks but zero text blocks render as '[no text content]'. Decision: filter at UI layer (main.js), not server. Server keeps emitting — other consumers may want raw thinking. JS rule: if no content block has type=text with non-empty content, return null/skip card. Avoids noise from CoT-heavy subagent sessions.",
+          "tags": [
+            "banshee",
+            "frontend",
+            "thinking-block",
+            "assistant",
+            "rendering"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de616-3af1-7f03-b718-53cefac53f77",
+          "content": "Banshee frontend ClockSource display rule: clock_source==='received-at' → render '—' + cursor:help tooltip ('received-at'), add .event-timestamp-missing CSS (muted italic). clock_source==='claude-clock' → render real time + tooltip. Implements Story 03 AC#4: fabricated server-stamped times must not display as real event times. Root cause: parse_history calls Utc::now() per line on every HTTP request — events without Claude-embedded timestamps get ReceivedAt, which changes on every reload. UI hides these behind dash.",
+          "tags": [
+            "banshee",
+            "clock-source",
+            "frontend",
+            "timestamp",
+            "received-at"
+          ],
+          "full": false
+        },
+        {
+          "id": "019de653-0cfe-7260-b4f5-a983fb5a914f",
+          "content": "Banshee AgentStatus 3-way: Running (events, no result), Done (result event found), Empty (0 parseable events). Zombie agent fix — launchagent-tmux crash before stream-json → 0-byte JSONL → Empty, not Running. Sort rank: Running=0, Done=1, Empty=2. Detect via file_status() helper. Frontend badge: .status-empty muted gray; text 'No events'.",
+          "tags": [
+            "banshee",
+            "agent-status",
+            "zombie",
+            "empty"
+          ],
+          "full": false
+        }
+      ]
+    }
+  ],
+  "unit_count": 78
+}

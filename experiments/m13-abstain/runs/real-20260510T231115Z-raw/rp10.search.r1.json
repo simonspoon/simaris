@@ -1,0 +1,158 @@
+[
+  {
+    "id": "019ddc21-00c2-7e80-86e9-ae69d57235f1",
+    "type": "fact",
+    "slug": null,
+    "headline": "simaris show: --content prints bare unit.content only (no metadata, links). --no-frontmatter strips YAML frontmatter fro...",
+    "tags": [
+      "simaris",
+      "show",
+      "cli",
+      "api"
+    ],
+    "source": "session-77fabce1",
+    "confidence": 1.0,
+    "byte_size": 278
+  },
+  {
+    "id": "019de3cc-73a2-7612-8a3c-0fb7e4f507d2",
+    "type": "fact",
+    "slug": null,
+    "headline": "simaris add --from-file mutually exclusive with per-type CLI field flags (--trigger, --check, --caveat, --prereq, --role...",
+    "tags": [
+      "simaris",
+      "cli",
+      "from-file",
+      "gotcha"
+    ],
+    "source": "session-6630ffb6",
+    "confidence": 1.0,
+    "byte_size": 195
+  },
+  {
+    "id": "019dbf3e-ee76-72a1-8070-f894cce9bf1c",
+    "type": "fact",
+    "slug": null,
+    "headline": "Simaris units define type-specific frontmatter schemas. Procedure, aspect, fact, principle, lesson require structured me...",
+    "tags": [
+      "simaris",
+      "frontmatter",
+      "schema",
+      "units"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 175
+  },
+  {
+    "id": "019de3d3-2bd1-75d0-824b-37a16ae5e1bb",
+    "type": "lesson",
+    "slug": null,
+    "headline": "simaris add with raw multi-line content containing backticks/special chars breaks zsh evaluation (commands run unintende...",
+    "tags": [
+      "lotus",
+      "simaris",
+      "from-file",
+      "heredoc",
+      "gotcha"
+    ],
+    "source": "lotus nova spin 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 331
+  },
+  {
+    "id": "019de4cd-645b-7a32-b59d-fc903735ce6f",
+    "type": "fact",
+    "slug": null,
+    "headline": "simaris list/search --json → flat array [{id, type, slug, headline, tags, source, confidence, byte_size}, ...]. No wrapp...",
+    "tags": [
+      "simaris",
+      "json",
+      "list",
+      "search",
+      "gotcha",
+      "jq"
+    ],
+    "source": "session-7b5b9542",
+    "confidence": 1.0,
+    "byte_size": 280
+  },
+  {
+    "id": "019dbd86-775a-7060-a00e-e3d935f7665a",
+    "type": "fact",
+    "slug": null,
+    "headline": "`simaris show` omit inbound links. Outbound only. Query incoming via: `simaris list --json | jq '[.[] | select(.links[]?...",
+    "tags": [
+      "simaris",
+      "show",
+      "links",
+      "inbound"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 140
+  },
+  {
+    "id": "019dbdc9-009e-7ff0-a104-32ebc24a0ba6",
+    "type": "principle",
+    "slug": null,
+    "headline": "emit gates aspect mgmt via frontmatter marker simaris-managed: true. sweep stale aspect files. skip+warn slugless aspect...",
+    "tags": [
+      "emit",
+      "aspect",
+      "frontmatter",
+      "simaris-managed"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 189
+  },
+  {
+    "id": "019dbdad-24b8-72e2-8a8c-4d10a7680fbd",
+    "type": "procedure",
+    "slug": "frontmatter-p0",
+    "headline": "# P0 — frontmatter parser (read-side only)",
+    "tags": [
+      "simaris",
+      "frontmatter",
+      "p0",
+      "parser",
+      "spec"
+    ],
+    "source": "session-brainstorm",
+    "confidence": 1.0,
+    "byte_size": 5607
+  },
+  {
+    "id": "019dbdde-8926-7ce1-bdbb-03acd582ca33",
+    "type": "lesson",
+    "slug": null,
+    "headline": "simaris show omits inbound links — displays outbound only. Query inbound via simaris list --json | jq to filter units wh...",
+    "tags": [
+      "simaris",
+      "links",
+      "show",
+      "gotcha"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 150
+  },
+  {
+    "id": "019dbfea-84f5-7e22-a919-c74f2e934624",
+    "type": "lesson",
+    "slug": "frontmatter-edit-clobber",
+    "headline": "# Edit --content clobbers frontmatter",
+    "tags": [
+      "simaris",
+      "frontmatter",
+      "p1.5",
+      "edit",
+      "footgun",
+      "clobber"
+    ],
+    "source": "session-brainstorm",
+    "confidence": 1.0,
+    "byte_size": 633
+  }
+]

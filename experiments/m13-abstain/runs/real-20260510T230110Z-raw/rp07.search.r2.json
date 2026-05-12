@@ -1,0 +1,149 @@
+[
+  {
+    "id": "019de4b3-0384-7e42-b7d7-e3bfe3495a84",
+    "type": "aspect",
+    "slug": "banshee-story-08-stream-dir",
+    "headline": "# Story 08 — Stream directory configuration",
+    "tags": [
+      "banshee",
+      "user-story",
+      "simon"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1180
+  },
+  {
+    "id": "019dbc98-cef1-7280-b0e9-23a5ebbd8ba8",
+    "type": "principle",
+    "slug": null,
+    "headline": "On-demand sync beats hook-based automation initially. Start manual/simple. Escalate to hooks only if staleness proves co...",
+    "tags": [
+      "sync",
+      "automation",
+      "hooks",
+      "simplicity"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 171
+  },
+  {
+    "id": "019dbdd5-d9d6-7f21-b46c-f62dc46dd9a5",
+    "type": "fact",
+    "slug": null,
+    "headline": "Limbo resolves storage by walking directory tree upward to nearest .limbo/ folder. Closest parent wins.",
+    "tags": [
+      "limbo",
+      "storage",
+      "resolution"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 103
+  },
+  {
+    "id": "019de4b2-ecba-7502-bc86-0b923606af65",
+    "type": "aspect",
+    "slug": "banshee-story-04-collapsible-tools",
+    "headline": "# Story 04 — Collapsible tool nodes",
+    "tags": [
+      "banshee",
+      "user-story",
+      "simon"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1093
+  },
+  {
+    "id": "019dbd74-aa0b-7d11-a709-d671f6975f78",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Mitigate dual-file drift: keep VERSION file and aspect in sync across create, startup, and update.",
+    "tags": [
+      "orokin",
+      "drift",
+      "version",
+      "aspect"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 171
+  },
+  {
+    "id": "019de4b3-0347-7c63-8b2d-9fdefe86de58",
+    "type": "aspect",
+    "slug": "banshee-story-05-live-sse",
+    "headline": "# Story 05 — Live SSE tail",
+    "tags": [
+      "banshee",
+      "user-story",
+      "simon"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1231
+  },
+  {
+    "id": "019dbcb6-a90d-7953-9724-2195dc2d7299",
+    "type": "principle",
+    "slug": null,
+    "headline": "Lock contract, unblock agents. Freeze Command/Result/errors, review-approve, then fan-out agents to layers parallel. Sin...",
+    "tags": [
+      "contract",
+      "agents",
+      "parallelism",
+      "coordination"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 158
+  },
+  {
+    "id": "019dee6d-fda1-78c2-a2df-01ee14cdd1d5",
+    "type": "lesson",
+    "slug": null,
+    "headline": "# tooling lesson — git worktree for parallel branch agents",
+    "tags": [
+      "git",
+      "worktree",
+      "parallel-agents",
+      "launchagent",
+      "gotcha",
+      "simaris"
+    ],
+    "source": "memory-architect M3.1 dispatch 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1197
+  },
+  {
+    "id": "019dbd5f-1426-7fb2-be6f-2770fc323629",
+    "type": "principle",
+    "slug": null,
+    "headline": "Lock contract, unblock agents. Freeze Command/Result/errors, review-approve, then fan-out agents to layers parallel. Sin...",
+    "tags": [
+      "contract",
+      "agents",
+      "parallelism",
+      "coordination"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 158
+  },
+  {
+    "id": "019de4b3-035a-77f2-9454-802131669818",
+    "type": "aspect",
+    "slug": "banshee-story-06-reconnect-replay",
+    "headline": "# Story 06 — Reconnect and event replay",
+    "tags": [
+      "banshee",
+      "user-story",
+      "simon"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1360
+  }
+]

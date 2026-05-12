@@ -1,0 +1,149 @@
+[
+  {
+    "id": "019d708d-c960-7141-b14f-61f210d74e21",
+    "type": "procedure",
+    "slug": null,
+    "headline": "When a stray idea, bug, or improvement arises during a task, capture it in the limbo backlog instead of acting on it or ...",
+    "tags": [
+      "backlog",
+      "limbo",
+      "workflow"
+    ],
+    "source": "suda:backlog-capture",
+    "confidence": 1.0,
+    "byte_size": 281
+  },
+  {
+    "id": "019dbcd4-b01c-7b52-8613-c1123c3cff2c",
+    "type": "procedure",
+    "slug": null,
+    "headline": "[procedure] Duplicate task handling — verify feature exists + meets acceptance criteria. Run tests. Mark original task d...",
+    "tags": [
+      "limbo",
+      "task-management",
+      "duplicate",
+      "worker"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 258
+  },
+  {
+    "id": "019d708d-c960-7141-b14f-6200bd22e883",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Run from ~/claudehub: `limbo add \"<name>\" -d \"<description>\" --action \"<what to do>\" --result \"<what done looks like>\" -...",
+    "tags": [
+      "limbo",
+      "backlog",
+      "commands"
+    ],
+    "source": "suda:backlog-capture",
+    "confidence": 1.0,
+    "byte_size": 248
+  },
+  {
+    "id": "019d708d-c960-7141-b14f-6229f6824dd6",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Review the limbo backlog with the user when deciding what to work on next.",
+    "tags": [
+      "limbo",
+      "backlog",
+      "planning"
+    ],
+    "source": "suda:backlog-capture",
+    "confidence": 1.0,
+    "byte_size": 159
+  },
+  {
+    "id": "019dbcd4-77fd-7df2-b0c8-9a2619b5be3f",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Duplicate task handling",
+    "tags": [
+      "limbo",
+      "duplicate",
+      "task-management",
+      "worker"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 4397
+  },
+  {
+    "id": "019dea1c-bcfe-7621-9512-3ddb8b1f241f",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Orchestrator subagent search simaris for limbo task slugs → find nothing → halt. When brief include 4-char limbo IDs (mp...",
+    "tags": [
+      "orchestrator",
+      "limbo",
+      "brief",
+      "gotcha"
+    ],
+    "source": "session-6031c400",
+    "confidence": 1.0,
+    "byte_size": 420
+  },
+  {
+    "id": "019d9744-9ac2-7311-b9b7-fc00f4c67e3a",
+    "type": "fact",
+    "slug": null,
+    "headline": "This bug has been filed as a limbo task.",
+    "tags": [
+      "vox",
+      "bug",
+      "limbo"
+    ],
+    "source": "cli",
+    "confidence": 1.0,
+    "byte_size": 40
+  },
+  {
+    "id": "019de42d-6b03-7ea0-bb3a-a0148f5dcccb",
+    "type": "principle",
+    "slug": "lotus-backlog-discipline",
+    "headline": "# Lotus backlog discipline",
+    "tags": [
+      "lotus",
+      "backlog",
+      "discipline",
+      "limbo",
+      "simaris"
+    ],
+    "source": "lotus operating model 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1520
+  },
+  {
+    "id": "019de472-c7af-7b30-8e88-8b7714099b8c",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Worker complete task but skip limbo status advance — known gap (tixu). Orchestrator detect via: post-RESULT:done, run li...",
+    "tags": [
+      "orchestrator",
+      "limbo",
+      "worker",
+      "tixu",
+      "workaround"
+    ],
+    "source": "session-38f40729",
+    "confidence": 1.0,
+    "byte_size": 287
+  },
+  {
+    "id": "019de4b3-15a2-7db3-badc-794890e40ddc",
+    "type": "idea",
+    "slug": "banshee-open-questions",
+    "headline": "# Banshee — open questions for lotus (pre-limbo)",
+    "tags": [
+      "banshee",
+      "pdm",
+      "open-questions"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1831
+  }
+]

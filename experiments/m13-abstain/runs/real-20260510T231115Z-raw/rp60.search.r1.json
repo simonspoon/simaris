@@ -1,0 +1,152 @@
+[
+  {
+    "id": "019d708d-c95e-7d13-9747-caf5d697bd16",
+    "type": "principle",
+    "slug": null,
+    "headline": "Fix docs, not code. The goal is improving skill instructions, not the underlying tools. If you fill a doc gap using your...",
+    "tags": [
+      "skill-trainer",
+      "docs",
+      "findings",
+      "principle"
+    ],
+    "source": "skill:skill-trainer",
+    "confidence": 1.0,
+    "byte_size": 192
+  },
+  {
+    "id": "019d708d-c95e-7d13-9747-ca504c7b5cd3",
+    "type": "principle",
+    "slug": null,
+    "headline": "You are a generalist skill improver. Identify structural/process/clarity/guardrail problems. Do NOT judge domain correct...",
+    "tags": [
+      "skill-reflection",
+      "principle",
+      "scope"
+    ],
+    "source": "skill:skill-reflection",
+    "confidence": 1.0,
+    "byte_size": 198
+  },
+  {
+    "id": "019d708d-c95d-7b22-9628-e0c49a970c76",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Orient yourself using progressive-disclosure project docs before writing code: check for docs/INDEX.md, read it, match y...",
+    "tags": [
+      "onboarding",
+      "documentation",
+      "workflow"
+    ],
+    "source": "skill:project-docs-explore",
+    "confidence": 1.0,
+    "byte_size": 265
+  },
+  {
+    "id": "019d73eb-095e-7701-b750-d36adfc2dec2",
+    "type": "principle",
+    "slug": null,
+    "headline": "Agent personalities should evolve: storing them in simaris allows marks (helpful/outdated/wrong) to adjust confidence, a...",
+    "tags": [
+      "agents",
+      "evolution",
+      "marks",
+      "knowledge-graph"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 186
+  },
+  {
+    "id": "019dedca-2927-7cb0-b83c-1a95685e9d81",
+    "type": "fact",
+    "slug": "simaris-briefing-2026-05-03",
+    "headline": "# Simaris briefing — Knowledge Program kickoff (2026-05-03)",
+    "tags": [
+      "simaris",
+      "briefing",
+      "kickoff",
+      "knowledge-program"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 2053
+  },
+  {
+    "id": "019dedde-b9f3-7c91-bf82-8833b29ea34a",
+    "type": "fact",
+    "slug": "lotus-reply-simaris-charter-2026-05-03",
+    "headline": "# Lotus reply to simaris program charter (2026-05-03)",
+    "tags": [
+      "lotus",
+      "simaris",
+      "reply",
+      "charter",
+      "proceed"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1426
+  },
+  {
+    "id": "019dbf3b-3f8d-70e1-a975-465c8402e206",
+    "type": "principle",
+    "slug": null,
+    "headline": "Consistent verb interface enables discovery: users learn one CLI, predict others. Group operations: list/show (read), cr...",
+    "tags": [
+      "cli",
+      "ux",
+      "verbs",
+      "consistency"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 189
+  },
+  {
+    "id": "019d708d-c95f-7c41-b0f6-5fac81c4f340",
+    "type": "principle",
+    "slug": null,
+    "headline": "Edit, don't rewrite — use surgical updates that preserve context and authorial voice. Prefer small precise edits over re...",
+    "tags": [
+      "principle",
+      "editing",
+      "documentation"
+    ],
+    "source": "skill:update-docs",
+    "confidence": 1.0,
+    "byte_size": 143
+  },
+  {
+    "id": "019de445-81b1-70b0-89c4-550571199a85",
+    "type": "principle",
+    "slug": "lotus-decisiveness",
+    "headline": "# Lotus authority — infra rot pivots are autonomous",
+    "tags": [
+      "lotus",
+      "authority",
+      "decisiveness",
+      "infra-rot"
+    ],
+    "source": "simon-direction 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 891
+  },
+  {
+    "id": "019de9cb-96c0-7d40-91a0-680a1d803338",
+    "type": "lesson",
+    "slug": "lotus-failure-ceo-did-the-work",
+    "headline": "# Lotus failure — CEO did the work, didn't delegate (2026-05-02)",
+    "tags": [
+      "lotus",
+      "failure",
+      "delegation",
+      "gate-0",
+      "ceo",
+      "retro"
+    ],
+    "source": "lotus retro 2026-05-02",
+    "confidence": 1.0,
+    "byte_size": 2813
+  }
+]

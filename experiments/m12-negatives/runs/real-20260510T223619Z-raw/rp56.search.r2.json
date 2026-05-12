@@ -1,0 +1,159 @@
+[
+  {
+    "id": "019de3be-107d-78d3-8aff-2ae399ee06d5",
+    "type": "lesson",
+    "slug": null,
+    "headline": "MISREAD USER-NEED [attacks 019de3ba-7b82-7240-8e7f-2a8a87a1ad11 hyp-2]: BranchThread is framed as satisfying a user need...",
+    "tags": [
+      "nova",
+      "devil",
+      "critique",
+      "user-need-provenance"
+    ],
+    "source": "devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 469
+  },
+  {
+    "id": "019dacde-7fd4-7721-ba6e-80a532c801fa",
+    "type": "fact",
+    "slug": null,
+    "headline": "# mirage kxlm scout — LEAF verdict",
+    "tags": [
+      "mirage",
+      "kxlm",
+      "composer",
+      "sqlite",
+      "nested-ref",
+      "scout"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2864
+  },
+  {
+    "id": "019de9ec-f16a-79d0-b81e-05d7217c8774",
+    "type": "lesson",
+    "slug": null,
+    "headline": "# Devil critique — two items lotus avoided naming in session-2026-05-02",
+    "tags": [
+      "lotus",
+      "devil",
+      "critique",
+      "session-2026-05-02"
+    ],
+    "source": "devil critique 2026-05-02",
+    "confidence": 1.0,
+    "byte_size": 1616
+  },
+  {
+    "id": "019dbf45-d923-7300-ac94-e09fd0ba03aa",
+    "type": "principle",
+    "slug": null,
+    "headline": "Don't split content where steps are order-dependent, tables/menus lose meaning without surrounding context, or rules and...",
+    "tags": [
+      "splitting",
+      "knowledge-units",
+      "content-structure",
+      "digest"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2313
+  },
+  {
+    "id": "019de408-9024-7d60-8190-e87d8a2fad02",
+    "type": "lesson",
+    "slug": "lotus-devil-retro-existential",
+    "headline": "Existential: The 10-role org (CEO → chief-of-staff → research-lead → pdm → pm → test-engineer → orchestrator → code-revi...",
+    "tags": [
+      "lotus",
+      "retro",
+      "devil",
+      "critique",
+      "existential",
+      "org-structure",
+      "hierarchy"
+    ],
+    "source": "devil retro challenge 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 868
+  },
+  {
+    "id": "019da9e9-0d1f-7662-a692-922ea0644f1e",
+    "type": "fact",
+    "slug": null,
+    "headline": "# Mirage UI monolith — index.tsx",
+    "tags": [
+      "mirage",
+      "solidjs",
+      "ui",
+      "monolith",
+      "file-structure"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2443
+  },
+  {
+    "id": "019de42d-6b03-7ea0-bb3a-a0148f5dcccb",
+    "type": "principle",
+    "slug": "lotus-backlog-discipline",
+    "headline": "# Lotus backlog discipline",
+    "tags": [
+      "lotus",
+      "backlog",
+      "discipline",
+      "limbo",
+      "simaris"
+    ],
+    "source": "lotus operating model 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1520
+  },
+  {
+    "id": "019d7503-d0d6-7db3-8d20-eaeb3045e2c3",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Disuse signals cut",
+    "tags": [
+      "deprecation",
+      "feature-flags",
+      "decision-making",
+      "product"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2394
+  },
+  {
+    "id": "019de3be-10bc-7532-b7c3-9edf3323a375",
+    "type": "lesson",
+    "slug": null,
+    "headline": "MISREAD USER-NEED [attacks 019de3ba-7b82-7240-8e7f-2a8a87a1ad11 hyp-1, 019de3ba-18ea-7082-b713-57abe6247ba8]: Hypothesis...",
+    "tags": [
+      "nova",
+      "devil",
+      "critique",
+      "user-need-persistence"
+    ],
+    "source": "devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 491
+  },
+  {
+    "id": "019d7500-9fcd-7ba1-b29d-26647aa3ee2b",
+    "type": "fact",
+    "slug": null,
+    "headline": "# simaris scan categories",
+    "tags": [
+      "simaris",
+      "scan",
+      "categories",
+      "quality"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 4325
+  }
+]

@@ -1,0 +1,164 @@
+[
+  {
+    "id": "019d7730-f57e-7783-8b5d-95fec5f7777e",
+    "type": "fact",
+    "slug": null,
+    "headline": "reg.endpoints is only populated after configuration/activation. admin_import sets raw_spec and spec but leaves reg.endpo...",
+    "tags": [
+      "reg",
+      "endpoints",
+      "admin_import",
+      "setup"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 164
+  },
+  {
+    "id": "019dbcab-412a-7ad0-98b8-48743d2e1b61",
+    "type": "lesson",
+    "slug": null,
+    "headline": "admin_clone_recipe omits new fields unless explicitly copied. Adding column to recipe requires updating admin_clone_reci...",
+    "tags": [
+      "admin",
+      "clone",
+      "recipe",
+      "gotcha"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 142
+  },
+  {
+    "id": "019d900f-0322-7b90-a6d6-52361ac150d9",
+    "type": "lesson",
+    "slug": null,
+    "headline": "# Extend hasAnything() for new sections",
+    "tags": [
+      "mirage",
+      "solidjs",
+      "hasAnything",
+      "search-gate",
+      "recipe-config",
+      "ui"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 602
+  },
+  {
+    "id": "019daabf-27cc-7091-b7ef-5e3b6d898856",
+    "type": "idea",
+    "slug": null,
+    "headline": "Mirage admin CLI parity — planned stories:",
+    "tags": [
+      "mirage",
+      "admin",
+      "cli",
+      "recipe",
+      "planned-feature"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 379
+  },
+  {
+    "id": "019dad94-2232-7ab2-8892-6a28133fb9cb",
+    "type": "fact",
+    "slug": null,
+    "headline": "# Mirage reset",
+    "tags": [
+      "mirage",
+      "reset",
+      "admin_activate_recipe",
+      "cli",
+      "convention"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2477
+  },
+  {
+    "id": "019d7915-2ee7-7ed0-ad35-5d9f797ebcf8",
+    "type": "procedure",
+    "slug": null,
+    "headline": "vox ask enables async human input in agent pipelines by sending a question via Telegram bot and blocking until the user ...",
+    "tags": [
+      "vox",
+      "telegram",
+      "human-in-the-loop"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 246
+  },
+  {
+    "id": "019d78f4-16a5-7630-9551-342b45ec1c1c",
+    "type": "lesson",
+    "slug": null,
+    "headline": "# overflow-hidden on shared main breaks mixed-layout scroll",
+    "tags": [
+      "css",
+      "layout",
+      "solidjs",
+      "single-page-app",
+      "overflow",
+      "scrolling",
+      "regression"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 583
+  },
+  {
+    "id": "019dacbd-46e7-7061-86f9-152fd3c07e07",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Mirage recipe field removal back-compat pattern",
+    "tags": [
+      "mirage",
+      "recipe",
+      "back-compat",
+      "field-removal",
+      "serde",
+      "sqlite"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2919
+  },
+  {
+    "id": "019da9a8-38e0-7081-8aef-1a543bb5b235",
+    "type": "fact",
+    "slug": null,
+    "headline": "# Mirage recipe edit — single configure surface",
+    "tags": [
+      "mirage",
+      "recipe",
+      "configure",
+      "wizard",
+      "RecipeConfigStep",
+      "ui"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 400
+  },
+  {
+    "id": "019dee6b-4a18-72e3-ba12-95cbb183732f",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Workspace-member isolation as a dep-cap firewall",
+    "tags": [
+      "rust",
+      "cargo",
+      "workspace",
+      "prototype",
+      "dep-surface",
+      "architecture"
+    ],
+    "source": "memory-architect M3.2 build 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1165
+  }
+]

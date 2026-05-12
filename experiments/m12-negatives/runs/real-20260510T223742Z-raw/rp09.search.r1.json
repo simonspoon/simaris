@@ -1,0 +1,150 @@
+[
+  {
+    "id": "019dbb77-131f-70b0-92b5-e8d2433c3a8b",
+    "type": "aspect",
+    "slug": "pdm-nonneg",
+    "headline": "# PdM non-negotiables",
+    "tags": [
+      "caveman",
+      "pdm",
+      "aspect-v2",
+      "nonneg",
+      "rules"
+    ],
+    "source": "split from PdM monolith 019d91cf (task rfnw)",
+    "confidence": 1.0,
+    "byte_size": 3880
+  },
+  {
+    "id": "019dbb77-1104-7912-a495-01df4a982d4d",
+    "type": "aspect",
+    "slug": "pdm-iteration",
+    "headline": "# PdM iteration grammar",
+    "tags": [
+      "caveman",
+      "pdm",
+      "aspect-v2",
+      "iteration",
+      "grammar"
+    ],
+    "source": "split from PdM monolith 019d91cf (task rfnw)",
+    "confidence": 1.0,
+    "byte_size": 2750
+  },
+  {
+    "id": "019dbb77-10ac-7de3-95d3-a593abc7d0aa",
+    "type": "aspect",
+    "slug": "pdm-turn2-strawman",
+    "headline": "# PdM Turn 2 — strawman",
+    "tags": [
+      "caveman",
+      "pdm",
+      "aspect-v2",
+      "turn2",
+      "strawman"
+    ],
+    "source": "split from PdM monolith 019d91cf (task rfnw)",
+    "confidence": 1.0,
+    "byte_size": 4672
+  },
+  {
+    "id": "019d708d-c960-7141-b14f-6229f6824dd6",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Review the limbo backlog with the user when deciding what to work on next.",
+    "tags": [
+      "limbo",
+      "backlog",
+      "planning"
+    ],
+    "source": "suda:backlog-capture",
+    "confidence": 1.0,
+    "byte_size": 159
+  },
+  {
+    "id": "019dbb3e-76ec-7c43-834b-113c74405605",
+    "type": "procedure",
+    "slug": "orokin-pdm-interview-rules",
+    "headline": "# PdM interview rules",
+    "tags": [
+      "orokin",
+      "pdm"
+    ],
+    "source": "corpus-decomp yyvb pdm",
+    "confidence": 1.0,
+    "byte_size": 3031
+  },
+  {
+    "id": "019dbf35-63f6-7801-8d1f-491b35101734",
+    "type": "lesson",
+    "slug": null,
+    "headline": "During spec extraction, stop and re-ask when answers are ambiguous or incomplete. Push back once; if user insists, recor...",
+    "tags": [
+      "spec",
+      "extraction",
+      "clarification"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 140
+  },
+  {
+    "id": "019d708d-c95f-7c41-b0f6-5e7a0c5ab3a1",
+    "type": "principle",
+    "slug": null,
+    "headline": "Stop and ask the user when: scope is unspecified, a required tool/environment is unavailable, results are ambiguous, or ...",
+    "tags": [
+      "escalation",
+      "guardrail",
+      "human-in-loop"
+    ],
+    "source": "skill:team-evaluator",
+    "confidence": 1.0,
+    "byte_size": 177
+  },
+  {
+    "id": "019dbb77-1383-7b62-9799-481b4debb7b9",
+    "type": "aspect",
+    "slug": "pdm-identity",
+    "headline": "# PdM (v2) — atom index",
+    "tags": [
+      "caveman",
+      "pdm",
+      "aspect-v2",
+      "parent-stub",
+      "identity"
+    ],
+    "source": "split from PdM monolith 019d91cf (task rfnw)",
+    "confidence": 1.0,
+    "byte_size": 5944
+  },
+  {
+    "id": "019d91ab-2a7e-7361-a114-fcef62b4848b",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Limbo story convention",
+    "tags": [
+      "limbo",
+      "user-stories",
+      "pdm",
+      "convention",
+      "pm"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 2757
+  },
+  {
+    "id": "019dbb3e-7d6e-7b31-9e14-5eaf2cd2c14f",
+    "type": "procedure",
+    "slug": "orokin-proto-invariants",
+    "headline": "# Orokin protocol §4 — invariants",
+    "tags": [
+      "orokin",
+      "protocol"
+    ],
+    "source": "corpus-decomp yyvb proto",
+    "confidence": 1.0,
+    "byte_size": 4872
+  }
+]

@@ -1,0 +1,150 @@
+[
+  {
+    "id": "019dd109-f1bd-71c2-8636-a5c0a1413da0",
+    "type": "aspect",
+    "slug": "reflect-prompt",
+    "headline": "You are an automated reflection agent. You receive a session ID and use tools to read, analyze, extract knowledge worth ...",
+    "tags": [
+      "reflection",
+      "system-prompt",
+      "orbiter",
+      "reflect-agent"
+    ],
+    "source": "reflect-2026-04-27",
+    "confidence": 1.0,
+    "byte_size": 6508
+  },
+  {
+    "id": "019d73a1-b4aa-7583-9f63-0a53f70fe589",
+    "type": "idea",
+    "slug": null,
+    "headline": "New knowledge type 'aspect': Captures disposition (how you think), priorities (what you weight), boundaries (where you s...",
+    "tags": [
+      "aspect",
+      "knowledge-type",
+      "naming",
+      "design"
+    ],
+    "source": "brainstorm session 2026-04-09",
+    "confidence": 1.0,
+    "byte_size": 674
+  },
+  {
+    "id": "019dedca-2927-7cb0-b83c-1a95685e9d81",
+    "type": "fact",
+    "slug": "simaris-briefing-2026-05-03",
+    "headline": "# Simaris briefing — Knowledge Program kickoff (2026-05-03)",
+    "tags": [
+      "simaris",
+      "briefing",
+      "kickoff",
+      "knowledge-program"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 2053
+  },
+  {
+    "id": "019da245-3346-7f31-8af3-0459fc7f7036",
+    "type": "aspect",
+    "slug": "lotus",
+    "headline": "# Lotus",
+    "tags": [
+      "lotus",
+      "ceo",
+      "primer",
+      "system-prompt",
+      "executive"
+    ],
+    "source": "user request 2026-04-30 — CEO pivot",
+    "confidence": 1.0,
+    "byte_size": 1905
+  },
+  {
+    "id": "019dbf40-3eeb-7732-8c50-f2f3e3cf7bdd",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Agent prompt composition: primer (vocab + WHY) first, role block second, feature SPEC last. Primer establishes shared co...",
+    "tags": [
+      "agents",
+      "prompt",
+      "composition"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 224
+  },
+  {
+    "id": "019d74ee-3071-78c3-b8d8-5244255853ee",
+    "type": "preference",
+    "slug": null,
+    "headline": "Simon has ADHD and dyslexia. Communication rules: terse and honest, no fluff, no trailing summaries. One topic at a time...",
+    "tags": [
+      "communication",
+      "accessibility"
+    ],
+    "source": "migrated from suda",
+    "confidence": 1.0,
+    "byte_size": 297
+  },
+  {
+    "id": "019de4a9-d9ab-7fb1-a229-80a69d22c0d0",
+    "type": "idea",
+    "slug": null,
+    "headline": "# Banshee wrong-problem critique — devil gate-2.5",
+    "tags": [
+      "banshee",
+      "devil",
+      "gate-2.5",
+      "wrong-problem"
+    ],
+    "source": "banshee devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1806
+  },
+  {
+    "id": "019d73a1-9773-7513-bdb4-b3e827eb166a",
+    "type": "idea",
+    "slug": null,
+    "headline": "# Aspect-based agent architecture",
+    "tags": [
+      "aspect",
+      "architecture",
+      "agents",
+      "prime",
+      "bootstrap"
+    ],
+    "source": "brainstorm session 2026-04-09",
+    "confidence": 1.0,
+    "byte_size": 564
+  },
+  {
+    "id": "019de4d2-6371-7600-91e1-5642dff99460",
+    "type": "aspect",
+    "slug": null,
+    "headline": "# Test Strategy — Story 02: Per-agent Timeline View",
+    "tags": [
+      "banshee",
+      "test-strategy",
+      "story:02"
+    ],
+    "source": "banshee test-engineer 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 3989
+  },
+  {
+    "id": "019de4a9-ce27-7d33-9bc7-025d388754ee",
+    "type": "idea",
+    "slug": null,
+    "headline": "# Banshee unstated assumptions — devil gate-2.5",
+    "tags": [
+      "banshee",
+      "devil",
+      "gate-2.5",
+      "assumptions"
+    ],
+    "source": "banshee devil 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1626
+  }
+]

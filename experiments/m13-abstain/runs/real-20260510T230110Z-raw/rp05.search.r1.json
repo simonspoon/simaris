@@ -1,0 +1,159 @@
+[
+  {
+    "id": "019de408-9024-7d60-8190-e87d8a2fad02",
+    "type": "lesson",
+    "slug": "lotus-devil-retro-existential",
+    "headline": "Existential: The 10-role org (CEO → chief-of-staff → research-lead → pdm → pm → test-engineer → orchestrator → code-revi...",
+    "tags": [
+      "lotus",
+      "retro",
+      "devil",
+      "critique",
+      "existential",
+      "org-structure",
+      "hierarchy"
+    ],
+    "source": "devil retro challenge 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 868
+  },
+  {
+    "id": "019dcc25-f8a3-76c1-99bf-95a2761ea279",
+    "type": "principle",
+    "slug": null,
+    "headline": "Agent without vocabulary context reads role rules as arbitrary constraints. Rules-only docs cause: avoidance, wrong defa...",
+    "tags": [
+      "agents",
+      "onboarding",
+      "compliance",
+      "doctrine",
+      "instructions",
+      "context",
+      "design"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 299
+  },
+  {
+    "id": "019d73eb-7055-70e1-8538-00cd520f528c",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Store agent knowledge in simaris",
+    "tags": [
+      "simaris",
+      "agents",
+      "knowledge-management",
+      "configuration"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2404
+  },
+  {
+    "id": "019dee2e-e22a-7841-abd2-95ac126e362b",
+    "type": "lesson",
+    "slug": "lotus-failure-holding-2026-05-03",
+    "headline": "# Lotus failure — said \"holding\" as if work was in flight (2026-05-03)",
+    "tags": [
+      "lotus",
+      "failure",
+      "operational-model",
+      "launchagent",
+      "recurrence"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 2083
+  },
+  {
+    "id": "019d708d-c95d-7b22-9628-e16d3c93e58d",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Guard exploration",
+    "tags": [
+      "qorvex",
+      "safety",
+      "exploration",
+      "ios"
+    ],
+    "source": "skill:qorvex-app-explorer",
+    "confidence": 1.0,
+    "byte_size": 2349
+  },
+  {
+    "id": "019d73a1-b4aa-7583-9f63-0a53f70fe589",
+    "type": "idea",
+    "slug": null,
+    "headline": "New knowledge type 'aspect': Captures disposition (how you think), priorities (what you weight), boundaries (where you s...",
+    "tags": [
+      "aspect",
+      "knowledge-type",
+      "naming",
+      "design"
+    ],
+    "source": "brainstorm session 2026-04-09",
+    "confidence": 1.0,
+    "byte_size": 674
+  },
+  {
+    "id": "019db0de-3fc9-7482-9070-b3567b71c8f4",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Role isolation prevents cross-layer confusion",
+    "tags": [
+      "architecture",
+      "contract",
+      "layers",
+      "role-isolation"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2297
+  },
+  {
+    "id": "019da0de-e366-7e21-a3c2-4ff7a63efe64",
+    "type": "aspect",
+    "slug": "soul",
+    "headline": "# Soul",
+    "tags": [
+      "soul",
+      "base",
+      "identity",
+      "voice",
+      "core"
+    ],
+    "source": "user: simon, 2026-04-18",
+    "confidence": 1.0,
+    "byte_size": 4507
+  },
+  {
+    "id": "019dee41-d23d-7681-9eeb-f9a13236c10b",
+    "type": "idea",
+    "slug": "simaris-m2-open-questions-2026-05-03",
+    "headline": "# M2 open questions — unresolvable from paper alone",
+    "tags": [
+      "m2",
+      "memory-architect",
+      "survey",
+      "open-questions"
+    ],
+    "source": "M2 synthesis 2026-05-03 — gaps surfaced by per-system survey + matrix",
+    "confidence": 1.0,
+    "byte_size": 3437
+  },
+  {
+    "id": "019d7510-9cae-7ca1-b711-862c0a6311c6",
+    "type": "principle",
+    "slug": null,
+    "headline": "Procedures must be step-by-step; principles must be standalone statements that make sense without external context.",
+    "tags": [
+      "knowledge-extraction",
+      "procedure",
+      "principle"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 115
+  }
+]

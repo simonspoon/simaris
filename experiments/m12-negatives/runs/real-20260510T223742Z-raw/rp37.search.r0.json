@@ -1,0 +1,150 @@
+[
+  {
+    "id": "019de1b1-ba83-7532-acba-0e8d3d3b9850",
+    "type": "principle",
+    "slug": null,
+    "headline": "Agent bootstrap flow: on first contact, check for part_of children. None present → run orientation Q&A. Ask one question...",
+    "tags": [
+      "agent-design",
+      "bootstrap",
+      "orientation",
+      "lotus"
+    ],
+    "source": "session-af58e313-371c-499b-b175-d6fb1b98a133",
+    "confidence": 1.0,
+    "byte_size": 364
+  },
+  {
+    "id": "019d708d-c95d-7b22-9628-df7df34ce739",
+    "type": "fact",
+    "slug": null,
+    "headline": "Structured fields (`--approach`, `--verify`, `--result`, `--outcome`) are recommended but optional. limbo has no gate va...",
+    "tags": [
+      "limbo",
+      "fields",
+      "validation"
+    ],
+    "source": "skill:global-backlog",
+    "confidence": 1.0,
+    "byte_size": 179
+  },
+  {
+    "id": "019de4a5-0bdc-7720-923a-e1eb1deafd7d",
+    "type": "idea",
+    "slug": null,
+    "headline": "# Three challenge questions for Lotus — gate-0 attack surface",
+    "tags": [
+      "banshee",
+      "research",
+      "gate-0",
+      "challenges",
+      "lotus"
+    ],
+    "source": "banshee research 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 2382
+  },
+  {
+    "id": "019dbcaa-7e77-7883-8616-584b57741cb6",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Leaf task atomicity gates",
+    "tags": [
+      "task",
+      "atomicity",
+      "decomposition",
+      "planning"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 4364
+  },
+  {
+    "id": "019d73eb-7055-70e1-8538-00cd520f528c",
+    "type": "principle",
+    "slug": null,
+    "headline": "# Store agent knowledge in simaris",
+    "tags": [
+      "simaris",
+      "agents",
+      "knowledge-management",
+      "configuration"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2404
+  },
+  {
+    "id": "019dbb3e-7c94-7f30-a06c-c739d1a9d4eb",
+    "type": "procedure",
+    "slug": "orokin-proto-doctrine",
+    "headline": "# Orokin protocol §0 — doctrine",
+    "tags": [
+      "orokin",
+      "protocol"
+    ],
+    "source": "corpus-decomp yyvb proto",
+    "confidence": 1.0,
+    "byte_size": 5009
+  },
+  {
+    "id": "019de4d2-503f-7530-b31f-42c2e3803458",
+    "type": "aspect",
+    "slug": null,
+    "headline": "# Test Strategy — Story 01: Agent List View",
+    "tags": [
+      "banshee",
+      "test-strategy",
+      "story:01"
+    ],
+    "source": "banshee test-engineer 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 4191
+  },
+  {
+    "id": "019de4a6-5075-7b10-a568-750bc085aef3",
+    "type": "idea",
+    "slug": null,
+    "headline": "# Three challenge questions for Lotus — Banshee gate-0 assumptions",
+    "tags": [
+      "banshee",
+      "research",
+      "challenge",
+      "lotus",
+      "gate-0"
+    ],
+    "source": "banshee research 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 2273
+  },
+  {
+    "id": "019de408-5fa9-73a0-909d-388db8e8cfd2",
+    "type": "lesson",
+    "slug": "lotus-devil-retro-1",
+    "headline": "Retro claims \"Pipeline gates 0–5 ran clean first attempt.\" Survivorship bias: gates 0–5 are the SETUP phase (scope → rou...",
+    "tags": [
+      "lotus",
+      "retro",
+      "devil",
+      "critique",
+      "survivorship-bias"
+    ],
+    "source": "devil retro challenge 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 381
+  },
+  {
+    "id": "019dbba2-74e8-7d60-824f-03475fc44e22",
+    "type": "aspect",
+    "slug": null,
+    "headline": "# Researcher scout mode (triage)",
+    "tags": [
+      "researcher",
+      "caveman",
+      "aspect"
+    ],
+    "source": "split of 019d97ce-9d90-7d70-8147-b0b14e608a8b on 2026-04-23 vjrt",
+    "confidence": 1.0,
+    "byte_size": 1886
+  }
+]

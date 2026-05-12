@@ -1,0 +1,153 @@
+[
+  {
+    "id": "019d73a1-b4aa-7583-9f63-0a53f70fe589",
+    "type": "idea",
+    "slug": null,
+    "headline": "New knowledge type 'aspect': Captures disposition (how you think), priorities (what you weight), boundaries (where you s...",
+    "tags": [
+      "aspect",
+      "knowledge-type",
+      "naming",
+      "design"
+    ],
+    "source": "brainstorm session 2026-04-09",
+    "confidence": 1.0,
+    "byte_size": 674
+  },
+  {
+    "id": "019da0ed-651c-7be2-87b6-d14b115b3bcc",
+    "type": "principle",
+    "slug": null,
+    "headline": "Soul aspect — always-on base. No count toward composition limit. User call explicit. Stack under other aspects. Other as...",
+    "tags": [
+      "soul",
+      "aspect",
+      "composition",
+      "always-on",
+      "base"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 190
+  },
+  {
+    "id": "019dbca9-16b4-7ce2-9444-8935725a4bb1",
+    "type": "principle",
+    "slug": null,
+    "headline": "Live JOIN on read: reflects current state, retroactively rewrites history. Use when current truth is always preferred ov...",
+    "tags": [
+      "join",
+      "live-read",
+      "data-modeling",
+      "trade-off"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 134
+  },
+  {
+    "id": "019dedca-2927-7cb0-b83c-1a95685e9d81",
+    "type": "fact",
+    "slug": "simaris-briefing-2026-05-03",
+    "headline": "# Simaris briefing — Knowledge Program kickoff (2026-05-03)",
+    "tags": [
+      "simaris",
+      "briefing",
+      "kickoff",
+      "knowledge-program"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 2053
+  },
+  {
+    "id": "019d708d-c95f-7c41-b0f6-5e4f5202b67f",
+    "type": "fact",
+    "slug": null,
+    "headline": "# scoring rubric — 0-3 per dimension",
+    "tags": [
+      "scoring",
+      "rubric",
+      "metrics"
+    ],
+    "source": "skill:team-evaluator",
+    "confidence": 1.0,
+    "byte_size": 4292
+  },
+  {
+    "id": "019de4b3-15a2-7db3-badc-794890e40ddc",
+    "type": "idea",
+    "slug": "banshee-open-questions",
+    "headline": "# Banshee — open questions for lotus (pre-limbo)",
+    "tags": [
+      "banshee",
+      "pdm",
+      "open-questions"
+    ],
+    "source": "banshee pdm 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1831
+  },
+  {
+    "id": "019dbf46-1e2f-7f90-863f-1ea7b8f32276",
+    "type": "principle",
+    "slug": null,
+    "headline": "Principles capture judgment via tension field. Tension describes trade-off (benefit X vs cost Y). Without tension: reads...",
+    "tags": [
+      "principle",
+      "tension",
+      "knowledge-graph",
+      "simaris"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 177
+  },
+  {
+    "id": "019de6a1-2f99-7d43-8ff2-3f917d26b734",
+    "type": "lesson",
+    "slug": "lotus-self-reflection-2026-05-01",
+    "headline": "# Lotus self-reflection — 2026-05-01",
+    "tags": [
+      "lotus",
+      "retro",
+      "reflection",
+      "self",
+      "2026-05-01"
+    ],
+    "source": "lotus self-reflection 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 4581
+  },
+  {
+    "id": "019d786c-e31d-7d20-9bef-5ea27d6635d3",
+    "type": "idea",
+    "slug": null,
+    "headline": "Recurrence-mining: treat duplicate/recurrence count as a first-class quality signal instead of deduplicating. Classify k...",
+    "tags": [
+      "knowledge-management",
+      "deduplication",
+      "quality-signal",
+      "simaris"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 200
+  },
+  {
+    "id": "019deddf-16ed-7ab3-a5f5-47736deb13b5",
+    "type": "lesson",
+    "slug": "lotus-failure-stale-briefing-2026-05-03",
+    "headline": "# Lotus failure — quoted stale numbers in simaris briefing (2026-05-03)",
+    "tags": [
+      "lotus",
+      "failure",
+      "verify-before-report",
+      "stale",
+      "simaris"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1481
+  }
+]

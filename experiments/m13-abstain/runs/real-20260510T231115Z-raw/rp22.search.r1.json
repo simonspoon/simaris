@@ -1,0 +1,152 @@
+[
+  {
+    "id": "019ddc5c-5b07-7c31-a2d6-f92d1a96c572",
+    "type": "idea",
+    "slug": null,
+    "headline": "Nova project at ~/claudehub/nova. Email-shaped async messaging between simaris aspect slugs and humans. LAN daemon, laun...",
+    "tags": [
+      "nova",
+      "agents",
+      "async-messaging",
+      "inbox",
+      "project"
+    ],
+    "source": "session-dbdaa003",
+    "confidence": 1.0,
+    "byte_size": 515
+  },
+  {
+    "id": "019db109-94ac-7b20-ba2b-2194058375d7",
+    "type": "aspect",
+    "slug": "orokin-core-impl",
+    "headline": "# Orokin Core Impl",
+    "tags": [
+      "orokin"
+    ],
+    "source": "orokin architecture bundle 2026-04-21",
+    "confidence": 1.0,
+    "byte_size": 3412
+  },
+  {
+    "id": "019de3c9-2081-7551-a4ad-266099995e98",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Test strategy: yseh — Daemon system service install",
+    "tags": [
+      "nova",
+      "mvp",
+      "test-strategy",
+      "yseh"
+    ],
+    "source": "test-engineer 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 5201
+  },
+  {
+    "id": "019de039-e778-7fe0-bb46-70e711063bf4",
+    "type": "fact",
+    "slug": null,
+    "headline": "Nova test structure: 3 layers. Layer 1 = in-process axum tests (server/tests/http.rs, tower oneshot, FixedClock+SeqIdGen...",
+    "tags": [
+      "nova",
+      "testing",
+      "live-test",
+      "bash",
+      "e2e"
+    ],
+    "source": "session-29ea421b",
+    "confidence": 1.0,
+    "byte_size": 466
+  },
+  {
+    "id": "019dd03c-28c5-7cb1-a667-744a9dd3738a",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# PdM approval flow — write Orokin tree (correction)",
+    "tags": [
+      "orokin",
+      "pdm",
+      "correction",
+      "limbo",
+      "cli-shape"
+    ],
+    "source": "vauban canvas pivot session 2026-04-27, sourced_from 019dbb3e-7605-7b93-870c-e1eeeda65dd7",
+    "confidence": 1.0,
+    "byte_size": 2303
+  },
+  {
+    "id": "019de3b9-e2f1-76d2-acbd-f98fa9299a4d",
+    "type": "fact",
+    "slug": null,
+    "headline": "Nova workspace module map (2026-05-01): nova-contract=lib (types only, no runtime deps), nova-core=lib (engine + ports +...",
+    "tags": [
+      "nova",
+      "research",
+      "codebase",
+      "modules"
+    ],
+    "source": "research-lead 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 309
+  },
+  {
+    "id": "019dbcd4-b01c-7b52-8613-c1123c3cff2c",
+    "type": "procedure",
+    "slug": null,
+    "headline": "[procedure] Duplicate task handling — verify feature exists + meets acceptance criteria. Run tests. Mark original task d...",
+    "tags": [
+      "limbo",
+      "task-management",
+      "duplicate",
+      "worker"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 258
+  },
+  {
+    "id": "019dbb4b-7e6d-7192-815a-e5eb12fcddfc",
+    "type": "procedure",
+    "slug": "orokin-integrator-block",
+    "headline": "# Orokin Integrator block (non-reject)",
+    "tags": [
+      "orokin",
+      "integrator"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 4563
+  },
+  {
+    "id": "019db36a-fae1-7c73-8d12-6a5a111e5058",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# PM refinement cycle",
+    "tags": [
+      "orokin",
+      "project-manager",
+      "refinement",
+      "limbo",
+      "scout",
+      "acceptance-criteria",
+      "simaris-prime"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 740
+  },
+  {
+    "id": "019d708d-c960-7141-b14f-6200bd22e883",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Run from ~/claudehub: `limbo add \"<name>\" -d \"<description>\" --action \"<what to do>\" --result \"<what done looks like>\" -...",
+    "tags": [
+      "limbo",
+      "backlog",
+      "commands"
+    ],
+    "source": "suda:backlog-capture",
+    "confidence": 1.0,
+    "byte_size": 248
+  }
+]

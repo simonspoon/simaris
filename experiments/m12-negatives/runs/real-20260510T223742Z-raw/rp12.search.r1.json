@@ -1,0 +1,161 @@
+[
+  {
+    "id": "019de3d3-2bba-7281-aea1-061455463f4d",
+    "type": "lesson",
+    "slug": null,
+    "headline": "launchagent --aspect <slug> bakes simaris aspect as system prompt — cleaner than manual 'simaris show | prepend'. Use sl...",
+    "tags": [
+      "lotus",
+      "launchagent",
+      "dispatch",
+      "aspect-flag"
+    ],
+    "source": "lotus nova spin 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 189
+  },
+  {
+    "id": "019da5d4-f885-7b33-ae3a-3077ab381967",
+    "type": "idea",
+    "slug": null,
+    "headline": "Self-* assistant loop: observe (hooks) → store (simaris) → reflect (dream) → mutate (?). Current stack = layers 1-3. Gap...",
+    "tags": [
+      "lotus",
+      "self-evolving",
+      "mutate",
+      "architecture",
+      "hooks",
+      "simaris",
+      "dream"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 312
+  },
+  {
+    "id": "019de38f-58d6-7dc0-86ef-b517590561e9",
+    "type": "principle",
+    "slug": null,
+    "headline": "Lotus pipeline gates (idea→shipped): request → chief-of-staff (intake) → research-lead (gate: spec atoms in simaris) → p...",
+    "tags": [
+      "lotus",
+      "pipeline",
+      "delegation",
+      "workflow"
+    ],
+    "source": "session-ac751665",
+    "confidence": 1.0,
+    "byte_size": 344
+  },
+  {
+    "id": "019d73f1-f0d0-75a3-bbf9-31bdf947ad1f",
+    "type": "fact",
+    "slug": null,
+    "headline": "suda: context/memory system with two dedicated hooks — UserPromptSubmit (load) and Stop (observe).",
+    "tags": [
+      "suda",
+      "memory",
+      "hooks",
+      "swe-team"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 100
+  },
+  {
+    "id": "019da245-3346-7f31-8af3-0459fc7f7036",
+    "type": "aspect",
+    "slug": "lotus",
+    "headline": "# Lotus",
+    "tags": [
+      "lotus",
+      "ceo",
+      "primer",
+      "system-prompt",
+      "executive"
+    ],
+    "source": "user request 2026-04-30 — CEO pivot",
+    "confidence": 1.0,
+    "byte_size": 1905
+  },
+  {
+    "id": "019dd10c-ce56-7880-a501-59fd72cb2d47",
+    "type": "fact",
+    "slug": null,
+    "headline": "Store LLM system prompts as simaris units. Pull into shell scripts via: simaris show <slug> --raw | tail -n +2. tail str...",
+    "tags": [
+      "simaris",
+      "orbiter",
+      "prompt-design",
+      "slug",
+      "shell-pattern"
+    ],
+    "source": "session-cf470dbd-68de-4e33-80f6-2e64f4811350",
+    "confidence": 1.0,
+    "byte_size": 208
+  },
+  {
+    "id": "019dedde-b9f3-7c91-bf82-8833b29ea34a",
+    "type": "fact",
+    "slug": "lotus-reply-simaris-charter-2026-05-03",
+    "headline": "# Lotus reply to simaris program charter (2026-05-03)",
+    "tags": [
+      "lotus",
+      "simaris",
+      "reply",
+      "charter",
+      "proceed"
+    ],
+    "source": "lotus session 2026-05-03",
+    "confidence": 1.0,
+    "byte_size": 1426
+  },
+  {
+    "id": "019de3ae-12e8-7793-8377-9296f70a6a52",
+    "type": "procedure",
+    "slug": "lotus-pipeline",
+    "headline": "# Lotus pipeline — request to ship",
+    "tags": [
+      "gate",
+      "lotus",
+      "pipeline",
+      "workflow"
+    ],
+    "source": "lotus org build 2026-05-01",
+    "confidence": 1.0,
+    "byte_size": 1881
+  },
+  {
+    "id": "019de409-292c-7590-a2c3-d3d3e953aca2",
+    "type": "fact",
+    "slug": null,
+    "headline": "scope: lotus tooling survey 2026-05-01",
+    "tags": [
+      "lotus",
+      "tooling-survey",
+      "2026-05-01",
+      "discovery",
+      "lotus-dispatch",
+      "hook-framework",
+      "surprise"
+    ],
+    "source": "research-lead",
+    "confidence": 1.0,
+    "byte_size": 939
+  },
+  {
+    "id": "019de9f6-8b3d-71b1-89a8-38b66783108d",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Single-purpose hook → wire standalone in settings.json. Multi-handler, order/matcher needed → route through lotus-dispat...",
+    "tags": [
+      "lotus",
+      "hook-framework",
+      "lotus-dispatch",
+      "architecture"
+    ],
+    "source": "session-cd52b782-5dc6-439f-834b-d616c3b54d7c",
+    "confidence": 1.0,
+    "byte_size": 194
+  }
+]

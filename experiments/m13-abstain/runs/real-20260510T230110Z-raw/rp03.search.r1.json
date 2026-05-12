@@ -1,0 +1,160 @@
+[
+  {
+    "id": "019ddbc3-935e-72d2-9187-acf3872c7205",
+    "type": "fact",
+    "slug": null,
+    "headline": "Single-file bash script (not directory) — do NOT cd/ls path/. Path: ~/claudehub/launchagent-tmux.",
+    "tags": [
+      "launchagent",
+      "tmux",
+      "claudehub",
+      "subagent",
+      "sidecar"
+    ],
+    "source": "session-bb72b540-e584-463a-b21a-fbee39f2a8ce",
+    "confidence": 1.0,
+    "byte_size": 1134
+  },
+  {
+    "id": "019d708d-c95f-7c41-b0f6-60ee5f78a80e",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Create and use terminal",
+    "tags": [
+      "xaku",
+      "terminal",
+      "workflow",
+      "procedure"
+    ],
+    "source": "skill:xaku-control",
+    "confidence": 1.0,
+    "byte_size": 2700
+  },
+  {
+    "id": "019ddbe3-7b4e-7993-a257-aeee1019af30",
+    "type": "fact",
+    "slug": null,
+    "headline": "/usr/local/bin/launchagent symlinks to ~/claudehub/launchagent-tmux (bash script). Canonical launchagent command tmux-ba...",
+    "tags": [
+      "launchagent",
+      "tmux",
+      "symlink",
+      "nova",
+      "infrastructure"
+    ],
+    "source": "session-5d572df3-4a43-4984-82c1-c819aa5b3655",
+    "confidence": 1.0,
+    "byte_size": 423
+  },
+  {
+    "id": "019dcb97-01cb-7a70-9f2e-56ce15d18707",
+    "type": "principle",
+    "slug": null,
+    "headline": "Split features at risk boundaries. Editor integration + LLM prompting fail separate ways. Slice boundary match session c...",
+    "tags": [
+      "architecture",
+      "risk",
+      "splitting",
+      "parallel"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 173
+  },
+  {
+    "id": "019d8dda-e6d7-7740-bcc1-d44b36cb1798",
+    "type": "procedure",
+    "slug": null,
+    "headline": "# Workaround — subagent nesting restriction",
+    "tags": [
+      "claude-code",
+      "subagent",
+      "nesting",
+      "workaround",
+      "headless"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 774
+  },
+  {
+    "id": "019d7877-9d9a-7391-8274-fb0456519701",
+    "type": "procedure",
+    "slug": null,
+    "headline": "Steps:",
+    "tags": [
+      "ivara",
+      "cli",
+      "session",
+      "automation"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 2522
+  },
+  {
+    "id": "019ddf7c-f888-7d71-83fc-bbfc68f6322c",
+    "type": "fact",
+    "slug": null,
+    "headline": "watch-subagents.sh live at ~/.local/bin/watch-subagents.sh. Poll tmux ls every 1s, filter by prefix (default agent-), jo...",
+    "tags": [
+      "tmux",
+      "subagent",
+      "watch-subagents",
+      "launchagent",
+      "tooling"
+    ],
+    "source": "session-cb8c86af-8230-484a-9c79-fbd6c5d8f950",
+    "confidence": 1.0,
+    "byte_size": 425
+  },
+  {
+    "id": "019da630-6002-7b41-96fc-e7e77b799bea",
+    "type": "lesson",
+    "slug": null,
+    "headline": "# --dangerously-skip-permissions skips prompts not cwd gate",
+    "tags": [
+      "cwd",
+      "dangerously-skip-permissions",
+      "gotcha",
+      "headless",
+      "orchestrator",
+      "permissions",
+      "pm",
+      "tl"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 583
+  },
+  {
+    "id": "019dea6d-cdf9-70f2-99cf-c157652c5a70",
+    "type": "fact",
+    "slug": null,
+    "headline": "launchagent-tmux commit 5321e15 writes /tmp/launchagent-${sid}.aspect (always) and .caller-aspect (when CLAUDE_ASPECT in...",
+    "tags": [
+      "launchagent",
+      "banshee",
+      "ui-v2",
+      "committer"
+    ],
+    "source": "inbox",
+    "confidence": 1.0,
+    "byte_size": 638
+  },
+  {
+    "id": "019dbdc3-575f-7ae2-a0c8-a25bea52c25d",
+    "type": "lesson",
+    "slug": null,
+    "headline": "Replace system-prompt via pm-subagent-cmux.sh + claude-aspect.sh pipeline: simaris show → jq → --append-system-prompt. N...",
+    "tags": [
+      "system-prompt",
+      "subagent",
+      "pipeline",
+      "ordis"
+    ],
+    "source": "session",
+    "confidence": 1.0,
+    "byte_size": 158
+  }
+]
