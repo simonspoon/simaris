@@ -16,6 +16,18 @@
 // appears once in the header rather than duplicated. Per story 3, only the
 // rendered output is shown — raw markdown belongs to edit mode (story 4).
 //
+// Inline edit (story pock): an "Edit" button on the read pane swaps the
+// rendered article for a textarea + form fields (content, type, tags,
+// source) — same field set as the Units-tab modal editor. Save POSTs to
+// /api/units/:id and re-renders via openUnit() so the updated content,
+// cross-links, and meta refresh from the canonical payload. Cancel
+// restores read mode from the cached payload without touching the API.
+// After a successful save, loadUnits() refreshes the sidebar so headline,
+// type-section, and tag changes show without a full page reload — the
+// expand/collapse state of sections is preserved by the existing
+// `expanded` set. The Units tab is unaffected; both UIs use the same
+// /api/units/:id POST endpoint.
+//
 // Cross-links (story alvp): after markdown render, we walk text nodes
 // (skipping <code>/<pre>/<a> subtrees) and rewrite three patterns into
 // anchors that navigate inside the wiki without a full page reload:
@@ -66,6 +78,11 @@ const unitsById = new Map();
 // Last unit id rendered, so we don't push duplicate history entries when a
 // click re-navigates to the same target.
 let currentUnitId = null;
+
+// Cached payload for the currently rendered unit so Cancel can restore
+// the read pane without an API round-trip, and Save can diff against the
+// original values to skip unchanged fields.
+let currentPayload = null;
 
 function escapeHtml(s) {
   return String(s ?? "")
@@ -416,6 +433,7 @@ function renderUnitDetail(payload) {
           <span class="badge badge--${escapeHtml(u.type || "")}">${escapeHtml(u.type || "")}</span>
           <code class="wiki__detail-id">${escapeHtml(u.id || "")}</code>
           ${u.archived ? `<span class="wiki__entry-tag">archived</span>` : ""}
+          <button type="button" class="btn btn--small" id="wiki-edit-btn">Edit</button>
         </div>
       </header>
       <dl class="modal__meta">
@@ -446,6 +464,114 @@ function renderUnitDetail(payload) {
   applyCrossLinks(bodyEl);
 }
 
+// Render the edit form in place of the read pane. Mirrors the Units-modal
+// edit form (web/units.js) field-for-field: textarea for content, select
+// for type, comma-separated tags input, source input. The id/archived
+// chips stay visible so the user knows which unit they're editing.
+function renderEditForm(payload) {
+  const u = payload.unit || {};
+  const typeOptions = TYPE_ORDER.map(
+    (t) =>
+      `<option value="${escapeHtml(t)}"${t === u.type ? " selected" : ""}>${escapeHtml(t)}</option>`,
+  ).join("");
+
+  els.content.innerHTML = `
+    <article class="wiki__detail">
+      <header class="wiki__detail-header">
+        <h1 class="wiki__detail-title">Edit unit</h1>
+        <div class="wiki__detail-meta-row">
+          <code class="wiki__detail-id">${escapeHtml(u.id || "")}</code>
+          ${u.archived ? `<span class="wiki__entry-tag">archived</span>` : ""}
+        </div>
+      </header>
+      <form id="wiki-edit-form" class="edit-form">
+        <label class="edit-form__field">
+          <span>Content</span>
+          <textarea name="content" rows="18">${escapeHtml(u.content || "")}</textarea>
+        </label>
+        <div class="edit-form__row">
+          <label class="edit-form__field">
+            <span>Type</span>
+            <select name="type">${typeOptions}</select>
+          </label>
+          <label class="edit-form__field">
+            <span>Tags (comma-separated)</span>
+            <input type="text" name="tags" value="${escapeHtml(fmtTags(u.tags))}" />
+          </label>
+        </div>
+        <label class="edit-form__field">
+          <span>Source</span>
+          <input type="text" name="source" value="${escapeHtml(u.source || "")}" />
+        </label>
+        <div class="modal__actions">
+          <button type="submit" class="btn btn--primary" id="wiki-edit-save">Save</button>
+          <button type="button" class="btn" id="wiki-edit-cancel">Cancel</button>
+        </div>
+      </form>
+    </article>
+  `;
+}
+
+async function saveEdit(e) {
+  e.preventDefault();
+  if (!currentPayload) return;
+  const orig = currentPayload.unit || {};
+  const id = orig.id;
+  if (!id) return;
+
+  const form = document.getElementById("wiki-edit-form");
+  if (!form) return;
+  const fd = new FormData(form);
+  const content = String(fd.get("content") ?? "");
+  const type = String(fd.get("type") ?? "");
+  const tags = String(fd.get("tags") ?? "");
+  const source = String(fd.get("source") ?? "");
+
+  // Only send fields the user actually changed. Mirrors units.js so the
+  // server doesn't get spurious --content/--tags args for unchanged data.
+  const body = {};
+  if (content !== (orig.content ?? "")) body.content = content;
+  if (type && type !== (orig.type ?? "")) body.type = type;
+  if (tags !== fmtTags(orig.tags)) body.tags = tags;
+  if (source !== (orig.source ?? "")) body.source = source;
+  if (Object.keys(body).length === 0) {
+    setStatus("no changes");
+    // Drop back into read mode so the user gets immediate feedback that
+    // the form closed without saving.
+    renderUnitDetail(currentPayload);
+    return;
+  }
+
+  setStatus(`saving ${shortId(id)} …`);
+  try {
+    const res = await fetch(`/api/units/${encodeURIComponent(id)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    }
+    // Re-fetch the canonical payload (POST /edit response shape isn't a
+    // superset of GET /unit — links aren't guaranteed). Suppress history
+    // push since we're re-entering the same unit.
+    await openUnit(id, { push: false });
+    // Refresh sidebar so headline / type-section / tag changes surface
+    // without a page reload. loadUnits() preserves the `expanded` set so
+    // open sections stay open.
+    await loadUnits();
+    setStatus(`saved ${shortId(id)} — ${shortTime()}`, "ok");
+  } catch (err) {
+    setStatus(`save failed: ${err.message}`, "error");
+  }
+}
+
+function cancelEdit() {
+  if (!currentPayload) return;
+  renderUnitDetail(currentPayload);
+}
+
 // Reflect the active unit in the sidebar even when navigation came from a
 // cross-link rather than a sidebar click.
 function syncSidebarSelection(id) {
@@ -462,6 +588,7 @@ async function openUnit(id, { push = true } = {}) {
   setStatus(`loading unit ${shortId(id)} …`);
   try {
     const payload = await fetchJson(`/api/units/${encodeURIComponent(id)}`);
+    currentPayload = payload;
     renderUnitDetail(payload);
     setStatus(`unit ${shortId(id)} ok — ${shortTime()}`, "ok");
     syncSidebarSelection(id);
@@ -473,6 +600,7 @@ async function openUnit(id, { push = true } = {}) {
   } catch (err) {
     setStatus(`unit ${shortId(id)} failed: ${err.message}`, "error");
     els.content.innerHTML = `<div class="placeholder">failed to load: ${escapeHtml(err.message)}</div>`;
+    currentPayload = null;
   }
 }
 
@@ -530,6 +658,22 @@ els.sidebar.addEventListener("click", (e) => {
 // reader pane. Anchors carry `data-id` so we don't have to parse hrefs.
 // We intercept the click so the URL bar updates without a navigation.
 els.content.addEventListener("click", (e) => {
+  // Edit / Cancel buttons live alongside cross-link anchors; route them
+  // before the anchor handler so the button paths run regardless of
+  // where they end up inside the article.
+  const editBtn = e.target.closest("#wiki-edit-btn");
+  if (editBtn) {
+    e.preventDefault();
+    if (currentPayload) renderEditForm(currentPayload);
+    return;
+  }
+  const cancelBtn = e.target.closest("#wiki-edit-cancel");
+  if (cancelBtn) {
+    e.preventDefault();
+    cancelEdit();
+    return;
+  }
+
   const anchor = e.target.closest("a[data-id]");
   if (!anchor) return;
   // Allow modifier-clicks to behave like normal anchors (open in new tab).
@@ -538,6 +682,14 @@ els.content.addEventListener("click", (e) => {
   const id = anchor.dataset.id;
   if (!id) return;
   openUnit(id);
+});
+
+// Edit form submission. Delegated on els.content so the handler survives
+// re-renders — the form element is recreated each time renderEditForm runs.
+els.content.addEventListener("submit", (e) => {
+  if (e.target && e.target.id === "wiki-edit-form") {
+    saveEdit(e);
+  }
 });
 
 window.addEventListener("popstate", (e) => {
@@ -549,6 +701,7 @@ window.addEventListener("popstate", (e) => {
   } else {
     els.content.innerHTML = `<div class="placeholder">select a unit from the sidebar to view details.</div>`;
     currentUnitId = null;
+    currentPayload = null;
     syncSidebarSelection(null);
   }
 });
