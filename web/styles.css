@@ -1108,6 +1108,121 @@ body.wiki-page .main {
   color: var(--fg-muted);
 }
 
+/* Welcome landing (story voie). Shown at /wiki when no unit is selected:
+   a "Recent" list (most-recently-updated approximation) and per-type
+   count buttons that expand the matching sidebar section. */
+.wiki__welcome {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 60rem;
+}
+.wiki__welcome-header {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.75rem;
+}
+.wiki__welcome-title {
+  font-size: 18px;
+  margin: 0 0 0.25rem 0;
+}
+.wiki__welcome-lead {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+.wiki__welcome-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.wiki__welcome-heading {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+  margin: 0;
+}
+.wiki__welcome-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.wiki__welcome-item {
+  margin: 0;
+}
+.wiki__welcome-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  text-decoration: none;
+  background: var(--bg-elev);
+}
+.wiki__welcome-entry:hover {
+  border-color: var(--accent);
+}
+.wiki__welcome-label {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wiki__welcome-item--archived .wiki__welcome-label {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+.wiki__welcome-types {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.wiki__welcome-type {
+  margin: 0;
+}
+.wiki__welcome-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--fg);
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+.wiki__welcome-jump:hover {
+  border-color: var(--accent);
+}
+.wiki__welcome-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* Not-found pane (story voie). Sidebar remains usable; only the reader
+   pane is replaced with this message + a link back to welcome. */
+.wiki__notfound {
+  font-size: 14px;
+}
+.wiki__notfound-detail {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.wiki__notfound-back {
+  color: var(--accent);
+}
+
 /* Narrow viewport: stack sidebar above content; restore page-level scroll. */
 @media (max-width: 720px) {
   body.wiki-page {

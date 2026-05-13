@@ -49,6 +49,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/healthz", get(routes::healthz::get))
         .nest("/api", api)
         .route("/", get(serve_index))
+        // Wiki SPA routes — every /wiki and /wiki/<id-or-slug> URL serves the
+        // same wiki.html bundle; client-side routing in wiki.js reads
+        // window.location.pathname to decide what to load.
+        .route("/wiki", get(serve_wiki))
+        .route("/wiki/", get(serve_wiki))
+        .route("/wiki/*rest", get(serve_wiki))
         .route("/*path", get(serve_asset))
         .layer(TraceLayer::new_for_http());
 
@@ -70,6 +76,13 @@ fn init_tracing() {
 /// Serve `index.html` at `/`.
 async fn serve_index() -> Response {
     asset_response("index.html")
+}
+
+/// Serve `wiki.html` for every `/wiki`-prefixed URL. The wiki is a
+/// single-page app — id/slug routing happens client-side off
+/// `window.location.pathname`.
+async fn serve_wiki() -> Response {
+    asset_response("wiki.html")
 }
 
 /// Serve any other embedded asset by path.

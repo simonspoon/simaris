@@ -40,9 +40,23 @@
 //   - "Links" — outgoing relationships grouped by relationship type
 //   - "Backlinks" — every unit pointing at the current one, flat list,
 //     labeled by the source unit's headline
-// All anchors and panel entries route through openUnit(), which pushes
-// `?unit=<id>` to history. popstate reopens the corresponding unit so
-// browser back/forward work naturally.
+// All anchors and panel entries route through openUnit().
+//
+// URL routing (story voie): the wiki is served from /wiki and
+// /wiki/<id-or-slug>. The server (simaris-server) routes every /wiki*
+// request to wiki.html; this module reads window.location.pathname to
+// decide what to show:
+//   - /wiki (no segment) → renderWelcome(): recent units + per-type
+//     counts that jump-expand the matching sidebar section.
+//   - /wiki/<id-or-slug> → openUnit(idOrSlug): /api/units/:id already
+//     accepts a slug (CLI's `simaris show` resolves via resolve_id), so
+//     we pass whichever form was in the URL. Unknown targets render a
+//     "not found" message in the reader pane while the sidebar stays
+//     usable.
+// openUnit() pushes /wiki/<idOrSlug> to history; popstate re-derives the
+// view from the pathname so browser back/forward navigates naturally
+// between previously viewed units and the welcome page. Sidebar
+// sections auto-expand to the active unit's type on direct deep-link.
 
 import { fetchJson, setStatus, shortTime } from "./app.js";
 
@@ -76,13 +90,50 @@ const idSet = new Set();
 const unitsById = new Map();
 
 // Last unit id rendered, so we don't push duplicate history entries when a
-// click re-navigates to the same target.
+// click re-navigates to the same target. Always the canonical UUID once
+// /api/units/:id resolves a slug.
 let currentUnitId = null;
 
 // Cached payload for the currently rendered unit so Cancel can restore
 // the read pane without an API round-trip, and Save can diff against the
 // original values to skip unchanged fields.
 let currentPayload = null;
+
+// Full list of units from the most recent /api/search load. Used by the
+// welcome landing page to render recent + per-type counts without an
+// extra round-trip.
+let currentUnits = [];
+
+// True when the reader pane is showing the welcome landing rather than a
+// specific unit (read mode), an edit form, or a not-found message. Drives
+// auto-refresh of welcome counts when the archived toggle is flipped.
+let onWelcome = false;
+
+// How many units to surface in the welcome page "Recent" list. Server
+// returns units in `created DESC` order (lean list ordering), which
+// approximates "most-recently-updated first" — same approximation as the
+// sidebar.
+const RECENT_LIMIT = 20;
+
+// URL helpers — wiki routes under /wiki/<id-or-slug>.
+const WIKI_PATH_RE = /^\/wiki(?:\/(.+?))?\/?$/;
+
+function parsePath() {
+  const m = WIKI_PATH_RE.exec(window.location.pathname);
+  if (!m) return { idOrSlug: null };
+  const raw = m[1];
+  if (!raw) return { idOrSlug: null };
+  try {
+    return { idOrSlug: decodeURIComponent(raw) };
+  } catch {
+    return { idOrSlug: raw };
+  }
+}
+
+function wikiUrl(idOrSlug) {
+  if (!idOrSlug) return "/wiki";
+  return `/wiki/${encodeURIComponent(idOrSlug)}`;
+}
 
 function escapeHtml(s) {
   return String(s ?? "")
@@ -274,7 +325,7 @@ function xrefAnchorHtml(kind, target, display) {
   if (kind === "broken") {
     return `<span class="wiki__xref wiki__xref--broken" title="unknown target">${escapeHtml(display)}</span>`;
   }
-  return `<a href="?unit=${encodeURIComponent(target)}" class="wiki__xref wiki__xref--${escapeHtml(kind)}" data-id="${escapeHtml(target)}">${escapeHtml(display)}</a>`;
+  return `<a href="${wikiUrl(target)}" class="wiki__xref wiki__xref--${escapeHtml(kind)}" data-id="${escapeHtml(target)}">${escapeHtml(display)}</a>`;
 }
 
 // Replace cross-link patterns in a single text node by inserting a
@@ -368,7 +419,7 @@ function renderLinksPanel(outgoing) {
           const headline = l.headline || headlineFor(l.to_id);
           return `
             <li class="wiki__panel-item">
-              <a href="?unit=${encodeURIComponent(l.to_id)}" class="wiki__panel-entry" data-id="${escapeHtml(l.to_id)}">
+              <a href="${wikiUrl(l.to_id)}" class="wiki__panel-entry" data-id="${escapeHtml(l.to_id)}">
                 <span class="wiki__panel-headline">${escapeHtml(headline)}</span>
                 <span class="wiki__panel-type">${escapeHtml(l.type || "")}</span>
               </a>
@@ -405,7 +456,7 @@ function renderBacklinksPanel(incoming) {
       const headline = l.headline || headlineFor(l.from_id);
       return `
         <li class="wiki__panel-item">
-          <a href="?unit=${encodeURIComponent(l.from_id)}" class="wiki__panel-entry" data-id="${escapeHtml(l.from_id)}">
+          <a href="${wikiUrl(l.from_id)}" class="wiki__panel-entry" data-id="${escapeHtml(l.from_id)}">
             <span class="wiki__panel-headline">${escapeHtml(headline)}</span>
             <span class="wiki__panel-rel-inline">${escapeHtml(l.relationship || "")}</span>
             <span class="wiki__panel-type">${escapeHtml(l.type || "")}</span>
@@ -418,6 +469,7 @@ function renderBacklinksPanel(incoming) {
 }
 
 function renderUnitDetail(payload) {
+  onWelcome = false;
   const u = payload.unit || {};
   const links = payload.links || { incoming: [], outgoing: [] };
 
@@ -469,6 +521,7 @@ function renderUnitDetail(payload) {
 // for type, comma-separated tags input, source input. The id/archived
 // chips stay visible so the user knows which unit they're editing.
 function renderEditForm(payload) {
+  onWelcome = false;
   const u = payload.unit || {};
   const typeOptions = TYPE_ORDER.map(
     (t) =>
@@ -583,24 +636,114 @@ function syncSidebarSelection(id) {
   if (btn) btn.classList.add("wiki__entry--active");
 }
 
-async function openUnit(id, { push = true } = {}) {
-  if (!id) return;
-  setStatus(`loading unit ${shortId(id)} …`);
+// Open (and persist via `expanded`) the sidebar section for a given type
+// so that direct deep-links and welcome-page jump-links surface the
+// active unit's neighbourhood without an extra click.
+function expandSection(type, { scroll = false } = {}) {
+  if (!type) return;
+  expanded.add(type);
+  const det = els.sidebar.querySelector(
+    `details.wiki__section[data-type="${CSS.escape(type)}"]`,
+  );
+  if (det) {
+    if (!det.open) det.open = true;
+    if (scroll) det.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+// Welcome landing — recent units (top N by current sidebar ordering) and
+// per-type counts. Each type-count is a button that expand-jumps the
+// matching sidebar section.
+function renderWelcome(units) {
+  onWelcome = true;
+  const top = units.slice(0, RECENT_LIMIT);
+  const groups = groupByType(units);
+
+  const recentHtml = top
+    .map(
+      (u) => `
+        <li class="wiki__welcome-item${u.archived ? " wiki__welcome-item--archived" : ""}">
+          <a href="${wikiUrl(u.slug || u.id)}" class="wiki__welcome-entry" data-id="${escapeHtml(u.id)}">
+            <span class="badge badge--${escapeHtml(u.type || "")}">${escapeHtml(u.type || "")}</span>
+            <span class="wiki__welcome-label">${escapeHtml(entryLabel(u))}</span>
+            ${u.archived ? `<span class="wiki__entry-tag">archived</span>` : ""}
+          </a>
+        </li>
+      `,
+    )
+    .join("");
+
+  const typesHtml = groups
+    .map(
+      ([type, list]) => `
+        <li class="wiki__welcome-type">
+          <button type="button" class="wiki__welcome-jump" data-type="${escapeHtml(type)}">
+            <span class="badge badge--${escapeHtml(type)}">${escapeHtml(type)}</span>
+            <span class="wiki__welcome-count">${list.length}</span>
+          </button>
+        </li>
+      `,
+    )
+    .join("");
+
+  els.content.innerHTML = `
+    <article class="wiki__welcome">
+      <header class="wiki__welcome-header">
+        <h1 class="wiki__welcome-title">Knowledge wiki</h1>
+        <p class="wiki__welcome-lead">Browse the entire knowledge base by type, or jump straight into a recent unit.</p>
+      </header>
+      <section class="wiki__welcome-section" aria-label="recently updated">
+        <h2 class="wiki__welcome-heading">Recent</h2>
+        <ul class="wiki__welcome-list">${recentHtml || `<li class="wiki__panel-empty">no units</li>`}</ul>
+      </section>
+      <section class="wiki__welcome-section" aria-label="types">
+        <h2 class="wiki__welcome-heading">Types</h2>
+        <ul class="wiki__welcome-types">${typesHtml || `<li class="wiki__panel-empty">no units</li>`}</ul>
+      </section>
+    </article>
+  `;
+}
+
+// Rendered when /api/units/:id 4xx/5xx — the sidebar stays usable so the
+// user can navigate away without a page reload.
+function renderNotFound(idOrSlug, errMessage) {
+  onWelcome = false;
+  els.content.innerHTML = `
+    <article class="wiki__detail">
+      <header class="wiki__detail-header">
+        <h1 class="wiki__detail-title">Not found</h1>
+      </header>
+      <p class="wiki__notfound">No unit or slug matches <code>${escapeHtml(idOrSlug)}</code>.</p>
+      ${errMessage ? `<p class="wiki__notfound-detail">${escapeHtml(errMessage)}</p>` : ""}
+      <p><a class="wiki__notfound-back" href="/wiki">Back to welcome</a></p>
+    </article>
+  `;
+}
+
+async function openUnit(idOrSlug, { push = true } = {}) {
+  if (!idOrSlug) return;
+  setStatus(`loading unit ${shortId(idOrSlug)} …`);
   try {
-    const payload = await fetchJson(`/api/units/${encodeURIComponent(id)}`);
+    const payload = await fetchJson(
+      `/api/units/${encodeURIComponent(idOrSlug)}`,
+    );
     currentPayload = payload;
     renderUnitDetail(payload);
-    setStatus(`unit ${shortId(id)} ok — ${shortTime()}`, "ok");
-    syncSidebarSelection(id);
-    if (push && id !== currentUnitId) {
-      const url = `?unit=${encodeURIComponent(id)}`;
-      history.pushState({ unit: id }, "", url);
+    const canonicalId = (payload.unit && payload.unit.id) || idOrSlug;
+    const unitType = payload.unit && payload.unit.type;
+    setStatus(`unit ${shortId(canonicalId)} ok — ${shortTime()}`, "ok");
+    syncSidebarSelection(canonicalId);
+    expandSection(unitType);
+    if (push && canonicalId !== currentUnitId) {
+      history.pushState({ unit: idOrSlug }, "", wikiUrl(idOrSlug));
     }
-    currentUnitId = id;
+    currentUnitId = canonicalId;
   } catch (err) {
-    setStatus(`unit ${shortId(id)} failed: ${err.message}`, "error");
-    els.content.innerHTML = `<div class="placeholder">failed to load: ${escapeHtml(err.message)}</div>`;
+    setStatus(`unit ${shortId(idOrSlug)} failed: ${err.message}`, "error");
+    renderNotFound(idOrSlug, err.message);
     currentPayload = null;
+    currentUnitId = null;
+    syncSidebarSelection(null);
   }
 }
 
@@ -613,6 +756,7 @@ async function loadUnits() {
   try {
     const payload = await fetchJson(path);
     const units = (payload && payload.units) || [];
+    currentUnits = units;
     // Rebuild resolution tables from the freshly fetched list.
     slugToId.clear();
     idSet.clear();
@@ -627,6 +771,9 @@ async function loadUnits() {
     const groups = groupByType(units);
     renderSidebar(groups);
     if (currentUnitId) syncSidebarSelection(currentUnitId);
+    // Refresh welcome counts if the user is on the landing page (e.g.
+    // they just flipped the archived toggle).
+    if (onWelcome) renderWelcome(currentUnits);
     setStatus(`${path} ok — ${units.length} units — ${shortTime()}`, "ok");
   } catch (err) {
     setStatus(`${path} failed: ${err.message}`, "error");
@@ -654,9 +801,10 @@ els.sidebar.addEventListener("click", (e) => {
   openUnit(id);
 });
 
-// Single delegated handler for every cross-link / panel-entry inside the
-// reader pane. Anchors carry `data-id` so we don't have to parse hrefs.
-// We intercept the click so the URL bar updates without a navigation.
+// Single delegated handler for every cross-link / panel-entry / welcome
+// entry inside the reader pane. Anchors carry `data-id` so we don't have
+// to parse hrefs. We intercept the click so the URL bar updates without
+// a navigation.
 els.content.addEventListener("click", (e) => {
   // Edit / Cancel buttons live alongside cross-link anchors; route them
   // before the anchor handler so the button paths run regardless of
@@ -674,6 +822,25 @@ els.content.addEventListener("click", (e) => {
     return;
   }
 
+  // Welcome-page type-count jumps expand the matching sidebar section
+  // and scroll it into view — no reader-pane navigation.
+  const jumpBtn = e.target.closest("button.wiki__welcome-jump");
+  if (jumpBtn) {
+    e.preventDefault();
+    expandSection(jumpBtn.dataset.type, { scroll: true });
+    return;
+  }
+
+  // "Back to welcome" link on the not-found pane — route through SPA
+  // navigation so the back stack stays clean.
+  const back = e.target.closest("a.wiki__notfound-back");
+  if (back) {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    navigateToWelcome();
+    return;
+  }
+
   const anchor = e.target.closest("a[data-id]");
   if (!anchor) return;
   // Allow modifier-clicks to behave like normal anchors (open in new tab).
@@ -684,6 +851,16 @@ els.content.addEventListener("click", (e) => {
   openUnit(id);
 });
 
+function navigateToWelcome() {
+  if (window.location.pathname !== "/wiki") {
+    history.pushState(null, "", "/wiki");
+  }
+  currentUnitId = null;
+  currentPayload = null;
+  syncSidebarSelection(null);
+  renderWelcome(currentUnits);
+}
+
 // Edit form submission. Delegated on els.content so the handler survives
 // re-renders — the form element is recreated each time renderEditForm runs.
 els.content.addEventListener("submit", (e) => {
@@ -692,17 +869,15 @@ els.content.addEventListener("submit", (e) => {
   }
 });
 
-window.addEventListener("popstate", (e) => {
-  const stateId = e.state && e.state.unit;
-  const queryId = new URLSearchParams(window.location.search).get("unit");
-  const id = stateId || queryId;
-  if (id) {
-    openUnit(id, { push: false });
+window.addEventListener("popstate", () => {
+  const { idOrSlug } = parsePath();
+  if (idOrSlug) {
+    openUnit(idOrSlug, { push: false });
   } else {
-    els.content.innerHTML = `<div class="placeholder">select a unit from the sidebar to view details.</div>`;
     currentUnitId = null;
     currentPayload = null;
     syncSidebarSelection(null);
+    renderWelcome(currentUnits);
   }
 });
 
@@ -710,12 +885,15 @@ els.includeArchived.addEventListener("change", loadUnits);
 
 (async function init() {
   await loadUnits();
-  // If the page was opened with ?unit=<id>, deep-link straight into the
-  // reader pane. We use replaceState (push=false) so the back stack starts
-  // clean rather than with a duplicate of the same target.
-  const startId = new URLSearchParams(window.location.search).get("unit");
-  if (startId) {
-    await openUnit(startId, { push: false });
-    history.replaceState({ unit: startId }, "", `?unit=${encodeURIComponent(startId)}`);
+  // Derive the initial view from window.location.pathname. The server
+  // routes every /wiki and /wiki/<id-or-slug> request to wiki.html, so
+  // the URL is the single source of truth for what to show on first
+  // load. replaceState (push=false) keeps the back stack clean.
+  const { idOrSlug } = parsePath();
+  if (idOrSlug) {
+    await openUnit(idOrSlug, { push: false });
+    history.replaceState({ unit: idOrSlug }, "", wikiUrl(idOrSlug));
+  } else {
+    renderWelcome(currentUnits);
   }
 })();
