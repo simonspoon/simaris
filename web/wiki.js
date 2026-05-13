@@ -9,6 +9,12 @@
 // `include_archived=1` so the server returns archived rows too. Superseded
 // detection is not yet plumbed through the lean list output — the toggle
 // label reflects the implemented behaviour.
+//
+// Reader pane renders unit content as markdown via marked (loaded from CDN
+// in wiki.html). Headline is parsed from the first `# heading` line of the
+// body; the headline line itself is stripped from the rendered body so it
+// appears once in the header rather than duplicated. Per story 3, only the
+// rendered output is shown — raw markdown belongs to edit mode (story 4).
 
 import { fetchJson, setStatus, shortTime } from "./app.js";
 
@@ -118,6 +124,41 @@ function fmtConfidence(c) {
   return c.toFixed(2);
 }
 
+// Pull `# heading` (level-1) from the first non-blank line of the body so the
+// reader pane can show it prominently. Returns { headline, body } where body
+// has the heading line removed if it matched (avoids duplicating the title in
+// the rendered content). Falls back to no headline if the first line isn't a
+// level-1 heading — caller decides what to substitute (slug, id).
+function splitHeadline(content) {
+  if (!content) return { headline: "", body: "" };
+  const lines = content.split("\n");
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === "") i += 1;
+  if (i >= lines.length) return { headline: "", body: content };
+  const m = /^#\s+(.+?)\s*$/.exec(lines[i]);
+  if (!m) return { headline: "", body: content };
+  const headline = m[1].trim();
+  const rest = lines.slice(i + 1);
+  // Drop one trailing blank line so the body doesn't start with a vacant gap.
+  if (rest.length && rest[0].trim() === "") rest.shift();
+  return { headline, body: rest.join("\n") };
+}
+
+// Render markdown to HTML via the marked CDN script. Configured GFM-on,
+// breaks-off (paragraph behaviour matches CommonMark, not Slack/Discord).
+// marked escapes HTML in plain text by default; we accept the residual risk
+// of inline raw HTML because the wiki only renders the user's own local
+// knowledge base — this admin UI is a single-user, local-loopback surface.
+function renderMarkdown(md) {
+  if (!md) return "";
+  if (typeof window.marked === "undefined") {
+    // CDN script failed to load — degrade to escaped plaintext rather than
+    // crash the reader pane.
+    return `<pre class="wiki__markdown-fallback">${escapeHtml(md)}</pre>`;
+  }
+  return window.marked.parse(md, { gfm: true, breaks: false });
+}
+
 function renderUnitDetail(payload) {
   const u = payload.unit || {};
   const links = payload.links || { incoming: [], outgoing: [] };
@@ -135,12 +176,19 @@ function renderUnitDetail(payload) {
           })
           .join("");
 
+  const { headline, body } = splitHeadline(u.content || "");
+  const titleText = headline || u.slug || shortId(u.id);
+  const renderedBody = renderMarkdown(body);
+
   els.content.innerHTML = `
     <article class="wiki__detail">
       <header class="wiki__detail-header">
-        <span class="badge badge--${escapeHtml(u.type || "")}">${escapeHtml(u.type || "")}</span>
-        <code class="wiki__detail-id">${escapeHtml(u.id || "")}</code>
-        ${u.archived ? `<span class="wiki__entry-tag">archived</span>` : ""}
+        <h1 class="wiki__detail-title">${escapeHtml(titleText)}</h1>
+        <div class="wiki__detail-meta-row">
+          <span class="badge badge--${escapeHtml(u.type || "")}">${escapeHtml(u.type || "")}</span>
+          <code class="wiki__detail-id">${escapeHtml(u.id || "")}</code>
+          ${u.archived ? `<span class="wiki__entry-tag">archived</span>` : ""}
+        </div>
       </header>
       <dl class="modal__meta">
         <dt>slug</dt><dd>${u.slug ? `<code>${escapeHtml(u.slug)}</code>` : "—"}</dd>
@@ -149,8 +197,7 @@ function renderUnitDetail(payload) {
         <dt>confidence</dt><dd>${escapeHtml(fmtConfidence(u.confidence))}</dd>
         <dt>updated</dt><dd>${escapeHtml(u.updated || "—")}</dd>
       </dl>
-      <h3 class="modal__section-title">Content</h3>
-      <pre class="modal__content">${escapeHtml(u.content || "")}</pre>
+      <div class="wiki__markdown">${renderedBody}</div>
       <h3 class="modal__section-title">Links</h3>
       <ul class="modal__links">${linksHtml}</ul>
     </article>
