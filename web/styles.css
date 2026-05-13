@@ -980,6 +980,134 @@ body.wiki-page .main {
   word-break: break-word;
 }
 
+/* Cross-link anchors (story alvp). Variants:
+ *   --uuid  bare UUIDv7 in content (rendered with monospace cue)
+ *   --slug  recognized slug token
+ *   --wiki  [[wiki-syntax]] resolved to a real target
+ *   --broken  [[wiki-syntax]] target not found — visually distinct, not
+ *             clickable, no anchor element
+ */
+.wiki__xref {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.wiki__xref:hover {
+  color: #7eb3df;
+  text-decoration-style: solid;
+}
+.wiki__xref--uuid {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.95em;
+}
+.wiki__xref--broken {
+  color: var(--error);
+  background: rgba(220, 90, 90, 0.08);
+  border-bottom: 1px dashed var(--error);
+  padding: 0 0.15em;
+  border-radius: 2px;
+  cursor: not-allowed;
+}
+
+/* Links + Backlinks panels (story alvp). Both share .wiki__panel; the
+ * --links variant groups entries by relationship name, the --backlinks
+ * variant is a flat list with the relationship surfaced inline. */
+.wiki__panel {
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.wiki__panel-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  font-weight: 600;
+}
+
+.wiki__panel-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.wiki__panel-group {
+  margin-bottom: 0.6rem;
+}
+.wiki__panel-group:last-child {
+  margin-bottom: 0;
+}
+
+.wiki__panel-rel {
+  margin: 0 0 0.25rem 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  font-weight: 600;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.wiki__panel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.wiki__panel-item {
+  margin: 0;
+}
+
+.wiki__panel-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 3px;
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 13px;
+  border: 1px solid transparent;
+}
+.wiki__panel-entry:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--border);
+}
+
+.wiki__panel-headline {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wiki__panel-rel-inline {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 0.3rem;
+}
+
+.wiki__panel-type {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
 /* Narrow viewport: stack sidebar above content; restore page-level scroll. */
 @media (max-width: 720px) {
   body.wiki-page {
