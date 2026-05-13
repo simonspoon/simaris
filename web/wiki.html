@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>simaris admin — wiki</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <nav class="nav">
+      <span class="nav__brand">simaris</span>
+      <div class="nav__tabs">
+        <a class="nav__tab" href="/">Dashboard</a>
+        <a class="nav__tab" href="/units.html">Units</a>
+        <a class="nav__tab nav__tab--active" href="/wiki.html">Wiki</a>
+      </div>
+    </nav>
+
+    <main class="main wiki">
+      <aside class="wiki__sidebar" aria-label="knowledge index">
+        <div class="wiki__sidebar-header">
+          <h2 class="wiki__sidebar-title">Knowledge</h2>
+          <label class="toggle">
+            <input type="checkbox" id="wiki-include-archived" />
+            <span>Show archived</span>
+          </label>
+        </div>
+        <div id="wiki-sidebar-body" class="wiki__sidebar-body">
+          <div class="wiki__sidebar-empty">loading…</div>
+        </div>
+      </aside>
+
+      <section class="wiki__content" id="wiki-content">
+        <div class="placeholder">
+          select a unit from the sidebar to view details.
+        </div>
+      </section>
+    </main>
+
+    <div id="status" class="status">ready.</div>
+
+    <script type="module" src="/wiki.js"></script>
+  </body>
+</html>

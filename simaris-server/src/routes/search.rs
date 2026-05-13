@@ -152,6 +152,7 @@ fn unit_from_ask(u: &Value) -> Value {
         "slug": u.get("slug").cloned().unwrap_or(Value::Null),
         "byte_size": u.get("byte_size").cloned().unwrap_or(Value::Null),
         "snippet": snippet,
+        "archived": u.get("archived").cloned().unwrap_or(json!(false)),
         "is_direct_match": u.get("is_direct_match").cloned().unwrap_or(json!(false)),
     })
 }
@@ -171,6 +172,10 @@ fn unit_from_list(u: &Value) -> Value {
         "byte_size": u.get("byte_size").cloned().unwrap_or(Value::Null),
         "confidence": u.get("confidence").cloned().unwrap_or(Value::Null),
         "snippet": snippet,
+        // `archived` is emitted by the CLI's lean output only when true
+        // (skip_serializing_if). Default to false so consumers always
+        // get a stable bool field.
+        "archived": u.get("archived").cloned().unwrap_or(json!(false)),
     })
 }
 
