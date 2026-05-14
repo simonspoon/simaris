@@ -76,6 +76,7 @@ function renderTypes(stats) {
   const chart = ensureChart("types", "chart-types");
   if (!chart) return;
   const byType = stats.by_type || {};
+  const total = Object.values(byType).reduce((a, b) => a + b, 0);
   const data = Object.entries(byType)
     .map(([name, value]) => ({
       name,
@@ -88,15 +89,38 @@ function renderTypes(stats) {
     {
       ...CHART_BASE,
       tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
-      legend: { bottom: 0, type: "scroll" },
+      legend: {
+        bottom: 0,
+        type: "scroll",
+        textStyle: { color: "#d6d6d6" },
+        formatter: (name) => {
+          const item = data.find((d) => d.name === name);
+          return `${name}  ${item ? item.value.toLocaleString() : 0}`;
+        },
+      },
       series: [
         {
           name: "type",
           type: "pie",
-          radius: ["45%", "72%"],
-          avoidLabelOverlap: true,
-          label: { formatter: "{b}\n{c}" },
-          labelLine: { length: 8, length2: 6 },
+          radius: ["40%", "68%"],
+          avoidLabelOverlap: false,
+          label: {
+            show: true,
+            position: "center",
+            formatter: () => `{total|${fmtInt(total)}}\n{sub|units}`,
+            rich: {
+              total: { fontSize: 22, fontWeight: "bold", color: "#e6e6e6", lineHeight: 30 },
+              sub: { fontSize: 12, color: "#9a9a9a" },
+            },
+          },
+          emphasis: {
+            label: {
+              show: true,
+              formatter: (params) =>
+                `{total|${params.value.toLocaleString()}}\n{sub|${params.name}}`,
+            },
+          },
+          labelLine: { show: false },
           data,
         },
       ],
@@ -153,24 +177,68 @@ function renderConfidence(stats) {
   const chart = ensureChart("confidence", "chart-confidence");
   if (!chart) return;
   const conf = stats.confidence || {};
+
+  // "verified" (confidence ≥0.95) dominates at >99% of units — it swamps
+  // the chart scale and makes the actionable buckets invisible. Split it
+  // off as a callout; show only low/medium/high at their natural scale.
+  const verifiedCount = conf.verified ?? 0;
   const buckets = [
-    { name: "low (<0.4)", value: conf.low ?? 0, color: "#ef5350" },
-    { name: "medium (0.4–0.7)", value: conf.medium ?? 0, color: "#e0b341" },
-    { name: "high (>0.7)", value: conf.high ?? 0, color: "#5b9bd5" },
-    { name: "verified", value: conf.verified ?? 0, color: "#66bb6a" },
+    { name: "low (<0.6)", value: conf.low ?? 0, color: "#ef5350" },
+    { name: "medium\n(0.6–0.8)", value: conf.medium ?? 0, color: "#e0b341" },
+    { name: "high\n(0.8–0.95)", value: conf.high ?? 0, color: "#5b9bd5" },
   ];
 
   chart.setOption(
     {
       ...CHART_BASE,
       tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-      grid: { left: 24, right: 24, top: 24, bottom: 36, containLabel: true },
+      grid: { left: 24, right: 190, top: 24, bottom: 36, containLabel: true },
       xAxis: {
         type: "category",
         data: buckets.map((b) => b.name),
         axisLabel: { interval: 0 },
       },
       yAxis: { type: "value", name: "units" },
+      graphic: [
+        // Verified callout box — anchored to the right margin reserved by grid.right
+        {
+          type: "rect",
+          right: 4,
+          top: "center",
+          shape: { width: 175, height: 96 },
+          style: { fill: "rgba(102,187,106,0.06)", stroke: "#3a6b3e", lineWidth: 1 },
+        },
+        {
+          type: "text",
+          right: 12,
+          top: "30%",
+          style: {
+            text: "VERIFIED (≥0.95)",
+            fill: "#66bb6a",
+            font: "600 10px system-ui, sans-serif",
+          },
+        },
+        {
+          type: "text",
+          right: 12,
+          top: "42%",
+          style: {
+            text: fmtInt(verifiedCount),
+            fill: "#e6e6e6",
+            font: "bold 1.6rem system-ui, sans-serif",
+          },
+        },
+        {
+          type: "text",
+          right: 12,
+          top: "60%",
+          style: {
+            text: "units",
+            fill: "#9a9a9a",
+            font: "11px system-ui, sans-serif",
+          },
+        },
+      ],
       series: [
         {
           type: "bar",
