@@ -1404,6 +1404,28 @@ body.wiki-page .main {
   }
 }
 
+/* Browse: full-height two-pane layout (mirrors wiki-page pattern) */
+body.browse-page {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.browse-page .main {
+  padding: 0;
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex: 1;
+}
+
+.browse {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
 /* Toast */
 .toast {
   position: fixed;

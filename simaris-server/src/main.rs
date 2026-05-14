@@ -55,6 +55,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/wiki", get(serve_wiki))
         .route("/wiki/", get(serve_wiki))
         .route("/wiki/*rest", get(serve_wiki))
+        // Browse — two-pane card browser (Layer 3).
+        .route("/browse", get(serve_browse))
+        .route("/browse/", get(serve_browse))
         .route("/*path", get(serve_asset))
         .layer(TraceLayer::new_for_http());
 
@@ -83,6 +86,11 @@ async fn serve_index() -> Response {
 /// `window.location.pathname`.
 async fn serve_wiki() -> Response {
     asset_response("wiki.html")
+}
+
+/// Serve `browse.html` at `/browse`.
+async fn serve_browse() -> Response {
+    asset_response("browse.html")
 }
 
 /// Serve any other embedded asset by path.
