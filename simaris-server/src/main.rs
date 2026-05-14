@@ -14,9 +14,9 @@ use axum::{
     Router,
     body::Body,
     extract::Path,
-    http::{StatusCode, header},
+    http::{StatusCode, Uri, header},
     middleware::from_fn,
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
     routing::{get, post},
 };
 use rust_embed::RustEmbed;
@@ -56,12 +56,14 @@ async fn main() -> anyhow::Result<()> {
         // Triage — scan-first homepage (Layer 4).
         .route("/triage", get(serve_triage))
         .route("/triage/", get(serve_triage))
-        // Wiki SPA routes — every /wiki and /wiki/<id-or-slug> URL serves the
-        // same wiki.html bundle; client-side routing in wiki.js reads
-        // window.location.pathname to decide what to load.
-        .route("/wiki", get(serve_wiki))
-        .route("/wiki/", get(serve_wiki))
-        .route("/wiki/*rest", get(serve_wiki))
+        // Retired surfaces (2026-05-14): /units, /wiki, /units.html → /browse.
+        // Files remain on disk for now; routes redirect at the server.
+        .route("/units", get(redirect_to_browse))
+        .route("/units/", get(redirect_to_browse))
+        .route("/units.html", get(redirect_to_browse))
+        .route("/wiki", get(redirect_to_browse))
+        .route("/wiki/", get(redirect_to_browse))
+        .route("/wiki/*rest", get(redirect_to_browse_path))
         // Browse — two-pane card browser (Layer 3).
         .route("/browse", get(serve_browse))
         .route("/browse/", get(serve_browse))
@@ -93,16 +95,20 @@ async fn serve_index() -> Response {
     asset_response("index.html")
 }
 
-/// Serve `wiki.html` for every `/wiki`-prefixed URL. The wiki is a
-/// single-page app — id/slug routing happens client-side off
-/// `window.location.pathname`.
-async fn serve_wiki() -> Response {
-    asset_response("wiki.html")
-}
-
 /// Serve `browse.html` at `/browse`.
 async fn serve_browse() -> Response {
     asset_response("browse.html")
+}
+
+/// Permanent redirect for retired surfaces (/units, /wiki, /units.html) → /browse.
+async fn redirect_to_browse() -> Redirect {
+    Redirect::permanent("/browse")
+}
+
+/// Permanent redirect for retired wiki sub-paths (/wiki/<id-or-slug>) → /browse.
+/// Path tail is dropped; the user lands on browse welcome state.
+async fn redirect_to_browse_path(_uri: Uri) -> Redirect {
+    Redirect::permanent("/browse")
 }
 
 /// Serve any other embedded asset by path.
