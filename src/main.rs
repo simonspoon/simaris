@@ -8,6 +8,7 @@ mod frontmatter;
 mod hybrid;
 mod lint;
 mod rewrite;
+mod similar;
 mod size_guard;
 
 use anyhow::Result;
@@ -230,6 +231,38 @@ enum Command {
         /// scores are NOT normalised across the two paths.
         #[arg(long)]
         scores: bool,
+    },
+
+    /// Find units similar to a given unit — near-duplicate detection primitive.
+    ///
+    /// Scoring: `α·vec_sim + β·tag_overlap + γ·type_match`. Defaults
+    /// `α=0.6, β=0.3, γ=0.1`, tunable via `SIMARIS_SIM_ALPHA` /
+    /// `SIMARIS_SIM_BETA` / `SIMARIS_SIM_GAMMA`. `vec_sim` is rank-derived
+    /// proximity from the lance KNN leg (top-50 candidate pool); skipped
+    /// when `--no-vec` is set or the lance dataset is absent.
+    ///
+    /// Output: always JSON — array of `{id, type, slug, vec_sim,
+    /// tag_overlap, type_match, score, content_preview}`. Source unit is
+    /// always excluded; archived units are hidden unless `--include-archived`.
+    Similar {
+        /// Source unit (uuid or slug)
+        id: String,
+
+        /// Top-K results to return (clamped to 50 — see CANDIDATE_POOL).
+        #[arg(long, default_value_t = 10, value_name = "N")]
+        top_k: usize,
+
+        /// Drop results scoring strictly below this threshold (before top-K).
+        #[arg(long, default_value_t = 0.0, value_name = "F")]
+        threshold: f64,
+
+        /// Disable the vector leg — rank by tag overlap + type match only.
+        #[arg(long)]
+        no_vec: bool,
+
+        /// Include archived units (default: hidden, mirrors `simaris search`).
+        #[arg(long)]
+        include_archived: bool,
     },
 
     /// Vec subsystem operations (lance + tantivy + bge-m3 hybrid retrieval).
@@ -1621,6 +1654,18 @@ fn main() -> Result<()> {
                 let slug_map = build_slug_map(&conn, &units)?;
                 display::print_units_lean(&units, &slug_map, cli.json);
             }
+        }
+        Command::Similar {
+            id,
+            top_k,
+            threshold,
+            no_vec,
+            include_archived,
+        } => {
+            let resolved = db::resolve_id(&conn, &id)?;
+            let hits =
+                similar::similar(&conn, &resolved, top_k, threshold, no_vec, include_archived)?;
+            similar::print(&hits);
         }
         Command::Dream { sub } => match sub {
             DreamSubcommand::Decay {

@@ -4161,3 +4161,297 @@ fn test_lint_tag_stats_counts_singletons() {
     assert_eq!(s["total_uses"], 3);
     assert_eq!(s["singletons"], 1); // beta used once
 }
+
+// =====================================================================
+// `simaris similar <id>` — near-duplicate detection primitive (caez).
+//
+// Tests exercise the `--no-vec` path so they don't require a live lance
+// dataset. Vector-leg behaviour is covered by the rank-derived scoring
+// formula in src/similar.rs::similar_with_ranking (unit-tested via the
+// scoring helpers + smoke-verified manually against the production
+// sanctuary — see commit message).
+// =====================================================================
+
+/// `add` emits a follow-up "  auto-linked to N existing unit(s)" line on
+/// stdout whenever auto-link fires (2+ shared tags). The legacy
+/// `extract_id` helper greedily takes the last whitespace token, so it
+/// trips over that trailing line — these tests deliberately seed
+/// tag-overlapping units, so use a first-line-only extractor instead.
+fn extract_id_first_line(out: &str) -> String {
+    let first = out.lines().next().unwrap_or(out);
+    first.split_whitespace().last().unwrap().to_string()
+}
+
+#[test]
+fn test_similar_no_vec_basic_shape() {
+    let env = TestEnv::new("similar_basic");
+    let src = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "alpha body",
+        "--type",
+        "fact",
+        "--tags",
+        "shared,alpha",
+    ]));
+    let near = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "near body",
+        "--type",
+        "fact",
+        "--tags",
+        "shared,alpha",
+    ]));
+    let off = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "unrelated",
+        "--type",
+        "idea",
+        "--tags",
+        "unrelated",
+    ]));
+
+    let out = env.run_ok(&["similar", &src, "--no-vec", "--top-k", "5"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+
+    // Self is excluded — `src` must never appear.
+    assert!(
+        parsed.iter().all(|h| h["id"].as_str().unwrap() != src),
+        "self leaked into results: {out}"
+    );
+    // Near-dup outranks the unrelated unit (identical tags + type).
+    let near_idx = parsed.iter().position(|h| h["id"] == near).unwrap();
+    let off_idx = parsed.iter().position(|h| h["id"] == off);
+    if let Some(off_idx) = off_idx {
+        assert!(
+            near_idx < off_idx,
+            "near-dup must outrank unrelated: {out}"
+        );
+    }
+
+    // Each record carries the documented field set.
+    for h in &parsed {
+        for field in &[
+            "id",
+            "type",
+            "slug",
+            "vec_sim",
+            "tag_overlap",
+            "type_match",
+            "score",
+            "content_preview",
+        ] {
+            assert!(h.get(field).is_some(), "missing field {field}: {out}");
+        }
+    }
+}
+
+#[test]
+fn test_similar_no_vec_identical_tags_max_score() {
+    let env = TestEnv::new("similar_max");
+    let src = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "src body",
+        "--type",
+        "fact",
+        "--tags",
+        "x,y,z",
+    ]));
+    let twin = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "twin body",
+        "--type",
+        "fact",
+        "--tags",
+        "x,y,z",
+    ]));
+
+    let out = env.run_ok(&["similar", &src, "--no-vec", "--top-k", "5"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
+    let twin_hit = parsed
+        .iter()
+        .find(|h| h["id"] == twin)
+        .expect("twin not in results");
+    // Identical tags → jaccard 1.0. Same type → type_match 1.0. No vec leg
+    // (--no-vec) → vec_sim 0. With defaults β=0.3, γ=0.1 → score = 0.4.
+    assert!((twin_hit["score"].as_f64().unwrap() - 0.4).abs() < 1e-9);
+    assert_eq!(twin_hit["tag_overlap"].as_f64().unwrap(), 1.0);
+    assert_eq!(twin_hit["type_match"].as_f64().unwrap(), 1.0);
+    assert_eq!(twin_hit["vec_sim"].as_f64().unwrap(), 0.0);
+}
+
+#[test]
+fn test_similar_threshold_filters() {
+    let env = TestEnv::new("similar_threshold");
+    let src = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "src",
+        "--type",
+        "fact",
+        "--tags",
+        "a,b",
+    ]));
+    env.run_ok(&["add", "twin", "--type", "fact", "--tags", "a,b"]);
+    env.run_ok(&["add", "weak", "--type", "fact", "--tags", "a"]);
+    env.run_ok(&["add", "noise", "--type", "idea"]);
+
+    let lo = env.run_ok(&["similar", &src, "--no-vec", "--threshold", "0.0"]);
+    let hi = env.run_ok(&["similar", &src, "--no-vec", "--threshold", "0.35"]);
+    let lo_parsed: Vec<serde_json::Value> = serde_json::from_str(&lo).expect("valid JSON");
+    let hi_parsed: Vec<serde_json::Value> = serde_json::from_str(&hi).expect("valid JSON");
+    assert!(
+        hi_parsed.len() <= lo_parsed.len(),
+        "--threshold must monotonically filter: low={} high={}",
+        lo_parsed.len(),
+        hi_parsed.len()
+    );
+    // The high-threshold cut should drop the partial-tag-match "weak" unit
+    // (jaccard = 1/2 = 0.5, type match = 1 → score = 0.3*0.5 + 0.1 = 0.25).
+    assert!(
+        hi_parsed.iter().all(|h| h["score"].as_f64().unwrap() >= 0.35),
+        "results below threshold leaked: {hi}"
+    );
+}
+
+#[test]
+fn test_similar_include_archived_increases() {
+    let env = TestEnv::new("similar_archived");
+    let src = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "src",
+        "--type",
+        "fact",
+        "--tags",
+        "k1,k2",
+    ]));
+    let live = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "live twin",
+        "--type",
+        "fact",
+        "--tags",
+        "k1,k2",
+    ]));
+    let dead = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "archived twin",
+        "--type",
+        "fact",
+        "--tags",
+        "k1,k2",
+    ]));
+    env.run_ok(&["archive", &dead]);
+
+    let default = env.run_ok(&["similar", &src, "--no-vec", "--top-k", "10"]);
+    let with_arch =
+        env.run_ok(&["similar", &src, "--no-vec", "--include-archived", "--top-k", "10"]);
+    let d: Vec<serde_json::Value> = serde_json::from_str(&default).expect("valid JSON");
+    let w: Vec<serde_json::Value> = serde_json::from_str(&with_arch).expect("valid JSON");
+
+    assert!(
+        w.len() >= d.len(),
+        "include-archived must not shrink result set"
+    );
+    // Default hides the archived twin.
+    assert!(
+        d.iter().all(|h| h["id"].as_str().unwrap() != dead),
+        "archived unit leaked into default view: {default}"
+    );
+    // Live twin is always present.
+    assert!(d.iter().any(|h| h["id"].as_str().unwrap() == live));
+    // With --include-archived the dead twin is back.
+    assert!(
+        w.iter().any(|h| h["id"].as_str().unwrap() == dead),
+        "archived twin missing under --include-archived: {with_arch}"
+    );
+}
+
+#[test]
+fn test_similar_self_never_in_results() {
+    let env = TestEnv::new("similar_self");
+    let src = extract_id(&env.run_ok(&[
+        "add",
+        "src body",
+        "--type",
+        "fact",
+        "--tags",
+        "t",
+    ]));
+    // Add 5 near-dups so the candidate pool has enough material.
+    for i in 0..5 {
+        let body = format!("dup-{i}");
+        env.run_ok(&["add", &body, "--type", "fact", "--tags", "t"]);
+    }
+    let out = env.run_ok(&["similar", &src, "--no-vec", "--top-k", "50"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
+    assert!(
+        parsed.iter().all(|h| h["id"].as_str().unwrap() != src),
+        "source id appeared in own similarity list: {out}"
+    );
+}
+
+#[test]
+fn test_similar_resolves_slug() {
+    let env = TestEnv::new("similar_slug");
+    let src = extract_id(&env.run_ok(&[
+        "add",
+        "src",
+        "--type",
+        "fact",
+        "--tags",
+        "p",
+    ]));
+    env.run_ok(&["slug", "set", "src-slug", &src]);
+    env.run_ok(&["add", "twin", "--type", "fact", "--tags", "p"]);
+    // Pass slug instead of uuid — must resolve.
+    let out = env.run_ok(&["similar", "src-slug", "--no-vec"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
+    assert!(!parsed.is_empty(), "slug-resolved similar returned empty: {out}");
+}
+
+#[test]
+fn test_similar_top_k_caps_results() {
+    let env = TestEnv::new("similar_topk");
+    let src = extract_id(&env.run_ok(&[
+        "add",
+        "src",
+        "--type",
+        "fact",
+        "--tags",
+        "z",
+    ]));
+    for i in 0..10 {
+        let body = format!("dup-{i}");
+        env.run_ok(&["add", &body, "--type", "fact", "--tags", "z"]);
+    }
+    let out = env.run_ok(&["similar", &src, "--no-vec", "--top-k", "3"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
+    assert!(
+        parsed.len() <= 3,
+        "top-k 3 returned {} results: {out}",
+        parsed.len()
+    );
+}
+
+#[test]
+fn test_similar_content_preview_truncates() {
+    let env = TestEnv::new("similar_preview");
+    let src = extract_id(&env.run_ok(&[
+        "add",
+        "src",
+        "--type",
+        "fact",
+        "--tags",
+        "q",
+    ]));
+    let long = "x".repeat(200);
+    env.run_ok(&["add", &long, "--type", "fact", "--tags", "q"]);
+    let out = env.run_ok(&["similar", &src, "--no-vec"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
+    for h in &parsed {
+        let preview = h["content_preview"].as_str().unwrap();
+        assert!(
+            preview.chars().count() <= 80,
+            "preview not capped at 80 chars: {preview}"
+        );
+    }
+}
