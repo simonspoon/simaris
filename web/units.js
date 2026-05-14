@@ -46,8 +46,15 @@ const els = {
   toast: document.getElementById("toast"),
 };
 
+const TYPE_ORDER = [
+  "principle", "fact", "lesson", "procedure", "aspect", "idea", "preference",
+];
+const ROW_LIMIT = 50; // max rows per group before "show N more"
+
 let validTypes = FALLBACK_TYPES;
 let currentUnit = null; // last response from /api/units/:id
+let currentPayload = null; // last search payload (for re-sort)
+let sortConf = "desc"; // "asc" | "desc"
 
 function fmtTags(tags) {
   if (!Array.isArray(tags) || tags.length === 0) return "";
@@ -105,32 +112,105 @@ function renderTypeSelects() {
     .join("");
 }
 
-function renderResults(payload) {
-  els.body.innerHTML = "";
-  const units = (payload && payload.units) || [];
-  if (units.length === 0) {
-    els.empty.hidden = false;
-  } else {
-    els.empty.hidden = true;
-  }
-
-  for (const u of units) {
-    const tr = document.createElement("tr");
-    tr.dataset.id = u.id;
-    tr.innerHTML = `
+function buildRow(u, hidden) {
+  const typeClass = `type--${escapeHtml(u.type || "")}`;
+  const hiddenClass = hidden ? " acc-hidden" : "";
+  return `<tr data-id="${escapeHtml(u.id)}" class="${typeClass}${hiddenClass}">
       <td class="results__col-id"><code>${escapeHtml(shortId(u.id))}</code></td>
       <td class="results__col-type"><span class="badge badge--${escapeHtml(u.type || "")}">${escapeHtml(u.type || "")}</span></td>
-      <td class="results__col-slug">${u.slug ? `<code>${escapeHtml(u.slug)}</code>` : "<span class=\"results__muted\">—</span>"}</td>
+      <td class="results__col-slug">${u.slug ? `<code>${escapeHtml(u.slug)}</code>` : '<span class="results__muted">—</span>'}</td>
       <td class="results__col-tags">${escapeHtml(fmtTags(u.tags))}</td>
       <td class="results__col-conf">${escapeHtml(fmtConfidence(u.confidence))}</td>
       <td class="results__col-size">${escapeHtml(fmtBytes(u.byte_size))}</td>
       <td class="results__col-snippet">${escapeHtml(u.snippet || "")}</td>
-      <td class="results__col-actions">
-        <button class="btn btn--small" data-act="view">View</button>
-      </td>
-    `;
-    els.body.appendChild(tr);
+      <td class="results__col-actions"><button class="btn btn--small" data-act="view">View</button></td>
+    </tr>`;
+}
+
+function buildAccGroup(type, rows, open) {
+  const group = document.createElement("div");
+  group.className = "acc-group";
+  const confLabel = sortConf === "desc" ? "conf ↓" : "conf ↑";
+  const hasMore = rows.length > ROW_LIMIT;
+
+  group.innerHTML = `<button type="button" class="acc-header${open ? " open" : ""}">
+      <span class="type-dot ${escapeHtml(type)}"></span>
+      <span class="acc-type-label">${escapeHtml(type)}</span>
+      <span class="acc-count">${rows.length} unit${rows.length === 1 ? "" : "s"}</span>
+      <span class="acc-arrow">▶</span>
+    </button>
+    <div class="acc-body${open ? " open" : ""}">
+      <table class="results__table">
+        <thead><tr>
+          <th class="results__col-id">id</th>
+          <th class="results__col-type">type</th>
+          <th class="results__col-slug">slug</th>
+          <th class="results__col-tags">tags</th>
+          <th class="results__col-conf" data-sort="conf">${escapeHtml(confLabel)}</th>
+          <th class="results__col-size">size</th>
+          <th class="results__col-snippet">snippet</th>
+          <th class="results__col-actions">actions</th>
+        </tr></thead>
+        <tbody>${rows.map((u, i) => buildRow(u, i >= ROW_LIMIT)).join("")}</tbody>
+      </table>
+      ${hasMore ? `<div class="acc-footer"><button class="acc-show-all" type="button">show ${rows.length - ROW_LIMIT} more</button></div>` : ""}
+    </div>`;
+
+  // Accordion toggle
+  const header = group.querySelector(".acc-header");
+  const body = group.querySelector(".acc-body");
+  header.addEventListener("click", () => {
+    header.classList.toggle("open");
+    body.classList.toggle("open");
+  });
+
+  // Show-all
+  const showAllBtn = group.querySelector(".acc-show-all");
+  if (showAllBtn) {
+    showAllBtn.addEventListener("click", () => {
+      group.querySelectorAll("tr.acc-hidden").forEach((tr) => tr.classList.remove("acc-hidden"));
+      showAllBtn.closest(".acc-footer").remove();
+    });
   }
+
+  return group;
+}
+
+function renderResults(payload) {
+  currentPayload = payload;
+  els.body.innerHTML = "";
+  const units = (payload && payload.units) || [];
+
+  if (units.length === 0) {
+    els.empty.hidden = false;
+    els.meta.textContent = `0 results (${payload?.kind ?? ""})`;
+    return;
+  }
+  els.empty.hidden = true;
+
+  // Group by type
+  const groups = new Map();
+  for (const u of units) {
+    const t = u.type || "unknown";
+    if (!groups.has(t)) groups.set(t, []);
+    groups.get(t).push(u);
+  }
+
+  // Sort each group by confidence
+  const mul = sortConf === "asc" ? 1 : -1;
+  for (const arr of groups.values()) {
+    arr.sort((a, b) => mul * ((a.confidence ?? 0) - (b.confidence ?? 0)));
+  }
+
+  // Canonical order, extras after
+  const types = [
+    ...TYPE_ORDER.filter((t) => groups.has(t)),
+    ...[...groups.keys()].filter((t) => !TYPE_ORDER.includes(t)),
+  ];
+
+  types.forEach((type, idx) => {
+    els.body.appendChild(buildAccGroup(type, groups.get(type), idx < 3));
+  });
 
   els.meta.textContent = `${units.length} result${units.length === 1 ? "" : "s"} (${payload.kind})`;
 }
@@ -360,6 +440,13 @@ els.includeArchived.addEventListener("change", runSearch);
 els.type.addEventListener("change", runSearch);
 
 els.body.addEventListener("click", (e) => {
+  // Sortable confidence header
+  if (e.target.closest("[data-sort]")) {
+    sortConf = sortConf === "desc" ? "asc" : "desc";
+    if (currentPayload) renderResults(currentPayload);
+    return;
+  }
+  // View button
   const btn = e.target.closest("button[data-act]");
   if (!btn) return;
   const tr = btn.closest("tr[data-id]");

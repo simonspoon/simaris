@@ -13,17 +13,20 @@ const REFRESH_MS = 60_000;
 const TOP_TAGS = 20;
 
 const TYPE_COLORS = {
-  fact: "#2b6cb0",
-  procedure: "#38a169",
-  principle: "#805ad5",
-  preference: "#d69e2e",
-  lesson: "#dd6b20",
-  idea: "#3182ce",
-  aspect: "#e53e3e",
+  principle: "#818cf8",
+  fact:      "#38bdf8",
+  lesson:    "#fb923c",
+  procedure: "#4ade80",
+  aspect:    "#c084fc",
+  idea:      "#facc15",
+  preference:"#f472b6",
 };
 
+const TYPE_ORDER = [
+  "principle", "fact", "lesson", "procedure", "aspect", "idea", "preference",
+];
+
 const charts = {
-  types: null,
   tags: null,
   confidence: null,
 };
@@ -72,61 +75,27 @@ function renderTiles(stats, hideSuperseded) {
   );
 }
 
-function renderTypes(stats) {
-  const chart = ensureChart("types", "chart-types");
-  if (!chart) return;
+function renderTypeTiles(stats) {
+  const grid = document.getElementById("type-grid");
+  if (!grid) return;
   const byType = stats.by_type || {};
-  const total = Object.values(byType).reduce((a, b) => a + b, 0);
-  const data = Object.entries(byType)
-    .map(([name, value]) => ({
-      name,
-      value,
-      itemStyle: { color: TYPE_COLORS[name] || "#888" },
-    }))
-    .sort((a, b) => b.value - a.value);
+  const total = Object.values(byType).reduce((a, b) => a + b, 0) || 1;
+  const max = Math.max(...Object.values(byType), 1);
 
-  chart.setOption(
-    {
-      ...CHART_BASE,
-      tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
-      legend: {
-        bottom: 0,
-        type: "scroll",
-        textStyle: { color: "#d6d6d6" },
-        formatter: (name) => {
-          const item = data.find((d) => d.name === name);
-          return `${name}  ${item ? item.value.toLocaleString() : 0}`;
-        },
-      },
-      series: [
-        {
-          name: "type",
-          type: "pie",
-          radius: ["40%", "68%"],
-          avoidLabelOverlap: false,
-          label: {
-            show: true,
-            position: "center",
-            formatter: () => `{total|${fmtInt(total)}}\n{sub|units}`,
-            rich: {
-              total: { fontSize: 22, fontWeight: "bold", color: "#e6e6e6", lineHeight: 30 },
-              sub: { fontSize: 12, color: "#9a9a9a" },
-            },
-          },
-          emphasis: {
-            label: {
-              show: true,
-              formatter: (params) =>
-                `{total|${params.value.toLocaleString()}}\n{sub|${params.name}}`,
-            },
-          },
-          labelLine: { show: false },
-          data,
-        },
-      ],
-    },
-    { notMerge: true },
-  );
+  grid.innerHTML = TYPE_ORDER.map((type) => {
+    const count = byType[type] ?? 0;
+    const pct = ((count / total) * 100).toFixed(1);
+    const barPct = ((count / max) * 100).toFixed(1);
+    const color = TYPE_COLORS[type] || "#888";
+    return `<div class="type-tile ${type}">
+        <div class="type-tile-name">${type}</div>
+        <div class="type-tile-count">${count.toLocaleString()}</div>
+        <div class="type-tile-pct">${pct}%</div>
+        <div class="type-tile-bar">
+          <div class="type-tile-bar-fill" style="width:${barPct}%;background:${color}"></div>
+        </div>
+      </div>`;
+  }).join("");
 }
 
 function renderTags(stats) {
@@ -261,7 +230,7 @@ function render(stats) {
   const hideSuperseded =
     document.getElementById("hide-superseded")?.checked ?? false;
   renderTiles(stats, hideSuperseded);
-  renderTypes(stats);
+  renderTypeTiles(stats);
   renderTags(stats);
   renderConfidence(stats);
 }
