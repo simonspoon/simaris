@@ -9,6 +9,7 @@
 // ── State ──────────────────────────────────────────────────────────────────
 
 const STALE_KEY = 'triage_stale_days';
+const DETAIL_W_KEY = 'triage_detail_w';
 
 let state = {
   staleDays: parseInt(localStorage.getItem(STALE_KEY) || '30', 10),
@@ -48,6 +49,7 @@ const detailTitle  = $('detail-title');
 const detailClose  = $('detail-close');
 const detailBody   = $('detail-body');
 const detailActions= $('detail-actions');
+const detailResize = $('detail-resize');
 const healthBlock  = $('health-block');
 const healthLabel  = $('health-label');
 const healthDetail = $('health-detail');
@@ -109,6 +111,7 @@ function typeColor(t) { return TYPE_COLORS[t] || 'var(--fg-muted)'; }
 // ── Init ───────────────────────────────────────────────────────────────────
 
 initStaleSeg();
+initDetailResize();
 const _hashCat = window.location.hash.replace('#', '');
 loadCounts().then(() => {
   if (_hashCat && CAT_META[_hashCat]) selectCat(_hashCat);
@@ -120,6 +123,46 @@ btnVerifyAll.addEventListener('click', onVerifyAll);
 btnArchiveAll.addEventListener('click', onArchiveAll);
 detailClose.addEventListener('click', closeDetail);
 confirmCancel.addEventListener('click', () => confirmDialog.close('cancel'));
+
+// ── Detail pane resize ─────────────────────────────────────────────────────
+
+function initDetailResize() {
+  // Restore saved width
+  const saved = parseInt(localStorage.getItem(DETAIL_W_KEY) || '0', 10);
+  if (saved >= 280 && saved <= 1400) {
+    detailPane.style.setProperty('--detail-w', saved + 'px');
+  }
+
+  let dragging = false;
+  let startX = 0;
+  let startW = 0;
+
+  detailResize.addEventListener('mousedown', e => {
+    dragging = true;
+    startX = e.clientX;
+    startW = detailPane.getBoundingClientRect().width;
+    document.body.classList.add('triage-resizing');
+    detailResize.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const dx = startX - e.clientX;            // drag left = grow
+    const maxW = Math.floor(window.innerWidth * 0.75);
+    let w = Math.max(280, Math.min(maxW, startW + dx));
+    detailPane.style.setProperty('--detail-w', w + 'px');
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove('triage-resizing');
+    detailResize.classList.remove('dragging');
+    const w = Math.round(detailPane.getBoundingClientRect().width);
+    localStorage.setItem(DETAIL_W_KEY, w);
+  });
+}
 
 // ── Stale segment control ──────────────────────────────────────────────────
 
@@ -425,33 +468,35 @@ async function openDetail(id) {
   ).join('');
 
   detailBody.innerHTML = `
-    <div class="triage__detail-field">
-      <div class="triage__detail-label">ID</div>
-      <div class="triage__detail-value mono">${escHtml(item.id)}</div>
+    <div class="triage__detail-meta">
+      <div class="triage__detail-field">
+        <div class="triage__detail-label">ID</div>
+        <div class="triage__detail-value mono">${escHtml(item.id)}</div>
+      </div>
+      <div class="triage__detail-field">
+        <div class="triage__detail-label">Type</div>
+        <div class="triage__detail-value"><span style="${typeStyle}">${escHtml(item.type)}</span></div>
+      </div>
+      ${item.latest_mark_kind ? `
+      <div class="triage__detail-field">
+        <div class="triage__detail-label">Latest mark</div>
+        <div class="triage__detail-value"><span class="triage__mark-chip mark-${escHtml(item.latest_mark_kind)}">${escHtml(item.latest_mark_kind)}</span></div>
+      </div>` : ''}
+      <div class="triage__detail-field">
+        <div class="triage__detail-label">Age / Size</div>
+        <div class="triage__detail-value">${item.age_days}d · ${fmtBytes(item.byte_size)}</div>
+      </div>
+      ${tagsHtml ? `
+      <div class="triage__detail-field">
+        <div class="triage__detail-label">Tags</div>
+        <div class="triage__detail-tags">${tagsHtml}</div>
+      </div>` : ''}
+      <div class="triage__detail-field">
+        <div class="triage__detail-label">Confidence</div>
+        <div class="triage__detail-value">${item.confidence.toFixed(2)}</div>
+      </div>
     </div>
-    <div class="triage__detail-field">
-      <div class="triage__detail-label">Type</div>
-      <div class="triage__detail-value"><span style="${typeStyle}">${escHtml(item.type)}</span></div>
-    </div>
-    ${item.latest_mark_kind ? `
-    <div class="triage__detail-field">
-      <div class="triage__detail-label">Latest mark</div>
-      <div class="triage__detail-value"><span class="triage__mark-chip mark-${escHtml(item.latest_mark_kind)}">${escHtml(item.latest_mark_kind)}</span></div>
-    </div>` : ''}
-    <div class="triage__detail-field">
-      <div class="triage__detail-label">Age / Size</div>
-      <div class="triage__detail-value">${item.age_days}d · ${fmtBytes(item.byte_size)}</div>
-    </div>
-    ${tagsHtml ? `
-    <div class="triage__detail-field">
-      <div class="triage__detail-label">Tags</div>
-      <div class="triage__detail-tags">${tagsHtml}</div>
-    </div>` : ''}
-    <div class="triage__detail-field">
-      <div class="triage__detail-label">Confidence</div>
-      <div class="triage__detail-value">${item.confidence.toFixed(2)}</div>
-    </div>
-    <div class="triage__detail-field">
+    <div class="triage__detail-content-wrap">
       <div class="triage__detail-label">Content</div>
       <div class="triage__detail-content">${escHtml(item.snippet)}</div>
     </div>

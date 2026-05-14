@@ -39,6 +39,7 @@ let visibleCount = PAGE_SIZE;
 let selectedId   = null;
 let editMode     = false;
 let currentDetail = null;      // last /api/units/:id payload
+let navStack     = [];         // breadcrumbs: [{id, title}] units visited via link clicks
 
 // ── DOM ────────────────────────────────────────────────────────────────────
 const elSearch   = document.getElementById("br-search");
@@ -60,8 +61,13 @@ async function init() {
     renderCards();
     elCount.textContent = `${allUnits.length} units`;
     setStatus(`${allUnits.length} units loaded.`);
-    // Auto-select first card so detail pane isn't empty on load
-    if (allUnits.length > 0) selectCard(allUnits[0].id);
+    // Deep-link via #<id> in hash (e.g. opened from triage "Browse →")
+    const hashId = window.location.hash.replace(/^#/, "");
+    if (hashId) {
+      selectCard(hashId);
+    } else if (allUnits.length > 0) {
+      selectCard(allUnits[0].id);
+    }
   } catch (e) {
     setStatus(`load failed: ${e.message}`, "error");
     elCardList.innerHTML = `<div class="br-empty">failed to load — check server</div>`;
@@ -208,7 +214,41 @@ function cardSnippet(snippet) {
 }
 
 // ── Select + detail ────────────────────────────────────────────────────────
+// selectCard() = entry from card list / search / deep-link → fresh nav, clears stack.
 async function selectCard(id) {
+  navStack = [];
+  await loadDetail(id);
+  // Scroll card into view if present in the card list
+  const cardEl = elCardList.querySelector(`.br-card[data-id="${CSS.escape(id)}"]`);
+  if (cardEl) cardEl.scrollIntoView({ block: "nearest" });
+}
+
+// navigateToLink() = follow an in-detail link → push current to stack.
+async function navigateToLink(id) {
+  if (currentDetail && selectedId && selectedId !== id) {
+    const u = currentDetail.unit ?? {};
+    const { headline } = splitHeadline(u.content ?? "");
+    const title = headline || (currentDetail.slugs?.[0]) || shortId(u.id ?? "");
+    navStack.push({ id: selectedId, title });
+  }
+  await loadDetail(id);
+}
+
+// navigateToCrumb() = jump back to a specific breadcrumb depth.
+async function navigateToCrumb(idx) {
+  const target = navStack[idx];
+  if (!target) return;
+  navStack = navStack.slice(0, idx);
+  await loadDetail(target.id);
+}
+
+async function navigateBack() {
+  if (navStack.length === 0) return;
+  const prev = navStack.pop();
+  await loadDetail(prev.id);
+}
+
+async function loadDetail(id) {
   if (id === selectedId && currentDetail && !editMode) return;
   selectedId = id;
   editMode   = false;
@@ -255,54 +295,78 @@ function renderDetail(d) {
     : "";
 
   elDetail.innerHTML = `
-    <div class="br-detail-header">
-      <div class="br-type-row">
-        <div class="br-type-badge br-type-badge--${esc(type)}">
-          <span class="br-dot"></span>${esc(type)}
-        </div>
-        ${slug            ? `<span class="br-detail-slug">${esc(slug)}</span>` : ""}
-        <span class="br-detail-id">${esc(shortId(u.id ?? ""))}</span>
-        <span class="br-detail-conf">conf ${esc(conf)}</span>
-        ${verifiedBadge}${archivedBadge}
+    <div class="br-sticky-bar">
+      ${crumbsHTML(title)}
+      <div class="br-actions-inline">
+        <button class="br-btn br-btn--primary" id="br-edit-btn">Edit</button>
+        <button class="br-btn" id="br-clone-btn">Clone</button>
+        <button class="br-btn ${u.archived ? "" : "br-btn--danger"}" id="br-archive-btn">
+          ${u.archived ? "Unarchive" : "Archive"}
+        </button>
       </div>
-      <div class="br-detail-title">${esc(title)}</div>
-      <div class="br-detail-meta">
-        ${u.updated ? `<span>updated ${esc(u.updated.slice(0, 10))}</span>` : ""}
-        ${u.source  ? `<span>source: ${esc(u.source)}</span>`              : ""}
-        ${u.byte_size != null ? `<span>${u.byte_size} B</span>`            : ""}
-      </div>
-      ${tags ? `<div class="br-detail-tags">${tags}</div>` : ""}
     </div>
+    <div class="br-scroll">
+      <div class="br-detail-header">
+        <div class="br-type-row">
+          <div class="br-type-badge br-type-badge--${esc(type)}">
+            <span class="br-dot"></span>${esc(type)}
+          </div>
+          ${slug            ? `<span class="br-detail-slug">${esc(slug)}</span>` : ""}
+          <span class="br-detail-id">${esc(shortId(u.id ?? ""))}</span>
+          <span class="br-detail-conf">conf ${esc(conf)}</span>
+          ${verifiedBadge}${archivedBadge}
+        </div>
+        <div class="br-detail-title">${esc(title)}</div>
+        <div class="br-detail-meta">
+          ${u.updated ? `<span>updated ${esc(u.updated.slice(0, 10))}</span>` : ""}
+          ${u.source  ? `<span>source: ${esc(u.source)}</span>`              : ""}
+          ${u.byte_size != null ? `<span>${u.byte_size} B</span>`            : ""}
+        </div>
+        ${tags ? `<div class="br-detail-tags">${tags}</div>` : ""}
+      </div>
 
-    <div class="br-section-title">Content</div>
-    <div class="br-content">${md}</div>
+      <div class="br-section-title">Content</div>
+      <div class="br-content">${md}</div>
 
-    <div class="br-section-title">Links (${linkCount})</div>
-    ${linkCount > 0
-      ? `<div class="br-link-list">
-           ${outgoing.map(l => linkHTML(l, "→")).join("")}
-           ${incoming.map(l => linkHTML(l, "←")).join("")}
-         </div>`
-      : `<p class="br-links-empty">no links</p>`
-    }
-
-    <div class="br-actions">
-      <button class="br-btn br-btn--primary" id="br-edit-btn">Edit</button>
-      <button class="br-btn" id="br-clone-btn">Clone</button>
-      <button class="br-btn ${u.archived ? "" : "br-btn--danger"}" id="br-archive-btn">
-        ${u.archived ? "Unarchive" : "Archive"}
-      </button>
+      <div class="br-section-title">Links (${linkCount})</div>
+      ${linkCount > 0
+        ? `<div class="br-link-list">
+             ${outgoing.map(l => linkHTML(l, "→")).join("")}
+             ${incoming.map(l => linkHTML(l, "←")).join("")}
+           </div>`
+        : `<p class="br-links-empty">no links</p>`
+      }
     </div>
   `;
 
-  // Link item clicks → navigate detail pane to that unit
+  // Link item clicks → push breadcrumb and navigate
   elDetail.querySelectorAll(".br-link-item[data-id]").forEach(item =>
-    item.addEventListener("click", () => selectCard(item.dataset.id))
+    item.addEventListener("click", () => navigateToLink(item.dataset.id))
   );
+
+  // Breadcrumb clicks
+  elDetail.querySelectorAll(".br-crumb-item[data-idx]").forEach(c =>
+    c.addEventListener("click", () => navigateToCrumb(parseInt(c.dataset.idx, 10)))
+  );
+  document.getElementById("br-crumb-back")?.addEventListener("click", navigateBack);
 
   document.getElementById("br-edit-btn")    ?.addEventListener("click", () => showEditForm(d));
   document.getElementById("br-clone-btn")   ?.addEventListener("click", () => doClone(u.id));
   document.getElementById("br-archive-btn") ?.addEventListener("click", () => doArchive(u.id, !!u.archived));
+}
+
+function crumbsHTML(currentTitle) {
+  if (navStack.length === 0) {
+    return `<div class="br-crumbs"></div>`;
+  }
+  const parts = navStack.map((c, i) =>
+    `<span class="br-crumb-item" data-idx="${i}" title="${esc(c.title)}">${esc(c.title)}</span><span class="br-crumb-sep">›</span>`
+  ).join("");
+  return `<div class="br-crumbs">
+    <button class="br-crumb-back" id="br-crumb-back" title="Back">← back</button>
+    ${parts}
+    <span class="br-crumb-current" title="${esc(currentTitle)}">${esc(currentTitle)}</span>
+  </div>`;
 }
 
 function linkHTML(link, dir) {
@@ -326,31 +390,33 @@ function showEditForm(d) {
   const headerHTML = elDetail.querySelector(".br-detail-header")?.outerHTML ?? "";
 
   elDetail.innerHTML = `
-    ${headerHTML}
-    <div class="br-edit-form" id="br-form">
-      <div class="br-field">
-        <label>Content</label>
-        <textarea id="bf-content" rows="14">${esc(u.content ?? "")}</textarea>
-      </div>
-      <div class="br-form-row">
+    <div class="br-scroll">
+      ${headerHTML}
+      <div class="br-edit-form" id="br-form">
         <div class="br-field">
-          <label>Type</label>
-          <select id="bf-type">
-            ${TYPES.map(t => `<option value="${t}"${t === u.type ? " selected" : ""}>${t}</option>`).join("")}
-          </select>
+          <label>Content</label>
+          <textarea id="bf-content" rows="14">${esc(u.content ?? "")}</textarea>
         </div>
-        <div class="br-field" style="flex:2">
-          <label>Tags (comma-separated)</label>
-          <input id="bf-tags" type="text" value="${esc(tags)}" />
+        <div class="br-form-row">
+          <div class="br-field">
+            <label>Type</label>
+            <select id="bf-type">
+              ${TYPES.map(t => `<option value="${t}"${t === u.type ? " selected" : ""}>${t}</option>`).join("")}
+            </select>
+          </div>
+          <div class="br-field" style="flex:2">
+            <label>Tags (comma-separated)</label>
+            <input id="bf-tags" type="text" value="${esc(tags)}" />
+          </div>
         </div>
-      </div>
-      <div class="br-field">
-        <label>Source</label>
-        <input id="bf-source" type="text" value="${esc(u.source ?? "")}" />
-      </div>
-      <div class="br-actions">
-        <button class="br-btn br-btn--primary" id="br-save-btn">Save</button>
-        <button class="br-btn" id="br-cancel-btn">Cancel</button>
+        <div class="br-field">
+          <label>Source</label>
+          <input id="bf-source" type="text" value="${esc(u.source ?? "")}" />
+        </div>
+        <div class="br-actions">
+          <button class="br-btn br-btn--primary" id="br-save-btn">Save</button>
+          <button class="br-btn" id="br-cancel-btn">Cancel</button>
+        </div>
       </div>
     </div>
   `;
