@@ -1,4 +1,5 @@
 mod ask;
+mod cluster;
 mod context;
 mod db;
 mod display;
@@ -263,6 +264,51 @@ enum Command {
         /// Include archived units (default: hidden, mirrors `simaris search`).
         #[arg(long)]
         include_archived: bool,
+    },
+
+    /// Store-wide redundancy survey — clusters near-duplicates and
+    /// flags low-signal / orphan units.
+    ///
+    /// Walks a candidate set (one tag, one type, or every live unit with
+    /// `--all`), runs `simaris similar` per-unit, and union-finds the
+    /// resulting graph. Each cluster is annotated with one or more
+    /// patterns (`near-dup`, `temporal-log`, `type-confused`,
+    /// `low-signal`, `orphan`) and a `suggested_action`.
+    ///
+    /// Output is always JSON — the consolidation UI (Task 3) consumes
+    /// this primitive. Read-only; safe to invoke freely.
+    Cluster {
+        /// Restrict the candidate set to units carrying this tag.
+        #[arg(long, value_name = "TAG", conflicts_with = "all")]
+        tag: Option<String>,
+
+        /// Scan every live unit. Mutually exclusive with `--tag`.
+        #[arg(long)]
+        all: bool,
+
+        /// Restrict by unit type (composes with `--tag` / `--all`).
+        #[arg(long = "type", value_name = "Y")]
+        unit_type: Option<String>,
+
+        /// Drop multi-member clusters smaller than this. Singletons can
+        /// still surface under the low-signal / orphan patterns.
+        #[arg(long, default_value_t = 2, value_name = "N")]
+        min_cluster_size: usize,
+
+        /// Per-unit top-K neighbour fetch — bounds total work to O(N·K).
+        #[arg(long, default_value_t = 5, value_name = "N")]
+        max_similar: usize,
+
+        /// Edge cutoff — drop neighbour relationships scoring strictly
+        /// below this value before union-find.
+        #[arg(long, default_value_t = 0.3, value_name = "F")]
+        threshold: f64,
+
+        /// Disable the vector leg in the underlying similar primitive
+        /// — rank by tag overlap + type match only. Recommended for
+        /// `--all` on large stores until vector backfill is cheap.
+        #[arg(long)]
+        no_vec: bool,
     },
 
     /// Vec subsystem operations (lance + tantivy + bge-m3 hybrid retrieval).
@@ -1666,6 +1712,42 @@ fn main() -> Result<()> {
             let hits =
                 similar::similar(&conn, &resolved, top_k, threshold, no_vec, include_archived)?;
             similar::print(&hits);
+        }
+        Command::Cluster {
+            tag,
+            all,
+            unit_type,
+            min_cluster_size,
+            max_similar,
+            threshold,
+            no_vec,
+        } => {
+            // Either a scope filter or `--all` must be supplied — bare
+            // `simaris cluster` is ambiguous and likely a mistake.
+            if !all && tag.is_none() && unit_type.is_none() {
+                anyhow::bail!(
+                    "specify a scope: --tag <T>, --type <Y>, or --all"
+                );
+            }
+            let params = cluster::ClusterParams {
+                tag,
+                unit_type,
+                all,
+                min_cluster_size,
+                max_similar,
+                threshold,
+                no_vec,
+            };
+            let start = std::time::Instant::now();
+            let report = cluster::cluster(&conn, &params)?;
+            let elapsed = start.elapsed();
+            if elapsed.as_secs() > 60 {
+                eprintln!(
+                    "warning: cluster scan took {:.1}s (>60s threshold) — consider --no-vec or a narrower scope",
+                    elapsed.as_secs_f64()
+                );
+            }
+            cluster::print(&report);
         }
         Command::Dream { sub } => match sub {
             DreamSubcommand::Decay {

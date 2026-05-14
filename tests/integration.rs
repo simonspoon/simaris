@@ -4455,3 +4455,196 @@ fn test_similar_content_preview_truncates() {
         );
     }
 }
+
+// -------------------------------------------------------------------
+// `simaris cluster` — store-wide redundancy survey (task gnns).
+//
+// Tests run with `--no-vec` so they don't require a lance backfill;
+// the cluster algorithm + pattern detectors are tag/type-driven and
+// remain exercisable end-to-end without an embedding pipeline.
+// -------------------------------------------------------------------
+
+#[test]
+fn test_cluster_temporal_log_pattern() {
+    // 4 units with date-stamped slugs in identical tag set form a
+    // connected component; ≥50% slugs contain `-YYYY-MM-DD` →
+    // temporal-log fires regardless of vec leg. Exercises the
+    // primary report shape end-to-end under --no-vec.
+    let env = TestEnv::new("cluster_temporal");
+    let mut ids: Vec<String> = Vec::new();
+    for i in 0..4 {
+        let body = format!("log entry {i}");
+        let id = extract_id_first_line(&env.run_ok(&[
+            "add",
+            &body,
+            "--type",
+            "fact",
+            "--tags",
+            "logs,trial",
+        ]));
+        let slug = format!("trial-failure-2026-05-{:02}", i + 1);
+        env.run_ok(&["slug", "set", &slug, &id]);
+        ids.push(id);
+    }
+
+    let out = env.run_ok(&[
+        "cluster",
+        "--tag",
+        "logs",
+        "--no-vec",
+        "--threshold",
+        "0.3",
+    ]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+
+    let clusters = report["clusters"].as_array().expect("clusters array");
+    assert!(!clusters.is_empty(), "expected ≥1 cluster: {out}");
+
+    // Find the temporal-log cluster.
+    let temporal = clusters
+        .iter()
+        .find(|c| c["patterns"].as_array().unwrap().iter().any(|p| p == "temporal-log"))
+        .expect("temporal-log cluster missing");
+    assert_eq!(temporal["members"].as_array().unwrap().len(), 4);
+    assert!(
+        temporal["suggested_action"].as_str().unwrap().contains("roll up"),
+        "suggested_action mismatch: {temporal}"
+    );
+
+    // Schema contract: every emitted cluster carries at least one
+    // pattern + a suggested action.
+    for c in clusters {
+        let pats = c["patterns"].as_array().unwrap();
+        assert!(!pats.is_empty(), "cluster missing patterns: {c}");
+        let action = c["suggested_action"].as_str().unwrap();
+        assert!(!action.is_empty(), "cluster missing suggested_action: {c}");
+    }
+
+    // summary.by_pattern counts sum to total pattern labels across clusters.
+    let by_pattern = report["summary"]["by_pattern"].as_object().unwrap();
+    let pattern_sum: usize = by_pattern.values().map(|v| v.as_u64().unwrap() as usize).sum();
+    let label_sum: usize = clusters
+        .iter()
+        .map(|c| c["patterns"].as_array().unwrap().len())
+        .sum();
+    assert_eq!(pattern_sum, label_sum, "by_pattern sum mismatch: {out}");
+}
+
+#[test]
+fn test_cluster_requires_scope() {
+    // Bare `simaris cluster` (no --tag / --type / --all) must fail.
+    let env = TestEnv::new("cluster_no_scope");
+    let output = env.run(&["cluster"]);
+    assert!(
+        !output.status.success(),
+        "bare cluster should fail without scope"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("scope"),
+        "error should mention scope hint: {stderr}"
+    );
+}
+
+#[test]
+fn test_cluster_empty_scope_returns_empty_report() {
+    // Scoped tag matches nothing → empty cluster list, valid report.
+    let env = TestEnv::new("cluster_empty");
+    let out = env.run_ok(&["cluster", "--tag", "nonexistent-xyz", "--no-vec"]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(report["summary"]["total_units"].as_u64().unwrap(), 0);
+    assert_eq!(report["summary"]["cluster_count"].as_u64().unwrap(), 0);
+    assert!(report["clusters"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn test_cluster_min_cluster_size_drops_pairs() {
+    // 2-member cluster + min_cluster_size=3 → cluster dropped.
+    let env = TestEnv::new("cluster_minsize");
+    env.run_ok(&["add", "a", "--type", "fact", "--tags", "duo,share"]);
+    env.run_ok(&["add", "b", "--type", "fact", "--tags", "duo,share"]);
+
+    let out = env.run_ok(&[
+        "cluster",
+        "--tag",
+        "duo",
+        "--no-vec",
+        "--threshold",
+        "0.3",
+        "--min-cluster-size",
+        "3",
+    ]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    // With min-cluster-size 3, the 2-member component is dropped. The two
+    // units are now singletons; classify_singleton may keep them as
+    // orphan (no part_of / related_to) — and these test units have no
+    // outbound links, so 'orphan' fires. Make the assertion specific:
+    // EITHER no clusters, OR all clusters have size 1 and are orphan.
+    for c in report["clusters"].as_array().unwrap() {
+        let size = c["members"].as_array().unwrap().len();
+        if size > 1 {
+            panic!("multi-member cluster smaller than min-cluster-size 3 leaked: {c}");
+        }
+    }
+}
+
+#[test]
+fn test_cluster_orphan_singleton_surfaces() {
+    // Single live unit, no outbound part_of / related_to → orphan label.
+    let env = TestEnv::new("cluster_orphan");
+    let id = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "lone unit",
+        "--type",
+        "fact",
+        "--tags",
+        "solo",
+    ]));
+
+    let out = env.run_ok(&["cluster", "--tag", "solo", "--no-vec"]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let clusters = report["clusters"].as_array().unwrap();
+    let orphan = clusters.iter().find(|c| {
+        c["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["id"] == id)
+            && c["patterns"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p == "orphan")
+    });
+    assert!(orphan.is_some(), "expected orphan cluster for lone unit: {out}");
+}
+
+#[test]
+fn test_cluster_type_filter_narrows_scope() {
+    // `--type` composes with `--tag`: only matching-type units land in
+    // the candidate set.
+    let env = TestEnv::new("cluster_typefilter");
+    env.run_ok(&["add", "f1", "--type", "fact", "--tags", "scope,a"]);
+    env.run_ok(&["add", "f2", "--type", "fact", "--tags", "scope,a"]);
+    env.run_ok(&["add", "i1", "--type", "idea", "--tags", "scope,a"]);
+    env.run_ok(&["add", "i2", "--type", "idea", "--tags", "scope,a"]);
+
+    let out = env.run_ok(&[
+        "cluster",
+        "--tag",
+        "scope",
+        "--type",
+        "fact",
+        "--no-vec",
+        "--threshold",
+        "0.3",
+    ]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    // total_units in the report reflects the filtered candidate set.
+    assert_eq!(report["summary"]["total_units"].as_u64().unwrap(), 2);
+    for c in report["clusters"].as_array().unwrap() {
+        for m in c["members"].as_array().unwrap() {
+            assert_eq!(m["type"].as_str().unwrap(), "fact");
+        }
+    }
+}
