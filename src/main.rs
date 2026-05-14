@@ -506,6 +506,10 @@ enum Command {
         /// Reference (repeatable) — valid on procedure / aspect / fact / principle / lesson
         #[arg(long = "ref")]
         refs: Vec<String>,
+
+        /// Set verified=true on this unit (no content change required)
+        #[arg(long)]
+        verified: bool,
     },
 
     /// Delete a knowledge unit (requires interactive confirmation)
@@ -542,6 +546,16 @@ enum Command {
         /// schema-less units.
         #[arg(long)]
         include_unschemaed: bool,
+
+        /// Triage category for the scan-first homepage.
+        /// One of: degraded | contradictions | oversized | orphaned | stale | counts
+        /// When set, outputs JSON for that category only (--json implied).
+        #[arg(long)]
+        cat: Option<String>,
+
+        /// Override the SIMARIS_WARN_BYTES threshold for the `oversized` category.
+        #[arg(long)]
+        warn_bytes: Option<i64>,
     },
 
     /// Manage human-readable slugs pointing at units
@@ -1774,8 +1788,12 @@ fn main() -> Result<()> {
             tension,
             context,
             refs,
+            verified,
         } => {
             let id = db::resolve_id(&conn, &id)?;
+            if verified {
+                db::verify_unit(&conn, &id)?;
+            }
             let flags = TypeFlags {
                 trigger: &trigger,
                 check: &check,
@@ -1878,8 +1896,42 @@ fn main() -> Result<()> {
             type_filter,
             include_superseded,
             include_unschemaed,
+            cat,
+            warn_bytes,
         } => {
-            if unstructured {
+            if let Some(cat_name) = cat {
+                // Triage category mode — always outputs JSON.
+                let effective_warn =
+                    warn_bytes.unwrap_or_else(|| size_guard::warn_threshold() as i64);
+                match cat_name.as_str() {
+                    "degraded" => {
+                        let items = db::scan_degraded(&conn)?;
+                        println!("{}", serde_json::to_string(&items)?);
+                    }
+                    "contradictions" => {
+                        let items = db::scan_contradictions(&conn)?;
+                        println!("{}", serde_json::to_string(&items)?);
+                    }
+                    "oversized" => {
+                        let items = db::scan_oversized(&conn, effective_warn)?;
+                        println!("{}", serde_json::to_string(&items)?);
+                    }
+                    "orphaned" => {
+                        let items = db::scan_orphaned(&conn)?;
+                        println!("{}", serde_json::to_string(&items)?);
+                    }
+                    "stale" => {
+                        let items = db::scan_stale(&conn, stale_days)?;
+                        println!("{}", serde_json::to_string(&items)?);
+                    }
+                    "counts" => {
+                        let counts =
+                            db::scan_triage_counts(&conn, stale_days, effective_warn)?;
+                        println!("{}", serde_json::to_string(&counts)?);
+                    }
+                    other => anyhow::bail!("unknown --cat value: {other}"),
+                }
+            } else if unstructured {
                 let filter = type_filter.as_ref().map(UnitType::as_str);
                 let rows =
                     db::scan_unstructured(&conn, filter, include_superseded, include_unschemaed)?;

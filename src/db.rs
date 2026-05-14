@@ -87,6 +87,43 @@ pub struct ContradictionPair {
     pub to_content: String,
 }
 
+/// Enriched unit summary returned by triage scan endpoints.
+#[derive(Debug, Serialize)]
+pub struct ScanItem {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub unit_type: String,
+    pub slug: Option<String>,
+    pub byte_size: i64,
+    pub tags: Vec<String>,
+    pub confidence: f64,
+    pub archived: bool,
+    pub snippet: String,
+    pub latest_mark_kind: Option<String>,
+    pub age_days: i64,
+}
+
+/// Contradiction pair enriched for triage (adds snippets + metadata).
+#[derive(Debug, Serialize)]
+pub struct ScanContraPair {
+    pub from_id: String,
+    pub from_snippet: String,
+    pub from_type: String,
+    pub to_id: String,
+    pub to_snippet: String,
+    pub to_type: String,
+}
+
+/// Per-category counts returned by `/api/scan/counts`.
+#[derive(Debug, Serialize)]
+pub struct ScanCounts {
+    pub degraded: usize,
+    pub contradictions: usize,
+    pub oversized: usize,
+    pub orphaned: usize,
+    pub stale: usize,
+}
+
 /// One row of `scan --unstructured` output — a unit that lacks a frontmatter
 /// block and is large enough to be worth rewriting. Ordered for rewrite
 /// priority: aspect first, then mark_count DESC, then confidence DESC.
@@ -1502,6 +1539,208 @@ pub fn scan(conn: &Connection, stale_days: u32) -> Result<ScanResult> {
         orphans,
         stale,
     })
+}
+
+// ── Triage scan helpers ────────────────────────────────────────────────────
+
+const TRIAGE_SNIPPET_CHARS: usize = 200;
+const ORPHAN_AGE_DAYS: u32 = 14;
+
+fn snippet(content: &str) -> String {
+    let s = content.trim();
+    if s.chars().count() <= TRIAGE_SNIPPET_CHARS {
+        s.to_string()
+    } else {
+        let cut: String = s.chars().take(TRIAGE_SNIPPET_CHARS).collect();
+        format!("{cut}…")
+    }
+}
+
+/// Common SELECT for ScanItem columns.
+const SCAN_ITEM_COLS: &str = "
+    u.id,
+    u.type,
+    u.tags,
+    u.confidence,
+    u.archived,
+    u.content,
+    u.created,
+    CAST(LENGTH(CAST(u.content AS BLOB)) AS INTEGER) AS byte_size,
+    (SELECT slug FROM slugs WHERE unit_id = u.id ORDER BY slug ASC LIMIT 1) AS slug,
+    (SELECT kind FROM marks WHERE unit_id = u.id ORDER BY created DESC LIMIT 1) AS latest_mark_kind,
+    CAST(julianday('now') - julianday(u.created) AS INTEGER) AS age_days
+";
+
+fn row_to_scan_item(row: &rusqlite::Row) -> rusqlite::Result<ScanItem> {
+    let tags_str: String = row.get(2)?;
+    let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+    let archived_int: i32 = row.get(4)?;
+    let content: String = row.get(5)?;
+    Ok(ScanItem {
+        id: row.get(0)?,
+        unit_type: row.get(1)?,
+        tags,
+        confidence: row.get(3)?,
+        archived: archived_int != 0,
+        snippet: snippet(&content),
+        byte_size: row.get(7)?,
+        slug: row.get(8)?,
+        latest_mark_kind: row.get(9)?,
+        age_days: row.get(10)?,
+    })
+}
+
+/// Degraded — units with `wrong` or `outdated` marks.
+pub fn scan_degraded(conn: &Connection) -> Result<Vec<ScanItem>> {
+    let sql = format!(
+        "SELECT {SCAN_ITEM_COLS} FROM units u
+         WHERE u.archived = 0
+           AND EXISTS (SELECT 1 FROM marks WHERE unit_id = u.id AND kind IN ('wrong', 'outdated'))
+         ORDER BY u.updated DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map([], row_to_scan_item)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Contradictions — `contradicts` link, both ends non-archived.
+pub fn scan_contradictions(conn: &Connection) -> Result<Vec<ScanContraPair>> {
+    let mut stmt = conn.prepare(
+        "SELECT l.from_id, u1.content, u1.type, l.to_id, u2.content, u2.type
+         FROM links l
+         JOIN units u1 ON u1.id = l.from_id
+         JOIN units u2 ON u2.id = l.to_id
+         WHERE l.relationship = 'contradicts' AND l.from_id < l.to_id
+           AND u1.archived = 0 AND u2.archived = 0",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            let fc: String = row.get(1)?;
+            let tc: String = row.get(4)?;
+            Ok(ScanContraPair {
+                from_id: row.get(0)?,
+                from_snippet: fc.trim().chars().take(TRIAGE_SNIPPET_CHARS).collect(),
+                from_type: row.get(2)?,
+                to_id: row.get(3)?,
+                to_snippet: tc.trim().chars().take(TRIAGE_SNIPPET_CHARS).collect(),
+                to_type: row.get(5)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Oversized — byte_size > warn_bytes (default: SIMARIS_WARN_BYTES = 2048).
+pub fn scan_oversized(conn: &Connection, warn_bytes: i64) -> Result<Vec<ScanItem>> {
+    let sql = format!(
+        "SELECT {SCAN_ITEM_COLS} FROM units u
+         WHERE u.archived = 0
+           AND LENGTH(CAST(u.content AS BLOB)) > ?1
+         ORDER BY LENGTH(CAST(u.content AS BLOB)) DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(params![warn_bytes], row_to_scan_item)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Orphaned — no links AND created > 14 days ago (newborn noise filter).
+pub fn scan_orphaned(conn: &Connection) -> Result<Vec<ScanItem>> {
+    let age_filter = format!("-{ORPHAN_AGE_DAYS} days");
+    let sql = format!(
+        "SELECT {SCAN_ITEM_COLS} FROM units u
+         WHERE u.archived = 0
+           AND u.created < datetime('now', ?1)
+           AND NOT EXISTS (SELECT 1 FROM links WHERE from_id = u.id)
+           AND NOT EXISTS (SELECT 1 FROM links WHERE to_id = u.id)
+         ORDER BY u.created ASC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(params![age_filter], row_to_scan_item)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Stale — no marks, type IN (procedure, principle), age > stale_days.
+pub fn scan_stale(conn: &Connection, stale_days: u32) -> Result<Vec<ScanItem>> {
+    let stale_modifier = format!("-{stale_days} days");
+    let sql = format!(
+        "SELECT {SCAN_ITEM_COLS} FROM units u
+         WHERE u.archived = 0
+           AND u.type IN ('procedure', 'principle')
+           AND u.created < datetime('now', ?1)
+           AND NOT EXISTS (SELECT 1 FROM marks WHERE unit_id = u.id)
+         ORDER BY u.created ASC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(params![stale_modifier], row_to_scan_item)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// All category counts in one pass (used for nav badge + sidebar counts).
+pub fn scan_triage_counts(conn: &Connection, stale_days: u32, warn_bytes: i64) -> Result<ScanCounts> {
+    let degraded: usize = conn.query_row(
+        "SELECT COUNT(*) FROM units u WHERE archived = 0
+         AND EXISTS (SELECT 1 FROM marks WHERE unit_id = u.id AND kind IN ('wrong', 'outdated'))",
+        [],
+        |row| row.get::<_, i64>(0),
+    )? as usize;
+
+    let contradictions: usize = conn.query_row(
+        "SELECT COUNT(*) FROM links l
+         JOIN units u1 ON u1.id = l.from_id
+         JOIN units u2 ON u2.id = l.to_id
+         WHERE l.relationship = 'contradicts' AND l.from_id < l.to_id
+           AND u1.archived = 0 AND u2.archived = 0",
+        [],
+        |row| row.get::<_, i64>(0),
+    )? as usize;
+
+    let oversized: usize = conn.query_row(
+        "SELECT COUNT(*) FROM units WHERE archived = 0 AND LENGTH(CAST(content AS BLOB)) > ?1",
+        params![warn_bytes],
+        |row| row.get::<_, i64>(0),
+    )? as usize;
+
+    let age_filter = format!("-{ORPHAN_AGE_DAYS} days");
+    let orphaned: usize = conn.query_row(
+        "SELECT COUNT(*) FROM units u WHERE archived = 0
+         AND u.created < datetime('now', ?1)
+         AND NOT EXISTS (SELECT 1 FROM links WHERE from_id = u.id)
+         AND NOT EXISTS (SELECT 1 FROM links WHERE to_id = u.id)",
+        params![age_filter],
+        |row| row.get::<_, i64>(0),
+    )? as usize;
+
+    let stale_modifier = format!("-{stale_days} days");
+    let stale: usize = conn.query_row(
+        "SELECT COUNT(*) FROM units u WHERE archived = 0
+         AND u.type IN ('procedure', 'principle')
+         AND u.created < datetime('now', ?1)
+         AND NOT EXISTS (SELECT 1 FROM marks WHERE unit_id = u.id)",
+        params![stale_modifier],
+        |row| row.get::<_, i64>(0),
+    )? as usize;
+
+    Ok(ScanCounts { degraded, contradictions, oversized, orphaned, stale })
+}
+
+/// Set verified=true on a unit. Returns the updated unit.
+pub fn verify_unit(conn: &Connection, id: &str) -> Result<()> {
+    let changes = conn.execute(
+        "UPDATE units SET verified = 1, updated = datetime('now') WHERE id = ?1",
+        params![id],
+    )?;
+    if changes == 0 {
+        anyhow::bail!("Unit not found: {id}");
+    }
+    Ok(())
 }
 
 /// List units that lack a frontmatter block and carry enough body to warrant

@@ -86,6 +86,12 @@ pub async fn unarchive(Path(id): Path<String>) -> Response {
     run_or_error(&args)
 }
 
+/// POST /api/units/:id/verify — sets verified=true, no content change.
+pub async fn verify(Path(id): Path<String>) -> Response {
+    let args = vec!["edit".into(), id, "--verified".into(), "--json".into()];
+    run_or_error(&args)
+}
+
 fn run_or_error(args: &[String]) -> Response {
     match run_simaris_owned(args) {
         Ok(value) => Json::<Value>(value).into_response(),

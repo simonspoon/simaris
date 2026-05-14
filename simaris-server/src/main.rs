@@ -43,12 +43,19 @@ async fn main() -> anyhow::Result<()> {
         .route("/units/:id/clone", post(routes::units::clone))
         .route("/units/:id/archive", post(routes::units::archive))
         .route("/units/:id/unarchive", post(routes::units::unarchive))
+        .route("/units/:id/verify", post(routes::units::verify))
+        .route("/scan/counts", get(routes::scan::counts))
+        .route("/scan/:cat", get(routes::scan::category))
         .layer(from_fn(middleware::body_size_limit));
 
     let app = Router::new()
         .route("/healthz", get(routes::healthz::get))
         .nest("/api", api)
-        .route("/", get(serve_index))
+        .route("/", get(serve_triage))
+        .route("/dashboard", get(serve_index))
+        // Triage — scan-first homepage (Layer 4).
+        .route("/triage", get(serve_triage))
+        .route("/triage/", get(serve_triage))
         // Wiki SPA routes — every /wiki and /wiki/<id-or-slug> URL serves the
         // same wiki.html bundle; client-side routing in wiki.js reads
         // window.location.pathname to decide what to load.
@@ -76,7 +83,12 @@ fn init_tracing() {
     fmt().with_env_filter(filter).init();
 }
 
-/// Serve `index.html` at `/`.
+/// Serve `triage.html` at `/` and `/triage`.
+async fn serve_triage() -> Response {
+    asset_response("triage.html")
+}
+
+/// Serve `index.html` (Dashboard) at `/dashboard`.
 async fn serve_index() -> Response {
     asset_response("index.html")
 }
