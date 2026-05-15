@@ -1743,9 +1743,7 @@ fn main() -> Result<()> {
             // Either a scope filter or `--all` must be supplied — bare
             // `simaris cluster` is ambiguous and likely a mistake.
             if !all && tag.is_none() && unit_type.is_none() {
-                anyhow::bail!(
-                    "specify a scope: --tag <T>, --type <Y>, or --all"
-                );
+                anyhow::bail!("specify a scope: --tag <T>, --type <Y>, or --all");
             }
             let params = cluster::ClusterParams {
                 tag,
@@ -2072,8 +2070,7 @@ fn main() -> Result<()> {
                         println!("{}", serde_json::to_string(&items)?);
                     }
                     "counts" => {
-                        let counts =
-                            db::scan_triage_counts(&conn, stale_days, effective_warn)?;
+                        let counts = db::scan_triage_counts(&conn, stale_days, effective_warn)?;
                         println!("{}", serde_json::to_string(&counts)?);
                     }
                     other => anyhow::bail!("unknown --cat value: {other}"),

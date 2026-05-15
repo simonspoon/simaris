@@ -50,10 +50,7 @@ async fn main() -> anyhow::Result<()> {
             "/consolidation/clusters",
             get(routes::consolidation::clusters),
         )
-        .route(
-            "/consolidation/action",
-            post(routes::consolidation::action),
-        )
+        .route("/consolidation/action", post(routes::consolidation::action))
         .layer(from_fn(middleware::body_size_limit));
 
     let app = Router::new()

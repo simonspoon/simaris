@@ -136,10 +136,7 @@ fn extract_top_level_scalar(yaml: &str, key: &str) -> Option<String> {
             return None;
         }
         // Strip matched outer quotes.
-        let unquoted = if value.len() >= 2
-            && value.starts_with('"')
-            && value.ends_with('"')
-        {
+        let unquoted = if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
             &value[1..value.len() - 1]
         } else if value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'') {
             &value[1..value.len() - 1]
@@ -183,7 +180,8 @@ mod tests {
 
     #[test]
     fn embed_input_prepends_scope_when_present() {
-        let content = "---\nscope: \"skill reflection — analysis\"\nrefs:\n  - 019d-aaaa\n---\nbody text\n";
+        let content =
+            "---\nscope: \"skill reflection — analysis\"\nrefs:\n  - 019d-aaaa\n---\nbody text\n";
         assert_eq!(
             embed_input(content),
             "skill reflection — analysis\n\nbody text\n"

@@ -42,11 +42,7 @@ pub async fn counts(Query(q): Query<ScanQuery>) -> Response {
 }
 
 pub async fn category(Path(cat): Path<String>, Query(q): Query<ScanQuery>) -> Response {
-    let mut args = vec![
-        "scan".into(),
-        "--cat".into(),
-        cat.clone(),
-    ];
+    let mut args = vec!["scan".into(), "--cat".into(), cat.clone()];
     if cat == "stale" {
         args.push("--stale-days".into());
         args.push(q.stale_days.to_string());

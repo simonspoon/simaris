@@ -378,11 +378,7 @@ struct Edge {
 /// candidate set whose score clears `threshold`. The candidate set is
 /// the universe — anything outside it is ignored even if the KNN
 /// returns it.
-fn build_edges(
-    conn: &Connection,
-    units: &[db::Unit],
-    p: &ClusterParams,
-) -> Result<Vec<Edge>> {
+fn build_edges(conn: &Connection, units: &[db::Unit], p: &ClusterParams) -> Result<Vec<Edge>> {
     let index: HashMap<&str, usize> = units
         .iter()
         .enumerate()
@@ -446,15 +442,12 @@ fn classify_cluster(
         .iter()
         .filter(|m| m.slug.as_deref().is_some_and(slug_has_date_stamp))
         .count();
-    if !members.is_empty()
-        && (dated as f64 / members.len() as f64) >= TEMPORAL_LOG_MIN_FRACTION
-    {
+    if !members.is_empty() && (dated as f64 / members.len() as f64) >= TEMPORAL_LOG_MIN_FRACTION {
         patterns.push("temporal-log".into());
     }
 
     // type-confused — distinct types AND non-trivial average vec sim.
-    let distinct_types: BTreeSet<&str> =
-        members.iter().map(|m| m.unit_type.as_str()).collect();
+    let distinct_types: BTreeSet<&str> = members.iter().map(|m| m.unit_type.as_str()).collect();
     if distinct_types.len() >= 2 && avg_vec_sim >= TYPE_CONFUSED_AVG_VEC_SIM {
         patterns.push("type-confused".into());
     }
@@ -777,10 +770,7 @@ pub fn cluster(conn: &Connection, p: &ClusterParams) -> Result<ClusterReport> {
         // members (no surviving high-score edge) are dropped silently.
         // Bypass when: split disabled (max_cluster_size=0), under cap,
         // or singleton component (no edges to split on).
-        if p.max_cluster_size > 0
-            && members.len() > p.max_cluster_size
-            && idxs.len() > 1
-        {
+        if p.max_cluster_size > 0 && members.len() > p.max_cluster_size && idxs.len() > 1 {
             let parent_canonical = members[0].id.clone();
             let parent_cluster_id = cluster_id_for(&parent_canonical);
             let split = split_oversized_cluster(
@@ -1164,9 +1154,7 @@ mod tests {
             (99, 100, 0.95), // outside this component
         ]);
         // uf_find returns 0 only for indices 10..=13; others -> 7.
-        let uf_find = |i: usize| -> usize {
-            if (10..=13).contains(&i) { 0 } else { 7 }
-        };
+        let uf_find = |i: usize| -> usize { if (10..=13).contains(&i) { 0 } else { 7 } };
 
         let res = split_oversized_cluster(&member_idxs, &edges, &uf_find, 0, 0.5, 2);
         // Two sub-components survive — 10-11 and 12-13.

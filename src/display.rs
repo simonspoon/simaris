@@ -257,18 +257,9 @@ pub fn print_units_scored(units: &[Unit], scores: &[ScoreInfo], json: bool) {
             .map(|(u, sc)| {
                 let mut v = serde_json::to_value(u).unwrap();
                 if let Some(obj) = v.as_object_mut() {
-                    obj.insert(
-                        "score".to_string(),
-                        serde_json::json!(sc.score),
-                    );
-                    obj.insert(
-                        "vec_rank".to_string(),
-                        serde_json::json!(sc.vec_rank),
-                    );
-                    obj.insert(
-                        "fts_rank".to_string(),
-                        serde_json::json!(sc.fts_rank),
-                    );
+                    obj.insert("score".to_string(), serde_json::json!(sc.score));
+                    obj.insert("vec_rank".to_string(), serde_json::json!(sc.vec_rank));
+                    obj.insert("fts_rank".to_string(), serde_json::json!(sc.fts_rank));
                     obj.insert(
                         "fallback_method".to_string(),
                         serde_json::json!(sc.fallback_method),

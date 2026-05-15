@@ -228,9 +228,7 @@ fn filter_skipped(mut report: Value, skipped: &HashSet<String>) -> Value {
         if let Some(pats) = c.get("patterns").and_then(|v| v.as_array()) {
             for p in pats {
                 if let Some(s) = p.as_str() {
-                    let v = by_pattern
-                        .entry(s.to_string())
-                        .or_insert_with(|| json!(0));
+                    let v = by_pattern.entry(s.to_string()).or_insert_with(|| json!(0));
                     if let Some(n) = v.as_u64() {
                         *v = json!(n + 1);
                     }
@@ -363,7 +361,10 @@ fn do_archive(body: &ActionBody) -> Response {
         return bad_request("canonical_id must not be empty");
     }
 
-    let tag = format!("merge-source-{}", &canonical.chars().take(8).collect::<String>());
+    let tag = format!(
+        "merge-source-{}",
+        &canonical.chars().take(8).collect::<String>()
+    );
 
     let mut steps: Vec<StepResult> = Vec::new();
     let mut any_failure = false;
@@ -374,11 +375,7 @@ fn do_archive(body: &ActionBody) -> Response {
             continue;
         }
         // 1. archive
-        let res = run_simaris_owned(&[
-            "archive".into(),
-            member.clone(),
-            "--json".into(),
-        ]);
+        let res = run_simaris_owned(&["archive".into(), member.clone(), "--json".into()]);
         let archived_ok = record(&mut steps, member, "archive", res, &mut any_failure);
         if !archived_ok {
             continue;
@@ -400,11 +397,7 @@ fn do_archive(body: &ActionBody) -> Response {
         // `simaris show --json` first and append. The show payload is
         // shaped `{ unit: { tags: [...] }, links: ..., slugs: ... }`,
         // so dig into `unit.tags`. Fall back to overwrite if read fails.
-        let existing = run_simaris_owned(&[
-            "show".into(),
-            member.clone(),
-            "--json".into(),
-        ]);
+        let existing = run_simaris_owned(&["show".into(), member.clone(), "--json".into()]);
         let tags_arg = match &existing {
             Ok(v) => {
                 let mut tags: Vec<String> = v

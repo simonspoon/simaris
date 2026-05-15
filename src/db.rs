@@ -1728,7 +1728,11 @@ pub fn scan_stale(conn: &Connection, stale_days: u32) -> Result<Vec<ScanItem>> {
 }
 
 /// All category counts in one pass (used for nav badge + sidebar counts).
-pub fn scan_triage_counts(conn: &Connection, stale_days: u32, warn_bytes: i64) -> Result<ScanCounts> {
+pub fn scan_triage_counts(
+    conn: &Connection,
+    stale_days: u32,
+    warn_bytes: i64,
+) -> Result<ScanCounts> {
     let degraded: usize = conn.query_row(
         "SELECT COUNT(*) FROM units u WHERE archived = 0
          AND EXISTS (SELECT 1 FROM marks WHERE unit_id = u.id AND kind IN ('wrong', 'outdated'))",
@@ -1772,7 +1776,13 @@ pub fn scan_triage_counts(conn: &Connection, stale_days: u32, warn_bytes: i64) -
         |row| row.get::<_, i64>(0),
     )? as usize;
 
-    Ok(ScanCounts { degraded, contradictions, oversized, orphaned, stale })
+    Ok(ScanCounts {
+        degraded,
+        contradictions,
+        oversized,
+        orphaned,
+        stale,
+    })
 }
 
 /// Set verified=true on a unit. Returns the updated unit.
@@ -2469,7 +2479,9 @@ mod tests {
         set_cached_embedding(&conn, &id, "h0", "m", &[1.0, 2.0]).unwrap();
         // Same unit, new hash + new vector — overwrites in place.
         set_cached_embedding(&conn, &id, "h1", "m", &[9.0]).unwrap();
-        let got = get_cached_embedding(&conn, &id, "h1", "m").unwrap().unwrap();
+        let got = get_cached_embedding(&conn, &id, "h1", "m")
+            .unwrap()
+            .unwrap();
         assert_eq!(got, vec![9.0]);
         // Old hash no longer hits.
         assert!(

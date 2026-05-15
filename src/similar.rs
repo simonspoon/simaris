@@ -225,25 +225,16 @@ pub fn similar(
                 // Key on (unit_id, sha256(qtext), model): a content edit
                 // OR a model change invalidates silently.
                 let qhash = sha256_hex(&qtext);
-                let qvec = match db::get_cached_embedding(
-                    conn,
-                    &source.id,
-                    &qhash,
-                    &cfg.model,
-                )? {
+                let qvec = match db::get_cached_embedding(conn, &source.id, &qhash, &cfg.model)? {
                     Some(v) => v,
                     None => {
                         let v = cfg.embed_text(&qtext)?;
                         // Best-effort cache fill — log + continue if the
                         // write fails (don't punish the caller for a sidecar
                         // hiccup).
-                        if let Err(e) = db::set_cached_embedding(
-                            conn,
-                            &source.id,
-                            &qhash,
-                            &cfg.model,
-                            &v,
-                        ) {
+                        if let Err(e) =
+                            db::set_cached_embedding(conn, &source.id, &qhash, &cfg.model, &v)
+                        {
                             eprintln!(
                                 "warning: embedding_cache write failed for {}: {e}",
                                 source.id
@@ -560,4 +551,3 @@ mod tests {
         }
     }
 }
-
