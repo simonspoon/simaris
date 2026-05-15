@@ -257,18 +257,9 @@ pub fn print_units_scored(units: &[Unit], scores: &[ScoreInfo], json: bool) {
             .map(|(u, sc)| {
                 let mut v = serde_json::to_value(u).unwrap();
                 if let Some(obj) = v.as_object_mut() {
-                    obj.insert(
-                        "score".to_string(),
-                        serde_json::json!(sc.score),
-                    );
-                    obj.insert(
-                        "vec_rank".to_string(),
-                        serde_json::json!(sc.vec_rank),
-                    );
-                    obj.insert(
-                        "fts_rank".to_string(),
-                        serde_json::json!(sc.fts_rank),
-                    );
+                    obj.insert("score".to_string(), serde_json::json!(sc.score));
+                    obj.insert("vec_rank".to_string(), serde_json::json!(sc.vec_rank));
+                    obj.insert("fts_rank".to_string(), serde_json::json!(sc.fts_rank));
                     obj.insert(
                         "fallback_method".to_string(),
                         serde_json::json!(sc.fallback_method),
@@ -1026,76 +1017,6 @@ pub fn print_vacuum_autolink(report: &VacuumAutolinkReport, applied: bool, json:
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn headline_prose_uses_first_line() {
-        let c = "first line of prose\n\nsecond para\n";
-        assert_eq!(derive_headline(c), "first line of prose");
-    }
-
-    #[test]
-    fn headline_prose_skips_blank_lines() {
-        let c = "\n\n  real content here\n";
-        assert_eq!(derive_headline(c), "real content here");
-    }
-
-    #[test]
-    fn headline_structured_skips_fence_picks_body_heading() {
-        // Regression: hook surfaced `---` as the headline for units with
-        // frontmatter. Body's first line should win.
-        let c = "---\nrole: \"r\"\n---\n\n# Body Heading\n\nparagraph\n";
-        assert_eq!(derive_headline(c), "# Body Heading");
-    }
-
-    #[test]
-    fn headline_structured_no_body_falls_back_to_role() {
-        let c = "---\nrole: \"skeptical reviewer\"\n---\n";
-        assert_eq!(derive_headline(c), "skeptical reviewer");
-    }
-
-    #[test]
-    fn headline_structured_no_body_falls_back_to_trigger() {
-        let c = "---\ntrigger: \"new target found\"\n---\n";
-        assert_eq!(derive_headline(c), "new target found");
-    }
-
-    #[test]
-    fn headline_structured_no_body_no_fallback_key_returns_empty() {
-        let c = "---\nfoo: bar\n---\n";
-        assert_eq!(derive_headline(c), "");
-    }
-
-    #[test]
-    fn headline_truncates_at_120_chars() {
-        let long: String = "x".repeat(150);
-        let out = derive_headline(&long);
-        // 120 chars + "..." = 123
-        assert_eq!(out.chars().count(), 123);
-        assert!(out.ends_with("..."));
-    }
-
-    #[test]
-    fn first_line_preview_skips_frontmatter() {
-        // LOD-1 directory entries strip the YAML frontmatter so callers
-        // see the body's first non-empty line, not `---` and not the first
-        // frontmatter key.
-        let with_fm = "---\nrole: \"r\"\n---\n\nfirst body line\n\nsecond para\n";
-        assert_eq!(first_line_preview(with_fm), "first body line");
-
-        // Markdown header marks are stripped from the preview.
-        let heading_first = "---\ntags: [x]\n---\n\n# Body Heading\n\npara\n";
-        assert_eq!(first_line_preview(heading_first), "Body Heading");
-
-        // No frontmatter — first non-empty line still wins, leading
-        // whitespace trimmed.
-        let plain = "\n\n  plain start\nrest\n";
-        assert_eq!(first_line_preview(plain), "plain start");
-    }
-}
-
 /// Render a `simaris lint` report.
 ///
 /// JSON mode emits the full structured report (no truncation, all findings
@@ -1460,4 +1381,74 @@ pub fn print_lint_ci(
     }
 
     regressed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn headline_prose_uses_first_line() {
+        let c = "first line of prose\n\nsecond para\n";
+        assert_eq!(derive_headline(c), "first line of prose");
+    }
+
+    #[test]
+    fn headline_prose_skips_blank_lines() {
+        let c = "\n\n  real content here\n";
+        assert_eq!(derive_headline(c), "real content here");
+    }
+
+    #[test]
+    fn headline_structured_skips_fence_picks_body_heading() {
+        // Regression: hook surfaced `---` as the headline for units with
+        // frontmatter. Body's first line should win.
+        let c = "---\nrole: \"r\"\n---\n\n# Body Heading\n\nparagraph\n";
+        assert_eq!(derive_headline(c), "# Body Heading");
+    }
+
+    #[test]
+    fn headline_structured_no_body_falls_back_to_role() {
+        let c = "---\nrole: \"skeptical reviewer\"\n---\n";
+        assert_eq!(derive_headline(c), "skeptical reviewer");
+    }
+
+    #[test]
+    fn headline_structured_no_body_falls_back_to_trigger() {
+        let c = "---\ntrigger: \"new target found\"\n---\n";
+        assert_eq!(derive_headline(c), "new target found");
+    }
+
+    #[test]
+    fn headline_structured_no_body_no_fallback_key_returns_empty() {
+        let c = "---\nfoo: bar\n---\n";
+        assert_eq!(derive_headline(c), "");
+    }
+
+    #[test]
+    fn headline_truncates_at_120_chars() {
+        let long: String = "x".repeat(150);
+        let out = derive_headline(&long);
+        // 120 chars + "..." = 123
+        assert_eq!(out.chars().count(), 123);
+        assert!(out.ends_with("..."));
+    }
+
+    #[test]
+    fn first_line_preview_skips_frontmatter() {
+        // LOD-1 directory entries strip the YAML frontmatter so callers
+        // see the body's first non-empty line, not `---` and not the first
+        // frontmatter key.
+        let with_fm = "---\nrole: \"r\"\n---\n\nfirst body line\n\nsecond para\n";
+        assert_eq!(first_line_preview(with_fm), "first body line");
+
+        // Markdown header marks are stripped from the preview.
+        let heading_first = "---\ntags: [x]\n---\n\n# Body Heading\n\npara\n";
+        assert_eq!(first_line_preview(heading_first), "Body Heading");
+
+        // No frontmatter — first non-empty line still wins, leading
+        // whitespace trimmed.
+        let plain = "\n\n  plain start\nrest\n";
+        assert_eq!(first_line_preview(plain), "plain start");
+    }
 }

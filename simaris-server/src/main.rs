@@ -46,6 +46,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/units/:id/verify", post(routes::units::verify))
         .route("/scan/counts", get(routes::scan::counts))
         .route("/scan/:cat", get(routes::scan::category))
+        .route(
+            "/consolidation/clusters",
+            get(routes::consolidation::clusters),
+        )
+        .route("/consolidation/action", post(routes::consolidation::action))
         .layer(from_fn(middleware::body_size_limit));
 
     let app = Router::new()
@@ -67,6 +72,9 @@ async fn main() -> anyhow::Result<()> {
         // Browse — two-pane card browser (Layer 3).
         .route("/browse", get(serve_browse))
         .route("/browse/", get(serve_browse))
+        // Consolidation — cluster review pane (Phase 1 of consolidation).
+        .route("/consolidation", get(serve_consolidation))
+        .route("/consolidation/", get(serve_consolidation))
         .route("/*path", get(serve_asset))
         .layer(TraceLayer::new_for_http());
 
@@ -98,6 +106,11 @@ async fn serve_index() -> Response {
 /// Serve `browse.html` at `/browse`.
 async fn serve_browse() -> Response {
     asset_response("browse.html")
+}
+
+/// Serve `consolidation.html` at `/consolidation`.
+async fn serve_consolidation() -> Response {
+    asset_response("consolidation.html")
 }
 
 /// Permanent redirect for retired surfaces (/units, /wiki, /units.html) → /browse.

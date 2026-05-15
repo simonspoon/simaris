@@ -243,6 +243,10 @@ pub fn connect() -> Result<Connection> {
     }
     if user_version == 4 {
         migrate_add_context_preamble(&conn)?;
+        user_version = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    }
+    if user_version == 5 {
+        migrate_add_embedding_cache(&conn)?;
     }
 
     initialize(&conn)?;
@@ -659,6 +663,38 @@ fn migrate_add_archived(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Migration v5→v6: Add `embedding_cache` sidecar so the cluster /
+/// similar pipeline can skip ollama for unchanged units. Pure additive
+/// — no rebuild of existing tables, FK with `ON DELETE CASCADE` keeps
+/// the cache in sync with `delete_unit`. Idempotent: skips the create
+/// when the table already exists.
+fn migrate_add_embedding_cache(conn: &Connection) -> Result<()> {
+    let has_cache: bool = conn.query_row(
+        "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='embedding_cache'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let tx = conn.unchecked_transaction()?;
+
+    if !has_cache {
+        tx.execute_batch(
+            "CREATE TABLE embedding_cache (
+                 unit_id      TEXT PRIMARY KEY REFERENCES units(id) ON DELETE CASCADE,
+                 content_hash TEXT NOT NULL,
+                 model        TEXT NOT NULL,
+                 embedding    BLOB NOT NULL,
+                 created      TEXT NOT NULL DEFAULT (datetime('now'))
+             );",
+        )?;
+    }
+
+    tx.execute_batch("PRAGMA user_version = 6;")?;
+    tx.commit()?;
+
+    Ok(())
+}
+
 fn migrate_add_context_preamble(conn: &Connection) -> Result<()> {
     // Pure additive — `ALTER TABLE ADD COLUMN context_preamble TEXT NULL`
     // leaves existing rows with NULL preambles, which the contextual
@@ -748,7 +784,15 @@ pub(crate) fn initialize(conn: &Connection) -> Result<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_lint_snapshots_created
-            ON lint_snapshots(created);",
+            ON lint_snapshots(created);
+
+        CREATE TABLE IF NOT EXISTS embedding_cache (
+            unit_id      TEXT PRIMARY KEY REFERENCES units(id) ON DELETE CASCADE,
+            content_hash TEXT NOT NULL,
+            model        TEXT NOT NULL,
+            embedding    BLOB NOT NULL,
+            created      TEXT NOT NULL DEFAULT (datetime('now'))
+        );",
     )?;
 
     let fts_exists: bool = conn.query_row(
@@ -784,8 +828,8 @@ pub(crate) fn initialize(conn: &Connection) -> Result<()> {
 
     // Ensure user_version is set for fresh installs
     let user_version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if user_version < 5 {
-        conn.execute_batch("PRAGMA user_version = 5;")?;
+    if user_version < 6 {
+        conn.execute_batch("PRAGMA user_version = 6;")?;
     }
 
     Ok(())
@@ -1684,7 +1728,11 @@ pub fn scan_stale(conn: &Connection, stale_days: u32) -> Result<Vec<ScanItem>> {
 }
 
 /// All category counts in one pass (used for nav badge + sidebar counts).
-pub fn scan_triage_counts(conn: &Connection, stale_days: u32, warn_bytes: i64) -> Result<ScanCounts> {
+pub fn scan_triage_counts(
+    conn: &Connection,
+    stale_days: u32,
+    warn_bytes: i64,
+) -> Result<ScanCounts> {
     let degraded: usize = conn.query_row(
         "SELECT COUNT(*) FROM units u WHERE archived = 0
          AND EXISTS (SELECT 1 FROM marks WHERE unit_id = u.id AND kind IN ('wrong', 'outdated'))",
@@ -1728,7 +1776,13 @@ pub fn scan_triage_counts(conn: &Connection, stale_days: u32, warn_bytes: i64) -
         |row| row.get::<_, i64>(0),
     )? as usize;
 
-    Ok(ScanCounts { degraded, contradictions, oversized, orphaned, stale })
+    Ok(ScanCounts {
+        degraded,
+        contradictions,
+        oversized,
+        orphaned,
+        stale,
+    })
 }
 
 /// Set verified=true on a unit. Returns the updated unit.
@@ -2254,6 +2308,72 @@ pub fn set_context_preamble(conn: &Connection, unit_id: &str, preamble: &str) ->
     Ok(())
 }
 
+/// Look up a previously cached embedding for `unit_id`. Returns `None`
+/// when no row exists, or when the stored `(content_hash, model)` pair
+/// disagrees with the supplied values — a content edit or model change
+/// silently invalidates the cache and forces the caller to re-embed.
+///
+/// Embeddings are stored as little-endian f32 BLOBs; truncated rows
+/// (length not a multiple of 4) are treated as a cache miss rather
+/// than an error so a corrupt row never wedges the pipeline.
+pub fn get_cached_embedding(
+    conn: &Connection,
+    unit_id: &str,
+    content_hash: &str,
+    model: &str,
+) -> Result<Option<Vec<f32>>> {
+    let row: Option<(String, String, Vec<u8>)> = conn
+        .query_row(
+            "SELECT content_hash, model, embedding FROM embedding_cache WHERE unit_id = ?1",
+            params![unit_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+
+    let Some((stored_hash, stored_model, blob)) = row else {
+        return Ok(None);
+    };
+    if stored_hash != content_hash || stored_model != model {
+        return Ok(None);
+    }
+    if blob.len() % 4 != 0 {
+        return Ok(None);
+    }
+    let mut out = Vec::with_capacity(blob.len() / 4);
+    for chunk in blob.chunks_exact(4) {
+        out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+    }
+    Ok(Some(out))
+}
+
+/// Persist `embedding` for `unit_id` keyed on `(content_hash, model)`.
+/// Replaces any previous row — there is exactly one cached embedding per
+/// unit at a time. The CASCADE FK from `embedding_cache.unit_id` to
+/// `units.id` keeps the cache in sync with `delete_unit`.
+pub fn set_cached_embedding(
+    conn: &Connection,
+    unit_id: &str,
+    content_hash: &str,
+    model: &str,
+    embedding: &[f32],
+) -> Result<()> {
+    let mut blob: Vec<u8> = Vec::with_capacity(embedding.len() * 4);
+    for v in embedding {
+        blob.extend_from_slice(&v.to_le_bytes());
+    }
+    conn.execute(
+        "INSERT INTO embedding_cache (unit_id, content_hash, model, embedding)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(unit_id) DO UPDATE SET
+             content_hash = excluded.content_hash,
+             model        = excluded.model,
+             embedding    = excluded.embedding,
+             created      = datetime('now')",
+        params![unit_id, content_hash, model, blob],
+    )?;
+    Ok(())
+}
+
 /// All slugs pointing at a given unit, ordered by slug ASC.
 /// Unknown unit returns `Ok(vec![])`, not an error.
 pub fn get_slugs_for_unit(conn: &Connection, unit_id: &str) -> Result<Vec<String>> {
@@ -2316,6 +2436,80 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 4);
+    }
+
+    #[test]
+    fn embedding_cache_roundtrip() {
+        let conn = memory_db();
+        let id = add_unit(&conn, "embed-me", "fact", "test").unwrap();
+        let v: Vec<f32> = vec![0.1, -0.5, 1.25, f32::EPSILON];
+
+        // Cold cache → None.
+        assert!(
+            get_cached_embedding(&conn, &id, "h0", "bge-m3")
+                .unwrap()
+                .is_none()
+        );
+
+        // Write + read back exactly.
+        set_cached_embedding(&conn, &id, "h0", "bge-m3", &v).unwrap();
+        let got = get_cached_embedding(&conn, &id, "h0", "bge-m3")
+            .unwrap()
+            .unwrap();
+        assert_eq!(got, v);
+
+        // Hash mismatch → miss (content edited).
+        assert!(
+            get_cached_embedding(&conn, &id, "different-hash", "bge-m3")
+                .unwrap()
+                .is_none()
+        );
+        // Model mismatch → miss (model swapped).
+        assert!(
+            get_cached_embedding(&conn, &id, "h0", "other-model")
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn embedding_cache_replaces_on_rewrite() {
+        let conn = memory_db();
+        let id = add_unit(&conn, "x", "fact", "test").unwrap();
+        set_cached_embedding(&conn, &id, "h0", "m", &[1.0, 2.0]).unwrap();
+        // Same unit, new hash + new vector — overwrites in place.
+        set_cached_embedding(&conn, &id, "h1", "m", &[9.0]).unwrap();
+        let got = get_cached_embedding(&conn, &id, "h1", "m")
+            .unwrap()
+            .unwrap();
+        assert_eq!(got, vec![9.0]);
+        // Old hash no longer hits.
+        assert!(
+            get_cached_embedding(&conn, &id, "h0", "m")
+                .unwrap()
+                .is_none()
+        );
+        // And only one row exists.
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM embedding_cache", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn embedding_cache_cascades_on_unit_delete() {
+        let conn = memory_db();
+        let id = add_unit(&conn, "x", "fact", "test").unwrap();
+        set_cached_embedding(&conn, &id, "h0", "m", &[1.0]).unwrap();
+        delete_unit(&conn, &id).unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM embedding_cache WHERE unit_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 0, "cascade should remove cached embedding");
     }
 
     #[test]
@@ -2902,7 +3096,7 @@ mod tests {
         let version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
     }
 
     #[test]

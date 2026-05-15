@@ -1457,7 +1457,7 @@ fn test_migration_runs_on_first_command() {
     let version: i32 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 5, "expected user_version=5, got {version}");
+    assert_eq!(version, 6, "expected user_version=6, got {version}");
 
     let slugs_present: i64 = conn
         .query_row(
@@ -1554,7 +1554,7 @@ fn test_existing_v2_db_upgrades_on_launch() {
     let version: i32 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 5);
+    assert_eq!(version, 6);
 
     let slugs_present: i64 = conn
         .query_row(
@@ -4160,4 +4160,713 @@ fn test_lint_tag_stats_counts_singletons() {
     assert_eq!(s["distinct"], 2);
     assert_eq!(s["total_uses"], 3);
     assert_eq!(s["singletons"], 1); // beta used once
+}
+
+// =====================================================================
+// `simaris similar <id>` — near-duplicate detection primitive (caez).
+//
+// Tests exercise the `--no-vec` path so they don't require a live lance
+// dataset. Vector-leg behaviour is covered by the rank-derived scoring
+// formula in src/similar.rs::similar_with_ranking (unit-tested via the
+// scoring helpers + smoke-verified manually against the production
+// sanctuary — see commit message).
+// =====================================================================
+
+/// `add` emits a follow-up "  auto-linked to N existing unit(s)" line on
+/// stdout whenever auto-link fires (2+ shared tags). The legacy
+/// `extract_id` helper greedily takes the last whitespace token, so it
+/// trips over that trailing line — these tests deliberately seed
+/// tag-overlapping units, so use a first-line-only extractor instead.
+fn extract_id_first_line(out: &str) -> String {
+    let first = out.lines().next().unwrap_or(out);
+    first.split_whitespace().last().unwrap().to_string()
+}
+
+#[test]
+fn test_similar_no_vec_basic_shape() {
+    let env = TestEnv::new("similar_basic");
+    let src = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "alpha body",
+        "--type",
+        "fact",
+        "--tags",
+        "shared,alpha",
+    ]));
+    let near = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "near body",
+        "--type",
+        "fact",
+        "--tags",
+        "shared,alpha",
+    ]));
+    let off = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "unrelated",
+        "--type",
+        "idea",
+        "--tags",
+        "unrelated",
+    ]));
+
+    let out = env.run_ok(&["similar", &src, "--no-vec", "--top-k", "5"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON array");
+
+    // Self is excluded — `src` must never appear.
+    assert!(
+        parsed.iter().all(|h| h["id"].as_str().unwrap() != src),
+        "self leaked into results: {out}"
+    );
+    // Near-dup outranks the unrelated unit (identical tags + type).
+    let near_idx = parsed.iter().position(|h| h["id"] == near).unwrap();
+    let off_idx = parsed.iter().position(|h| h["id"] == off);
+    if let Some(off_idx) = off_idx {
+        assert!(near_idx < off_idx, "near-dup must outrank unrelated: {out}");
+    }
+
+    // Each record carries the documented field set.
+    for h in &parsed {
+        for field in &[
+            "id",
+            "type",
+            "slug",
+            "vec_sim",
+            "tag_overlap",
+            "type_match",
+            "score",
+            "content_preview",
+        ] {
+            assert!(h.get(field).is_some(), "missing field {field}: {out}");
+        }
+    }
+}
+
+#[test]
+fn test_similar_no_vec_identical_tags_max_score() {
+    let env = TestEnv::new("similar_max");
+    let src = extract_id_first_line(
+        &env.run_ok(&["add", "src body", "--type", "fact", "--tags", "x,y,z"]),
+    );
+    let twin = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "twin body",
+        "--type",
+        "fact",
+        "--tags",
+        "x,y,z",
+    ]));
+
+    let out = env.run_ok(&["similar", &src, "--no-vec", "--top-k", "5"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
+    let twin_hit = parsed
+        .iter()
+        .find(|h| h["id"] == twin)
+        .expect("twin not in results");
+    // Identical tags → jaccard 1.0. Same type → type_match 1.0. No vec leg
+    // (--no-vec) → vec_sim 0. With defaults β=0.3, γ=0.1 → score = 0.4.
+    assert!((twin_hit["score"].as_f64().unwrap() - 0.4).abs() < 1e-9);
+    assert_eq!(twin_hit["tag_overlap"].as_f64().unwrap(), 1.0);
+    assert_eq!(twin_hit["type_match"].as_f64().unwrap(), 1.0);
+    assert_eq!(twin_hit["vec_sim"].as_f64().unwrap(), 0.0);
+}
+
+#[test]
+fn test_similar_threshold_filters() {
+    let env = TestEnv::new("similar_threshold");
+    let src =
+        extract_id_first_line(&env.run_ok(&["add", "src", "--type", "fact", "--tags", "a,b"]));
+    env.run_ok(&["add", "twin", "--type", "fact", "--tags", "a,b"]);
+    env.run_ok(&["add", "weak", "--type", "fact", "--tags", "a"]);
+    env.run_ok(&["add", "noise", "--type", "idea"]);
+
+    let lo = env.run_ok(&["similar", &src, "--no-vec", "--threshold", "0.0"]);
+    let hi = env.run_ok(&["similar", &src, "--no-vec", "--threshold", "0.35"]);
+    let lo_parsed: Vec<serde_json::Value> = serde_json::from_str(&lo).expect("valid JSON");
+    let hi_parsed: Vec<serde_json::Value> = serde_json::from_str(&hi).expect("valid JSON");
+    assert!(
+        hi_parsed.len() <= lo_parsed.len(),
+        "--threshold must monotonically filter: low={} high={}",
+        lo_parsed.len(),
+        hi_parsed.len()
+    );
+    // The high-threshold cut should drop the partial-tag-match "weak" unit
+    // (jaccard = 1/2 = 0.5, type match = 1 → score = 0.3*0.5 + 0.1 = 0.25).
+    assert!(
+        hi_parsed
+            .iter()
+            .all(|h| h["score"].as_f64().unwrap() >= 0.35),
+        "results below threshold leaked: {hi}"
+    );
+}
+
+#[test]
+fn test_similar_include_archived_increases() {
+    let env = TestEnv::new("similar_archived");
+    let src =
+        extract_id_first_line(&env.run_ok(&["add", "src", "--type", "fact", "--tags", "k1,k2"]));
+    let live = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "live twin",
+        "--type",
+        "fact",
+        "--tags",
+        "k1,k2",
+    ]));
+    let dead = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "archived twin",
+        "--type",
+        "fact",
+        "--tags",
+        "k1,k2",
+    ]));
+    env.run_ok(&["archive", &dead]);
+
+    let default = env.run_ok(&["similar", &src, "--no-vec", "--top-k", "10"]);
+    let with_arch = env.run_ok(&[
+        "similar",
+        &src,
+        "--no-vec",
+        "--include-archived",
+        "--top-k",
+        "10",
+    ]);
+    let d: Vec<serde_json::Value> = serde_json::from_str(&default).expect("valid JSON");
+    let w: Vec<serde_json::Value> = serde_json::from_str(&with_arch).expect("valid JSON");
+
+    assert!(
+        w.len() >= d.len(),
+        "include-archived must not shrink result set"
+    );
+    // Default hides the archived twin.
+    assert!(
+        d.iter().all(|h| h["id"].as_str().unwrap() != dead),
+        "archived unit leaked into default view: {default}"
+    );
+    // Live twin is always present.
+    assert!(d.iter().any(|h| h["id"].as_str().unwrap() == live));
+    // With --include-archived the dead twin is back.
+    assert!(
+        w.iter().any(|h| h["id"].as_str().unwrap() == dead),
+        "archived twin missing under --include-archived: {with_arch}"
+    );
+}
+
+#[test]
+fn test_similar_self_never_in_results() {
+    let env = TestEnv::new("similar_self");
+    let src = extract_id(&env.run_ok(&["add", "src body", "--type", "fact", "--tags", "t"]));
+    // Add 5 near-dups so the candidate pool has enough material.
+    for i in 0..5 {
+        let body = format!("dup-{i}");
+        env.run_ok(&["add", &body, "--type", "fact", "--tags", "t"]);
+    }
+    let out = env.run_ok(&["similar", &src, "--no-vec", "--top-k", "50"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
+    assert!(
+        parsed.iter().all(|h| h["id"].as_str().unwrap() != src),
+        "source id appeared in own similarity list: {out}"
+    );
+}
+
+#[test]
+fn test_similar_resolves_slug() {
+    let env = TestEnv::new("similar_slug");
+    let src = extract_id(&env.run_ok(&["add", "src", "--type", "fact", "--tags", "p"]));
+    env.run_ok(&["slug", "set", "src-slug", &src]);
+    env.run_ok(&["add", "twin", "--type", "fact", "--tags", "p"]);
+    // Pass slug instead of uuid — must resolve.
+    let out = env.run_ok(&["similar", "src-slug", "--no-vec"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
+    assert!(
+        !parsed.is_empty(),
+        "slug-resolved similar returned empty: {out}"
+    );
+}
+
+#[test]
+fn test_similar_top_k_caps_results() {
+    let env = TestEnv::new("similar_topk");
+    let src = extract_id(&env.run_ok(&["add", "src", "--type", "fact", "--tags", "z"]));
+    for i in 0..10 {
+        let body = format!("dup-{i}");
+        env.run_ok(&["add", &body, "--type", "fact", "--tags", "z"]);
+    }
+    let out = env.run_ok(&["similar", &src, "--no-vec", "--top-k", "3"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
+    assert!(
+        parsed.len() <= 3,
+        "top-k 3 returned {} results: {out}",
+        parsed.len()
+    );
+}
+
+#[test]
+fn test_similar_content_preview_truncates() {
+    let env = TestEnv::new("similar_preview");
+    let src = extract_id(&env.run_ok(&["add", "src", "--type", "fact", "--tags", "q"]));
+    let long = "x".repeat(200);
+    env.run_ok(&["add", &long, "--type", "fact", "--tags", "q"]);
+    let out = env.run_ok(&["similar", &src, "--no-vec"]);
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
+    for h in &parsed {
+        let preview = h["content_preview"].as_str().unwrap();
+        assert!(
+            preview.chars().count() <= 80,
+            "preview not capped at 80 chars: {preview}"
+        );
+    }
+}
+
+// -------------------------------------------------------------------
+// `simaris cluster` — store-wide redundancy survey (task gnns).
+//
+// Tests run with `--no-vec` so they don't require a lance backfill;
+// the cluster algorithm + pattern detectors are tag/type-driven and
+// remain exercisable end-to-end without an embedding pipeline.
+// -------------------------------------------------------------------
+
+#[test]
+fn test_cluster_temporal_log_pattern() {
+    // 4 units with date-stamped slugs in identical tag set form a
+    // connected component; ≥50% slugs contain `-YYYY-MM-DD` →
+    // temporal-log fires regardless of vec leg. Exercises the
+    // primary report shape end-to-end under --no-vec.
+    let env = TestEnv::new("cluster_temporal");
+    let mut ids: Vec<String> = Vec::new();
+    for i in 0..4 {
+        let body = format!("log entry {i}");
+        let id = extract_id_first_line(&env.run_ok(&[
+            "add",
+            &body,
+            "--type",
+            "fact",
+            "--tags",
+            "logs,trial",
+        ]));
+        let slug = format!("trial-failure-2026-05-{:02}", i + 1);
+        env.run_ok(&["slug", "set", &slug, &id]);
+        ids.push(id);
+    }
+
+    let out = env.run_ok(&["cluster", "--tag", "logs", "--no-vec", "--threshold", "0.3"]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+
+    let clusters = report["clusters"].as_array().expect("clusters array");
+    assert!(!clusters.is_empty(), "expected ≥1 cluster: {out}");
+
+    // Find the temporal-log cluster.
+    let temporal = clusters
+        .iter()
+        .find(|c| {
+            c["patterns"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p == "temporal-log")
+        })
+        .expect("temporal-log cluster missing");
+    assert_eq!(temporal["members"].as_array().unwrap().len(), 4);
+    assert!(
+        temporal["suggested_action"]
+            .as_str()
+            .unwrap()
+            .contains("roll up"),
+        "suggested_action mismatch: {temporal}"
+    );
+
+    // Schema contract: every emitted cluster carries at least one
+    // pattern + a suggested action.
+    for c in clusters {
+        let pats = c["patterns"].as_array().unwrap();
+        assert!(!pats.is_empty(), "cluster missing patterns: {c}");
+        let action = c["suggested_action"].as_str().unwrap();
+        assert!(!action.is_empty(), "cluster missing suggested_action: {c}");
+    }
+
+    // summary.by_pattern counts sum to total pattern labels across clusters.
+    let by_pattern = report["summary"]["by_pattern"].as_object().unwrap();
+    let pattern_sum: usize = by_pattern
+        .values()
+        .map(|v| v.as_u64().unwrap() as usize)
+        .sum();
+    let label_sum: usize = clusters
+        .iter()
+        .map(|c| c["patterns"].as_array().unwrap().len())
+        .sum();
+    assert_eq!(pattern_sum, label_sum, "by_pattern sum mismatch: {out}");
+}
+
+#[test]
+fn test_cluster_requires_scope() {
+    // Bare `simaris cluster` (no --tag / --type / --all) must fail.
+    let env = TestEnv::new("cluster_no_scope");
+    let output = env.run(&["cluster"]);
+    assert!(
+        !output.status.success(),
+        "bare cluster should fail without scope"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("scope"),
+        "error should mention scope hint: {stderr}"
+    );
+}
+
+#[test]
+fn test_cluster_empty_scope_returns_empty_report() {
+    // Scoped tag matches nothing → empty cluster list, valid report.
+    let env = TestEnv::new("cluster_empty");
+    let out = env.run_ok(&["cluster", "--tag", "nonexistent-xyz", "--no-vec"]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(report["summary"]["total_units"].as_u64().unwrap(), 0);
+    assert_eq!(report["summary"]["cluster_count"].as_u64().unwrap(), 0);
+    assert!(report["clusters"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn test_cluster_min_cluster_size_drops_pairs() {
+    // 2-member cluster + min_cluster_size=3 → cluster dropped.
+    let env = TestEnv::new("cluster_minsize");
+    env.run_ok(&["add", "a", "--type", "fact", "--tags", "duo,share"]);
+    env.run_ok(&["add", "b", "--type", "fact", "--tags", "duo,share"]);
+
+    let out = env.run_ok(&[
+        "cluster",
+        "--tag",
+        "duo",
+        "--no-vec",
+        "--threshold",
+        "0.3",
+        "--min-cluster-size",
+        "3",
+    ]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    // With min-cluster-size 3, the 2-member component is dropped. The two
+    // units are now singletons; classify_singleton may keep them as
+    // orphan (no part_of / related_to) — and these test units have no
+    // outbound links, so 'orphan' fires. Make the assertion specific:
+    // EITHER no clusters, OR all clusters have size 1 and are orphan.
+    for c in report["clusters"].as_array().unwrap() {
+        let size = c["members"].as_array().unwrap().len();
+        if size > 1 {
+            panic!("multi-member cluster smaller than min-cluster-size 3 leaked: {c}");
+        }
+    }
+}
+
+#[test]
+fn test_cluster_orphan_singleton_surfaces() {
+    // Single live unit, no outbound part_of / related_to → orphan label.
+    let env = TestEnv::new("cluster_orphan");
+    let id = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "lone unit",
+        "--type",
+        "fact",
+        "--tags",
+        "solo",
+    ]));
+
+    let out = env.run_ok(&["cluster", "--tag", "solo", "--no-vec"]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let clusters = report["clusters"].as_array().unwrap();
+    let orphan = clusters.iter().find(|c| {
+        c["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["id"] == id)
+            && c["patterns"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p == "orphan")
+    });
+    assert!(
+        orphan.is_some(),
+        "expected orphan cluster for lone unit: {out}"
+    );
+}
+
+#[test]
+fn test_cluster_type_filter_narrows_scope() {
+    // `--type` composes with `--tag`: only matching-type units land in
+    // the candidate set.
+    let env = TestEnv::new("cluster_typefilter");
+    env.run_ok(&["add", "f1", "--type", "fact", "--tags", "scope,a"]);
+    env.run_ok(&["add", "f2", "--type", "fact", "--tags", "scope,a"]);
+    env.run_ok(&["add", "i1", "--type", "idea", "--tags", "scope,a"]);
+    env.run_ok(&["add", "i2", "--type", "idea", "--tags", "scope,a"]);
+
+    let out = env.run_ok(&[
+        "cluster",
+        "--tag",
+        "scope",
+        "--type",
+        "fact",
+        "--no-vec",
+        "--threshold",
+        "0.3",
+    ]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    // total_units in the report reflects the filtered candidate set.
+    assert_eq!(report["summary"]["total_units"].as_u64().unwrap(), 2);
+    for c in report["clusters"].as_array().unwrap() {
+        for m in c["members"].as_array().unwrap() {
+            assert_eq!(m["type"].as_str().unwrap(), "fact");
+        }
+    }
+}
+
+#[test]
+fn test_cluster_split_oversized_shared_tag_bleed() {
+    // Reproduces the shared-tag bleed scenario that motivated task
+    // vnll: every unit carries the bleed tag (`bleed`), and two
+    // sub-themes (`sub-a` / `sub-b`) within it. Cross-theme edges
+    // exist via the shared `bleed` tag but score below the split
+    // cutoff, while within-theme edges (both tags shared) clear it.
+    //
+    // With --max-cluster-size set, the parent component is split into
+    // its two sub-themes. Each sub-cluster gets `split_from` = the
+    // parent cluster_id; the parent itself is replaced.
+    let env = TestEnv::new("cluster_split_oversized");
+
+    // 5 units per sub-theme — each carries 'bleed' + its sub-tag, and
+    // a date-stamped slug so temporal-log fires (gives every cluster
+    // a pattern to emit under --no-vec, where vec_sim is always 0).
+    let mut sub_a_ids: Vec<String> = Vec::new();
+    let mut sub_b_ids: Vec<String> = Vec::new();
+    for i in 0..5 {
+        let body = format!("a entry {i}");
+        let id = extract_id_first_line(&env.run_ok(&[
+            "add",
+            &body,
+            "--type",
+            "fact",
+            "--tags",
+            "bleed,sub-a",
+        ]));
+        let slug = format!("theme-a-2026-05-{:02}", i + 1);
+        env.run_ok(&["slug", "set", &slug, &id]);
+        sub_a_ids.push(id);
+    }
+    for i in 0..5 {
+        let body = format!("b entry {i}");
+        let id = extract_id_first_line(&env.run_ok(&[
+            "add",
+            &body,
+            "--type",
+            "fact",
+            "--tags",
+            "bleed,sub-b",
+        ]));
+        let slug = format!("theme-b-2026-05-{:02}", i + 1);
+        env.run_ok(&["slug", "set", &slug, &id]);
+        sub_b_ids.push(id);
+    }
+
+    let out = env.run_ok(&[
+        "cluster",
+        "--tag",
+        "bleed",
+        "--no-vec",
+        "--threshold",
+        "0.15", // low enough to keep cross-theme bridge edges
+        "--max-similar",
+        "20", // wide enough to materialize every pair
+        "--max-cluster-size",
+        "6", // 10-member parent triggers split
+        "--split-threshold",
+        "0.25", // cross-theme edges (~0.2) drop; within-theme (~0.4) keep
+    ]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let clusters = report["clusters"].as_array().expect("clusters array");
+
+    // Exactly two sub-clusters survive — one per sub-theme.
+    let split_clusters: Vec<&serde_json::Value> = clusters
+        .iter()
+        .filter(|c| c.get("split_from").is_some())
+        .collect();
+    assert_eq!(
+        split_clusters.len(),
+        2,
+        "expected 2 split sub-clusters, got {}: {out}",
+        split_clusters.len()
+    );
+
+    // Every split cluster carries the same parent id.
+    let parent_id = split_clusters[0]["split_from"].as_str().unwrap();
+    for c in &split_clusters {
+        assert_eq!(c["split_from"].as_str().unwrap(), parent_id);
+    }
+
+    // Sub-themes are clean: every member's id sits in either sub_a or
+    // sub_b — no cross-contamination across sub-clusters.
+    let sub_a_set: std::collections::HashSet<&str> = sub_a_ids.iter().map(|s| s.as_str()).collect();
+    let sub_b_set: std::collections::HashSet<&str> = sub_b_ids.iter().map(|s| s.as_str()).collect();
+    for c in &split_clusters {
+        let members = c["members"].as_array().unwrap();
+        let member_ids: Vec<&str> = members.iter().map(|m| m["id"].as_str().unwrap()).collect();
+        let in_a = member_ids
+            .iter()
+            .filter(|id| sub_a_set.contains(*id))
+            .count();
+        let in_b = member_ids
+            .iter()
+            .filter(|id| sub_b_set.contains(*id))
+            .count();
+        assert!(
+            (in_a == member_ids.len()) ^ (in_b == member_ids.len()),
+            "sub-cluster mixes themes: in_a={in_a} in_b={in_b} members={member_ids:?}"
+        );
+        assert_eq!(
+            member_ids.len(),
+            5,
+            "expected each sub-theme to keep all 5 members"
+        );
+    }
+
+    // No parent (un-split) cluster should still be in the output — it
+    // was replaced by its sub-clusters.
+    for c in clusters {
+        if c.get("split_from").is_none() {
+            // Any standalone clusters must NOT contain bleed-tagged
+            // members (the parent was replaced).
+            let cid = c["cluster_id"].as_str().unwrap();
+            assert_ne!(
+                cid, parent_id,
+                "parent cluster {parent_id} should be replaced by splits, got: {c}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_cluster_split_disabled_with_zero_max_size() {
+    // --max-cluster-size 0 disables the split post-pass — oversized
+    // clusters survive intact. Same fixture as the split test but with
+    // the cap turned off.
+    let env = TestEnv::new("cluster_split_disabled");
+
+    for i in 0..5 {
+        let body = format!("a entry {i}");
+        let id = extract_id_first_line(&env.run_ok(&[
+            "add",
+            &body,
+            "--type",
+            "fact",
+            "--tags",
+            "bleed2,sub-a",
+        ]));
+        let slug = format!("theme-aa-2026-05-{:02}", i + 1);
+        env.run_ok(&["slug", "set", &slug, &id]);
+    }
+    for i in 0..5 {
+        let body = format!("b entry {i}");
+        let id = extract_id_first_line(&env.run_ok(&[
+            "add",
+            &body,
+            "--type",
+            "fact",
+            "--tags",
+            "bleed2,sub-b",
+        ]));
+        let slug = format!("theme-bb-2026-05-{:02}", i + 1);
+        env.run_ok(&["slug", "set", &slug, &id]);
+    }
+
+    let out = env.run_ok(&[
+        "cluster",
+        "--tag",
+        "bleed2",
+        "--no-vec",
+        "--threshold",
+        "0.15",
+        "--max-similar",
+        "20",
+        "--max-cluster-size",
+        "0", // disable split
+        "--split-threshold",
+        "0.25",
+    ]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let clusters = report["clusters"].as_array().unwrap();
+
+    // No split_from anywhere — and at least one 10-member parent
+    // cluster survived.
+    for c in clusters {
+        assert!(
+            c.get("split_from").is_none(),
+            "split should be disabled: {c}"
+        );
+    }
+    let max_size = clusters
+        .iter()
+        .map(|c| c["members"].as_array().unwrap().len())
+        .max()
+        .unwrap_or(0);
+    assert_eq!(max_size, 10, "expected one 10-member cluster, got {out}");
+}
+
+#[test]
+fn test_cluster_members_carry_body_length_and_tag_count() {
+    // Task rmps — `cluster --json` members must expose `body_length`
+    // (bytes) and `tag_count` so consolidation pilots can compute
+    // byte-reduction deltas without a per-member `simaris show --json`
+    // round-trip. Built on the temporal-log shape (date-stamped slugs)
+    // because that pattern fires reliably under --no-vec.
+    let env = TestEnv::new("cluster_body_length");
+    // 3 units with date-stamped slugs + matching tags → temporal-log
+    // cluster surfaces under --no-vec. Bodies + tag counts vary so the
+    // new fields are observably distinct per member.
+    let bodies = [
+        "alpha body",
+        "beta body content",
+        "gamma body content longer",
+    ];
+    let tag_specs = ["rmps,one", "rmps,one,two", "rmps,one,two,three"];
+    let mut expected: std::collections::HashMap<String, (usize, usize)> =
+        std::collections::HashMap::new();
+    for i in 0..3 {
+        let id = extract_id_first_line(&env.run_ok(&[
+            "add",
+            bodies[i],
+            "--type",
+            "fact",
+            "--tags",
+            tag_specs[i],
+        ]));
+        let slug = format!("rmps-log-2026-05-{:02}", i + 1);
+        env.run_ok(&["slug", "set", &slug, &id]);
+        let tag_count = tag_specs[i].split(',').count();
+        expected.insert(id, (bodies[i].len(), tag_count));
+    }
+
+    let out = env.run_ok(&["cluster", "--tag", "rmps", "--no-vec", "--threshold", "0.3"]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let clusters = report["clusters"].as_array().expect("clusters array");
+    assert!(!clusters.is_empty(), "expected ≥1 cluster: {out}");
+
+    let mut seen = std::collections::HashSet::new();
+    for c in clusters {
+        for m in c["members"].as_array().unwrap() {
+            let id = m["id"].as_str().unwrap();
+            let bl = m["body_length"]
+                .as_u64()
+                .unwrap_or_else(|| panic!("body_length missing on member: {m}"))
+                as usize;
+            let tc = m["tag_count"]
+                .as_u64()
+                .unwrap_or_else(|| panic!("tag_count missing on member: {m}"))
+                as usize;
+            if let Some(&(exp_bl, exp_tc)) = expected.get(id) {
+                assert_eq!(bl, exp_bl, "body_length mismatch for {id}");
+                assert_eq!(tc, exp_tc, "tag_count mismatch for {id}");
+                seen.insert(id.to_string());
+            }
+        }
+    }
+    assert_eq!(seen.len(), 3, "expected all 3 units in clusters: {out}");
 }

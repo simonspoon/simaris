@@ -1,4 +1,5 @@
 mod ask;
+mod cluster;
 mod context;
 mod db;
 mod display;
@@ -8,6 +9,7 @@ mod frontmatter;
 mod hybrid;
 mod lint;
 mod rewrite;
+mod similar;
 mod size_guard;
 
 use anyhow::Result;
@@ -230,6 +232,99 @@ enum Command {
         /// scores are NOT normalised across the two paths.
         #[arg(long)]
         scores: bool,
+    },
+
+    /// Find units similar to a given unit — near-duplicate detection primitive.
+    ///
+    /// Scoring: `α·vec_sim + β·tag_overlap + γ·type_match`. Defaults
+    /// `α=0.6, β=0.3, γ=0.1`, tunable via `SIMARIS_SIM_ALPHA` /
+    /// `SIMARIS_SIM_BETA` / `SIMARIS_SIM_GAMMA`. `vec_sim` is rank-derived
+    /// proximity from the lance KNN leg (top-50 candidate pool); skipped
+    /// when `--no-vec` is set or the lance dataset is absent.
+    ///
+    /// Output: always JSON — array of `{id, type, slug, vec_sim,
+    /// tag_overlap, type_match, score, content_preview}`. Source unit is
+    /// always excluded; archived units are hidden unless `--include-archived`.
+    Similar {
+        /// Source unit (uuid or slug)
+        id: String,
+
+        /// Top-K results to return (clamped to 50 — see CANDIDATE_POOL).
+        #[arg(long, default_value_t = 10, value_name = "N")]
+        top_k: usize,
+
+        /// Drop results scoring strictly below this threshold (before top-K).
+        #[arg(long, default_value_t = 0.0, value_name = "F")]
+        threshold: f64,
+
+        /// Disable the vector leg — rank by tag overlap + type match only.
+        #[arg(long)]
+        no_vec: bool,
+
+        /// Include archived units (default: hidden, mirrors `simaris search`).
+        #[arg(long)]
+        include_archived: bool,
+    },
+
+    /// Store-wide redundancy survey — clusters near-duplicates and
+    /// flags low-signal / orphan units.
+    ///
+    /// Walks a candidate set (one tag, one type, or every live unit with
+    /// `--all`), runs `simaris similar` per-unit, and union-finds the
+    /// resulting graph. Each cluster is annotated with one or more
+    /// patterns (`near-dup`, `temporal-log`, `type-confused`,
+    /// `low-signal`, `orphan`) and a `suggested_action`.
+    ///
+    /// Output is always JSON — the consolidation UI (Task 3) consumes
+    /// this primitive. Read-only; safe to invoke freely.
+    Cluster {
+        /// Restrict the candidate set to units carrying this tag.
+        #[arg(long, value_name = "TAG", conflicts_with = "all")]
+        tag: Option<String>,
+
+        /// Scan every live unit. Mutually exclusive with `--tag`.
+        #[arg(long)]
+        all: bool,
+
+        /// Restrict by unit type (composes with `--tag` / `--all`).
+        #[arg(long = "type", value_name = "Y")]
+        unit_type: Option<String>,
+
+        /// Drop multi-member clusters smaller than this. Singletons can
+        /// still surface under the low-signal / orphan patterns.
+        #[arg(long, default_value_t = 2, value_name = "N")]
+        min_cluster_size: usize,
+
+        /// Per-unit top-K neighbour fetch — bounds total work to O(N·K).
+        #[arg(long, default_value_t = 5, value_name = "N")]
+        max_similar: usize,
+
+        /// Edge cutoff — drop neighbour relationships scoring strictly
+        /// below this value before union-find.
+        #[arg(long, default_value_t = 0.3, value_name = "F")]
+        threshold: f64,
+
+        /// Disable the vector leg in the underlying similar primitive
+        /// — rank by tag overlap + type match only. Recommended for
+        /// `--all` on large stores until vector backfill is cheap.
+        #[arg(long)]
+        no_vec: bool,
+
+        /// Maximum members a cluster can carry before the split
+        /// post-pass activates. Oversized clusters are re-clustered
+        /// using `--split-threshold` as a tighter edge cutoff to break
+        /// shared-tag bleed (e.g. one 22-member `claude-code` cluster
+        /// splitting into 3 sub-themes). `0` disables splitting.
+        #[arg(long, default_value_t = cluster::DEFAULT_MAX_CLUSTER_SIZE, value_name = "N")]
+        max_cluster_size: usize,
+
+        /// Edge-score cutoff used by the split post-pass — within an
+        /// oversized cluster, only edges scoring ≥ this value survive.
+        /// Bridge edges driven by tag overlap alone fall below;
+        /// genuine near-dup edges survive. Defaults to 0.55 — sits
+        /// well above the main `--threshold` (0.3).
+        #[arg(long, default_value_t = cluster::DEFAULT_SPLIT_THRESHOLD, value_name = "F")]
+        split_threshold: f64,
     },
 
     /// Vec subsystem operations (lance + tantivy + bge-m3 hybrid retrieval).
@@ -1435,11 +1530,11 @@ fn main() -> Result<()> {
                 })
                 .unwrap_or_default();
             // S1 bridge: refuse exact-match dup in 7d window before any write.
-            if refuse_dup {
-                if let Some(existing_id) = db::find_recent_duplicate(&conn, &final_content, 7)? {
-                    display::print_refused_dup(&existing_id, cli.json);
-                    std::process::exit(2);
-                }
+            if refuse_dup
+                && let Some(existing_id) = db::find_recent_duplicate(&conn, &final_content, 7)?
+            {
+                display::print_refused_dup(&existing_id, cli.json);
+                std::process::exit(2);
             }
             size_guard::check_size(&final_content, &tag_vec, flow, force)?;
             let id = if tags.is_some() {
@@ -1621,6 +1716,56 @@ fn main() -> Result<()> {
                 let slug_map = build_slug_map(&conn, &units)?;
                 display::print_units_lean(&units, &slug_map, cli.json);
             }
+        }
+        Command::Similar {
+            id,
+            top_k,
+            threshold,
+            no_vec,
+            include_archived,
+        } => {
+            let resolved = db::resolve_id(&conn, &id)?;
+            let hits =
+                similar::similar(&conn, &resolved, top_k, threshold, no_vec, include_archived)?;
+            similar::print(&hits);
+        }
+        Command::Cluster {
+            tag,
+            all,
+            unit_type,
+            min_cluster_size,
+            max_similar,
+            threshold,
+            no_vec,
+            max_cluster_size,
+            split_threshold,
+        } => {
+            // Either a scope filter or `--all` must be supplied — bare
+            // `simaris cluster` is ambiguous and likely a mistake.
+            if !all && tag.is_none() && unit_type.is_none() {
+                anyhow::bail!("specify a scope: --tag <T>, --type <Y>, or --all");
+            }
+            let params = cluster::ClusterParams {
+                tag,
+                unit_type,
+                all,
+                min_cluster_size,
+                max_similar,
+                threshold,
+                no_vec,
+                max_cluster_size,
+                split_threshold,
+            };
+            let start = std::time::Instant::now();
+            let report = cluster::cluster(&conn, &params)?;
+            let elapsed = start.elapsed();
+            if elapsed.as_secs() > 60 {
+                eprintln!(
+                    "warning: cluster scan took {:.1}s (>60s threshold) — consider --no-vec or a narrower scope",
+                    elapsed.as_secs_f64()
+                );
+            }
+            cluster::print(&report);
         }
         Command::Dream { sub } => match sub {
             DreamSubcommand::Decay {
@@ -1925,8 +2070,7 @@ fn main() -> Result<()> {
                         println!("{}", serde_json::to_string(&items)?);
                     }
                     "counts" => {
-                        let counts =
-                            db::scan_triage_counts(&conn, stale_days, effective_warn)?;
+                        let counts = db::scan_triage_counts(&conn, stale_days, effective_warn)?;
                         println!("{}", serde_json::to_string(&counts)?);
                     }
                     other => anyhow::bail!("unknown --cat value: {other}"),

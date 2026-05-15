@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -19,6 +20,10 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             suffix: linux-arm64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            suffix: darwin-amd64
+            zigbuild: true
           - target: aarch64-apple-darwin
             os: macos-latest
             suffix: darwin-arm64
@@ -50,10 +55,23 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
+      # zig's linker resolves the AVX-512 symbol that Apple ld rejects when
+      # cross-compiling x86_64 from the arm64 macos-latest runner (lance-index v0.39).
+      - name: Install zig + cargo-zigbuild
+        if: matrix.zigbuild
+        run: |
+          brew install zig
+          cargo install --locked cargo-zigbuild
+
       - name: Build workspace
         env:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
-        run: cargo build --release --workspace --target ${{ matrix.target }}
+        run: |
+          if [ "${{ matrix.zigbuild }}" = "true" ]; then
+            cargo zigbuild --release --workspace --target ${{ matrix.target }}
+          else
+            cargo build --release --workspace --target ${{ matrix.target }}
+          fi
 
       - name: Stage binaries
         run: |
@@ -70,6 +88,7 @@ jobs:
 
   release:
     needs: build
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
 
     steps:
@@ -92,6 +111,7 @@ jobs:
 
   update-tap:
     needs: release
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Update Homebrew formula

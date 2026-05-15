@@ -25,6 +25,33 @@ use simaris_vec::embed::{BGE_M3_MODEL, OLLAMA_DEFAULT_URL, OllamaEmbedClient};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+/// Run a lance KNN over the `embedding` column and return the ordered id
+/// ranking (0-indexed). Used by `simaris similar` to score candidates by
+/// rank-based vector proximity. Honours the same `candidate_pool` budget
+/// as the hybrid path so the pool size stays consistent across callers.
+///
+/// Tantivy is NOT touched — similarity is a vector-leg-only primitive; the
+/// caller scores tag overlap + type match separately.
+pub fn run_vec_knn(
+    cfg: &HybridConfig,
+    query_embedding: &[f32],
+    candidate_pool: usize,
+) -> Result<Vec<String>> {
+    // Re-use hybrid_search_detailed by passing an empty query string —
+    // tantivy will short-circuit (sanitize_tantivy_query → empty → skip),
+    // leaving us with the lance ranking alone. Keeps the lance scan code
+    // path in exactly one place.
+    let detail = run_async(hybrid_search_detailed(
+        &cfg.lance_dir,
+        &cfg.tantivy_dir,
+        "",
+        query_embedding,
+        candidate_pool,
+        candidate_pool,
+    ))?;
+    Ok(detail.vec_ranking)
+}
+
 /// Per-result score envelope. Returned alongside `Unit` rows when the caller
 /// asks for hybrid retrieval with score data (m11 `simaris search --scores`).
 ///
@@ -50,6 +77,16 @@ pub struct HybridConfig {
 }
 
 impl HybridConfig {
+    /// Embed an arbitrary text via ollama using the resolved model + URL.
+    /// Shared helper for callers that need a query embedding from the same
+    /// model the lance dataset was backfilled with (m12 `simaris similar`).
+    pub fn embed_text(&self, text: &str) -> Result<Vec<f32>> {
+        let client = OllamaEmbedClient::new(&self.ollama_url, &self.model);
+        client
+            .embed(text)
+            .with_context(|| format!("embed text via ollama ({})", self.model))
+    }
+
     /// Discover paths from env + defaults. Returns `Ok(Some(cfg))` when both
     /// `units.lance` and `tantivy/` are present. Returns `Ok(None)` when the
     /// dataset is absent (caller falls back). Errors only on environmental
@@ -106,10 +143,7 @@ pub fn run_hybrid(
     type_filter: Option<&str>,
     include_archived: bool,
 ) -> Result<Vec<Unit>> {
-    let client = OllamaEmbedClient::new(&cfg.ollama_url, &cfg.model);
-    let qvec = client
-        .embed(query)
-        .with_context(|| format!("embed query via ollama ({})", cfg.model))?;
+    let qvec = cfg.embed_text(query)?;
 
     // Over-request from fusion so we still have `top_n` after type/archived
     // filters drop ineligible rows.
@@ -158,10 +192,7 @@ pub fn run_hybrid_scored(
     type_filter: Option<&str>,
     include_archived: bool,
 ) -> Result<Vec<HybridHit>> {
-    let client = OllamaEmbedClient::new(&cfg.ollama_url, &cfg.model);
-    let qvec = client
-        .embed(query)
-        .with_context(|| format!("embed query via ollama ({})", cfg.model))?;
+    let qvec = cfg.embed_text(query)?;
 
     let candidate_pool = 50usize;
     let fused_pool = (top_n * 5).max(50);

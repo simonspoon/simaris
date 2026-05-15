@@ -185,16 +185,13 @@ fn check_procedure_no_trigger(units: &[Unit]) -> Vec<Finding> {
 /// non-empty value, or a body line starting with `trigger:` / `trigger::`.
 fn has_trigger(content: &str) -> bool {
     let parsed = frontmatter::parse(content);
-    if let Some(fm) = &parsed.frontmatter {
-        if let Some(map) = fm.as_mapping() {
-            if let Some(v) = map.get(serde_yml::Value::String("trigger".to_string())) {
-                if let Some(s) = v.as_str() {
-                    if !s.trim().is_empty() {
-                        return true;
-                    }
-                }
-            }
-        }
+    if let Some(fm) = &parsed.frontmatter
+        && let Some(map) = fm.as_mapping()
+        && let Some(v) = map.get(serde_yml::Value::String("trigger".to_string()))
+        && let Some(s) = v.as_str()
+        && !s.trim().is_empty()
+    {
+        return true;
     }
     for line in parsed.body.lines() {
         let trimmed = line.trim_start();
@@ -598,11 +595,12 @@ fn rollup_by_aspect(
                 if !visited.insert(n.clone()) {
                     continue;
                 }
-                if let Some(u) = unit_by_id.get(n.as_str()) {
-                    if u.unit_type == "aspect" && slug_by_id.contains_key(n) {
-                        owner_cache.insert(id.to_string(), Some(n.clone()));
-                        return Some(n.clone());
-                    }
+                if let Some(u) = unit_by_id.get(n.as_str())
+                    && u.unit_type == "aspect"
+                    && slug_by_id.contains_key(n)
+                {
+                    owner_cache.insert(id.to_string(), Some(n.clone()));
+                    return Some(n.clone());
                 }
                 if let Some(ps) = parents.get(n) {
                     for p in ps {
