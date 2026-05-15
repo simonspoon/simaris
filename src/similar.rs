@@ -36,6 +36,7 @@ use crate::hybrid;
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
 /// Hard cap on the lance candidate pool. Top-K is clamped to this on the CLI
@@ -152,6 +153,22 @@ pub fn content_overlap_jaccard(a: &str, b: &str) -> f64 {
     }
 }
 
+/// Hex-encoded SHA-256 of an embed-input string. Used as the cache key
+/// component that captures "the text we'd send to ollama". A pure
+/// content edit changes the hash, silently invalidating the cached
+/// embedding (db::get_cached_embedding returns None on mismatch).
+fn sha256_hex(text: &str) -> String {
+    let mut h = Sha256::new();
+    h.update(text.as_bytes());
+    let bytes = h.finalize();
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        use std::fmt::Write;
+        write!(&mut out, "{b:02x}").expect("write to String");
+    }
+    out
+}
+
 /// First-line preview (≤80 chars). Mirrors `display::short_id`-style
 /// rendering used elsewhere — gives the caller a human anchor without
 /// pulling the full body.
@@ -203,7 +220,38 @@ pub fn similar(
                 // embedding so the query vector represents prose + scope, not
                 // bookkeeping fields like `refs:` (task ppjs).
                 let qtext = simaris_vec::embed::embed_input(&source.content);
-                let qvec = cfg.embed_text(&qtext)?;
+                // Cache hit avoids the per-call ollama round trip — the
+                // dominant cost in repeated cluster scans (task amfk).
+                // Key on (unit_id, sha256(qtext), model): a content edit
+                // OR a model change invalidates silently.
+                let qhash = sha256_hex(&qtext);
+                let qvec = match db::get_cached_embedding(
+                    conn,
+                    &source.id,
+                    &qhash,
+                    &cfg.model,
+                )? {
+                    Some(v) => v,
+                    None => {
+                        let v = cfg.embed_text(&qtext)?;
+                        // Best-effort cache fill — log + continue if the
+                        // write fails (don't punish the caller for a sidecar
+                        // hiccup).
+                        if let Err(e) = db::set_cached_embedding(
+                            conn,
+                            &source.id,
+                            &qhash,
+                            &cfg.model,
+                            &v,
+                        ) {
+                            eprintln!(
+                                "warning: embedding_cache write failed for {}: {e}",
+                                source.id
+                            );
+                        }
+                        v
+                    }
+                };
                 let ranking = hybrid::run_vec_knn(&cfg, &qvec, CANDIDATE_POOL)?;
                 for (rank, cid) in ranking.iter().enumerate() {
                     let sim = 1.0 - (rank as f64 / CANDIDATE_POOL as f64);
