@@ -1,5 +1,0 @@
-# Windows defaults to a 1 MB main-thread stack, which overflows on startup
-# when lance/datafusion's static initializers run. Bump to 8 MB to match
-# Unix defaults so the binary launches and integration tests can fork it.
-[target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "link-arg=/STACK:8388608"]
