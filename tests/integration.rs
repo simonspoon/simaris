@@ -4833,3 +4833,67 @@ fn test_cluster_split_disabled_with_zero_max_size() {
         .unwrap_or(0);
     assert_eq!(max_size, 10, "expected one 10-member cluster, got {out}");
 }
+
+#[test]
+fn test_cluster_members_carry_body_length_and_tag_count() {
+    // Task rmps — `cluster --json` members must expose `body_length`
+    // (bytes) and `tag_count` so consolidation pilots can compute
+    // byte-reduction deltas without a per-member `simaris show --json`
+    // round-trip. Built on the temporal-log shape (date-stamped slugs)
+    // because that pattern fires reliably under --no-vec.
+    let env = TestEnv::new("cluster_body_length");
+    // 3 units with date-stamped slugs + matching tags → temporal-log
+    // cluster surfaces under --no-vec. Bodies + tag counts vary so the
+    // new fields are observably distinct per member.
+    let bodies = ["alpha body", "beta body content", "gamma body content longer"];
+    let tag_specs = ["rmps,one", "rmps,one,two", "rmps,one,two,three"];
+    let mut expected: std::collections::HashMap<String, (usize, usize)> =
+        std::collections::HashMap::new();
+    for i in 0..3 {
+        let id = extract_id_first_line(&env.run_ok(&[
+            "add",
+            bodies[i],
+            "--type",
+            "fact",
+            "--tags",
+            tag_specs[i],
+        ]));
+        let slug = format!("rmps-log-2026-05-{:02}", i + 1);
+        env.run_ok(&["slug", "set", &slug, &id]);
+        let tag_count = tag_specs[i].split(',').count();
+        expected.insert(id, (bodies[i].len(), tag_count));
+    }
+
+    let out = env.run_ok(&[
+        "cluster",
+        "--tag",
+        "rmps",
+        "--no-vec",
+        "--threshold",
+        "0.3",
+    ]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let clusters = report["clusters"].as_array().expect("clusters array");
+    assert!(!clusters.is_empty(), "expected ≥1 cluster: {out}");
+
+    let mut seen = std::collections::HashSet::new();
+    for c in clusters {
+        for m in c["members"].as_array().unwrap() {
+            let id = m["id"].as_str().unwrap();
+            let bl = m["body_length"]
+                .as_u64()
+                .unwrap_or_else(|| panic!("body_length missing on member: {m}"))
+                as usize;
+            let tc = m["tag_count"]
+                .as_u64()
+                .unwrap_or_else(|| panic!("tag_count missing on member: {m}"))
+                as usize;
+            if let Some(&(exp_bl, exp_tc)) = expected.get(id) {
+                assert_eq!(bl, exp_bl, "body_length mismatch for {id}");
+                assert_eq!(tc, exp_tc, "tag_count mismatch for {id}");
+                seen.insert(id.to_string());
+            }
+        }
+    }
+    assert_eq!(seen.len(), 3, "expected all 3 units in clusters: {out}");
+}

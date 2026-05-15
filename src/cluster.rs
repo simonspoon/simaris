@@ -36,13 +36,23 @@
 //!       "avg_vec_sim":      <f64>,
 //!       "members": [
 //!         { "id": "<uuid>", "slug": "<slug-or-null>", "type": "<type>",
-//!           "age_days": <i64>, "marks": <i64>, "content_preview": "<≤80 chars>" },
+//!           "age_days": <i64>, "marks": <i64>, "content_preview": "<≤80 chars>",
+//!           "body_length": <usize>, "tag_count": <usize> },
 //!         ...
 //!       ]
 //!     }
 //!   ]
 //! }
 //! ```
+//!
+//! `body_length` is the byte length of the member's `content` (matches the
+//! size_guard thresholds and `len(simaris show <id> --json .unit.content)`
+//! when content is ASCII; for multi-byte UTF-8 the byte count is the
+//! authoritative measure since that's what `SIMARIS_WARN_BYTES` /
+//! `SIMARIS_HARD_BYTES` gate on). `tag_count` is the number of tags on
+//! the unit. Both are lifted once at `load_signals` time so downstream
+//! tooling (pilot byte-reduction deltas, consolidation UI) doesn't have
+//! to round-trip via `simaris show --json` per member.
 //!
 //! Performance: per-unit KNN (bounded `--max-similar`) keeps the work
 //! O(N·K), not O(N²). On the production store the embedding pass
@@ -142,6 +152,16 @@ pub struct ClusterMember {
     pub age_days: i64,
     pub marks: i64,
     pub content_preview: String,
+    /// Byte length of the unit's `content` field. Mirrors what the
+    /// `size_guard` thresholds (`SIMARIS_WARN_BYTES` /
+    /// `SIMARIS_HARD_BYTES`) check at `add`/`edit` time, so callers can
+    /// compute byte-reduction deltas without a per-member `simaris show
+    /// --json` round-trip (task rmps — pilot smqs gap).
+    pub body_length: usize,
+    /// Tag count on the unit (length of the `tags` array). Useful for
+    /// the consolidation UI to spot tag-bloat candidates and for pilots
+    /// to track tag deltas alongside body deltas.
+    pub tag_count: usize,
 }
 
 /// One cluster (component) in the output report.
@@ -190,6 +210,8 @@ struct UnitSignals {
     age_days: i64,
     marks: i64,
     content_preview: String,
+    body_length: usize,
+    tag_count: usize,
     inbound_links: usize,
     has_part_of_or_related_out: bool,
 }
@@ -327,6 +349,8 @@ fn load_signals(conn: &Connection, units: &[db::Unit]) -> Result<HashMap<String,
                 age_days,
                 marks,
                 content_preview: content_preview(&u.content),
+                body_length: u.content.len(),
+                tag_count: u.tags.len(),
                 inbound_links,
                 has_part_of_or_related_out,
             },
@@ -671,6 +695,8 @@ fn member_from(s: &UnitSignals) -> ClusterMember {
         age_days: s.age_days,
         marks: s.marks,
         content_preview: s.content_preview.clone(),
+        body_length: s.body_length,
+        tag_count: s.tag_count,
     }
 }
 
@@ -933,6 +959,8 @@ mod tests {
             age_days,
             marks: 0,
             content_preview: String::new(),
+            body_length: 0,
+            tag_count: 0,
             inbound_links: 0,
             has_part_of_or_related_out: false,
         }
