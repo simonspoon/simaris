@@ -133,7 +133,11 @@ pub fn similar(
     } else {
         match hybrid::HybridConfig::discover()? {
             Some(cfg) => {
-                let qvec = cfg.embed_text(&source.content)?;
+                // Mirror the backfill pre-processing: strip frontmatter before
+                // embedding so the query vector represents prose + scope, not
+                // bookkeeping fields like `refs:` (task ppjs).
+                let qtext = simaris_vec::embed::embed_input(&source.content);
+                let qvec = cfg.embed_text(&qtext)?;
                 let ranking = hybrid::run_vec_knn(&cfg, &qvec, CANDIDATE_POOL)?;
                 for (rank, cid) in ranking.iter().enumerate() {
                     let sim = 1.0 - (rank as f64 / CANDIDATE_POOL as f64);

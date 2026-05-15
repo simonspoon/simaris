@@ -34,7 +34,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::embed::OllamaEmbedClient;
+use crate::embed::{OllamaEmbedClient, embed_input};
 use crate::migrate;
 
 /// Result of a backfill run. Stable for sitrep emission.
@@ -158,16 +158,22 @@ pub async fn run(
     for (batch_idx, chunk) in missing.chunks(batch_size).enumerate() {
         let mut vectors: Vec<Vec<f32>> = Vec::with_capacity(chunk.len());
         for u in chunk {
+            // Strip frontmatter before embedding — keeps `refs:` UUID lists
+            // (and other bookkeeping fields) out of the embedding signal so
+            // unrelated units sharing a refs payload don't false-cluster
+            // (task ppjs / pilot smqs sk-C2). `scope:` is preserved by
+            // `embed_input` as a useful one-line domain summary.
+            let body_for_embed = embed_input(&u.content);
             // M9.5: when contextual retrieval is enabled and the unit has a
             // generated preamble, prepend it before truncation. The lance
             // dataset still stores the original content (callers want the
             // raw atom for display), but the *embedding* is contextualized
             // to lift retrieval recall on tightly-clustered atoms.
-            let embed_input: String = match (reembed_with_context, &u.preamble) {
-                (true, Some(p)) if !p.is_empty() => format!("{p}\n\n{}", u.content),
-                _ => u.content.clone(),
+            let prepared: String = match (reembed_with_context, &u.preamble) {
+                (true, Some(p)) if !p.is_empty() => format!("{p}\n\n{body_for_embed}"),
+                _ => body_for_embed,
             };
-            let truncated: String = embed_input.chars().take(max_chars).collect();
+            let truncated: String = prepared.chars().take(max_chars).collect();
             let v = client.embed(&truncated).with_context(|| {
                 format!(
                     "ollama embed failed (model={model}, unit={}); see `simaris vec backfill --help` for the direct-write Python fallback",
