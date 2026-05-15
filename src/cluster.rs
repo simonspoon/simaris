@@ -5,7 +5,12 @@
 //! them into connected components. Each component is annotated with one
 //! or more *patterns* describing why the cluster is interesting:
 //!
-//! - `near-dup` — average edge `vec_sim` ≥ 0.85 (likely true duplicates).
+//! - `near-dup` — average edge `vec_sim` ≥ 0.85 AND average edge
+//!   `content_overlap` ≥ 0.30 (likely true duplicates).
+//! - `related` — average edge `vec_sim` ≥ 0.85 but `content_overlap`
+//!   below 0.30 (vector model fired on shared vocabulary; bodies cover
+//!   distinct subjects). Surfaced separately so the consolidation UI
+//!   doesn't push the user toward archiving complementary units.
 //! - `temporal-log` — ≥ 50% of members carry a slug shaped `-YYYY-MM-DD`
 //!   (incremental log entries that should roll up).
 //! - `type-confused` — cluster spans ≥ 2 unit types and avg `vec_sim`
@@ -53,6 +58,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 /// Default thresholds — exposed as constants so tests + downstream tools
 /// can reference them by name rather than re-deriving the numbers.
 pub const NEAR_DUP_AVG_VEC_SIM: f64 = 0.85;
+/// Minimum average edge `content_overlap` (word-token Jaccard, frontmatter
+/// stripped) to confirm a `near-dup` cluster. Below this the cluster is
+/// labelled `related` instead — bge-m3 cosine fires on shared vocabulary
+/// even when the actual content is distinct (task pbhm pilot finding:
+/// allowedTools full-path vs compound-command lessons hit vec_sim 0.97
+/// but only 0.17 word-token overlap). Default is conservative — any
+/// overlap above ~30% is enough to keep the near-dup label.
+pub const NEAR_DUP_MIN_CONTENT_OVERLAP: f64 = 0.30;
 pub const TYPE_CONFUSED_AVG_VEC_SIM: f64 = 0.75;
 pub const LOW_SIGNAL_MIN_AGE_DAYS: i64 = 90;
 pub const TEMPORAL_LOG_MIN_FRACTION: f64 = 0.5;
@@ -139,6 +152,11 @@ pub struct Cluster {
     pub suggested_action: String,
     pub reason: String,
     pub avg_vec_sim: f64,
+    /// Average edge `content_overlap` (word-token Jaccard, frontmatter
+    /// stripped). Mirrors `avg_vec_sim` but for the literal-text leg —
+    /// drives the `near-dup` vs `related` split (task pbhm). 0.0 when
+    /// the component carries no internal edges (singleton).
+    pub avg_content_overlap: f64,
     pub members: Vec<ClusterMember>,
     /// When the split post-pass carved this cluster out of a larger
     /// parent (shared-tag bleed survey), records the parent cluster id.
@@ -322,10 +340,13 @@ fn load_signals(conn: &Connection, units: &[db::Unit]) -> Result<HashMap<String,
 /// `score` is the full weighted similarity (`α·vec_sim + β·tag_overlap
 /// + γ·type_match`); the split post-pass uses it to drop bridge edges
 /// driven by tag overlap alone within an oversized component.
+/// `content_overlap` is the literal word-token Jaccard between bodies —
+/// fed into the near-dup gate independently of `vec_sim` (task pbhm).
 struct Edge {
     from: usize,
     to: usize,
     vec_sim: f64,
+    content_overlap: f64,
     score: f64,
 }
 
@@ -363,6 +384,7 @@ fn build_edges(
                     from: i,
                     to: j,
                     vec_sim: h.vec_sim,
+                    content_overlap: h.content_overlap,
                     score: h.score,
                 });
             }
@@ -372,13 +394,27 @@ fn build_edges(
 }
 
 /// Pattern classification for a multi-member cluster. Returns the
-/// ordered pattern label list (priority order: near-dup, temporal-log,
-/// type-confused). A cluster may carry multiple labels.
-fn classify_cluster(members: &[&UnitSignals], avg_vec_sim: f64) -> Vec<String> {
+/// ordered pattern label list (priority order: near-dup OR related,
+/// temporal-log, type-confused). A cluster may carry multiple labels.
+///
+/// `near-dup` requires BOTH a high vector-sim cluster AND high literal
+/// content overlap. When vector sim is high but content overlap is low,
+/// the cluster is downgraded to `related` — the bodies cover distinct
+/// subjects even though the embedding model treats them as neighbours
+/// (task pbhm).
+fn classify_cluster(
+    members: &[&UnitSignals],
+    avg_vec_sim: f64,
+    avg_content_overlap: f64,
+) -> Vec<String> {
     let mut patterns: Vec<String> = Vec::new();
 
     if avg_vec_sim >= NEAR_DUP_AVG_VEC_SIM {
-        patterns.push("near-dup".into());
+        if avg_content_overlap >= NEAR_DUP_MIN_CONTENT_OVERLAP {
+            patterns.push("near-dup".into());
+        } else {
+            patterns.push("related".into());
+        }
     }
 
     // temporal-log — count slugs that contain a `-YYYY-MM-DD` window.
@@ -416,15 +452,21 @@ fn classify_singleton(m: &UnitSignals) -> Vec<String> {
 }
 
 /// Pick a single dominant pattern to drive `suggested_action`. Order
-/// matters: near-dup > temporal-log > type-confused > low-signal >
-/// orphan (multi-member first, then singleton categories).
+/// matters: near-dup > related > temporal-log > type-confused >
+/// low-signal > orphan (multi-member first, then singleton categories).
 fn suggested_action_for(patterns: &[String]) -> (String, String) {
     for p in patterns {
         match p.as_str() {
             "near-dup" => {
                 return (
                     "archive non-canonical, supersedes-link canonical".into(),
-                    "near-dup: average vec_sim ≥ 0.85 across cluster edges".into(),
+                    "near-dup: avg vec_sim ≥ 0.85 AND avg content_overlap ≥ 0.30".into(),
+                );
+            }
+            "related" => {
+                return (
+                    "link related_to (do NOT merge)".into(),
+                    "related: avg vec_sim ≥ 0.85 but avg content_overlap < 0.30 — distinct content under shared vocabulary".into(),
                 );
             }
             "temporal-log" => {
@@ -578,12 +620,13 @@ fn sort_members(mut members: Vec<&UnitSignals>) -> Vec<&UnitSignals> {
 fn build_cluster(
     members: &[&UnitSignals],
     avg_vec_sim: f64,
+    avg_content_overlap: f64,
     split_from: Option<String>,
     p: &ClusterParams,
     by_pattern: &mut BTreeMap<String, usize>,
 ) -> Option<Cluster> {
     let mut patterns = if members.len() >= p.min_cluster_size {
-        classify_cluster(members, avg_vec_sim)
+        classify_cluster(members, avg_vec_sim, avg_content_overlap)
     } else if members.len() == 1 {
         classify_singleton(members[0])
     } else {
@@ -613,6 +656,7 @@ fn build_cluster(
         suggested_action,
         reason,
         avg_vec_sim,
+        avg_content_overlap,
         members: members.iter().map(|m| member_from(m)).collect(),
         split_from,
     })
@@ -662,12 +706,14 @@ pub fn cluster(conn: &Connection, p: &ClusterParams) -> Result<ClusterReport> {
     for i in 0..units.len() {
         components.entry(uf.find(i)).or_default().push(i);
     }
-    let mut edge_sums: HashMap<usize, (f64, usize)> = HashMap::new();
+    // Per-component edge accumulators: (vec_sim_sum, content_overlap_sum, count).
+    let mut edge_sums: HashMap<usize, (f64, f64, usize)> = HashMap::new();
     for e in &edges {
         let r = uf.find(e.from);
-        let entry = edge_sums.entry(r).or_insert((0.0, 0));
+        let entry = edge_sums.entry(r).or_insert((0.0, 0.0, 0));
         entry.0 += e.vec_sim;
-        entry.1 += 1;
+        entry.1 += e.content_overlap;
+        entry.2 += 1;
     }
 
     // Emit clusters. Multi-member clusters below min_cluster_size are
@@ -688,10 +734,16 @@ pub fn cluster(conn: &Connection, p: &ClusterParams) -> Result<ClusterReport> {
                 .collect(),
         );
 
-        let avg_vec_sim = edge_sums
+        let (avg_vec_sim, avg_content_overlap) = edge_sums
             .get(root)
-            .map(|(sum, n)| if *n == 0 { 0.0 } else { sum / *n as f64 })
-            .unwrap_or(0.0);
+            .map(|(vsum, csum, n)| {
+                if *n == 0 {
+                    (0.0, 0.0)
+                } else {
+                    (vsum / *n as f64, csum / *n as f64)
+                }
+            })
+            .unwrap_or((0.0, 0.0));
 
         // Oversized component? Run the split post-pass. If it produces
         // ≥2 sub-components, emit each as its own cluster tagged
@@ -738,24 +790,31 @@ pub fn cluster(conn: &Connection, p: &ClusterParams) -> Result<ClusterReport> {
                             .collect(),
                     );
 
-                    // Recompute avg_vec_sim across edges internal to this
-                    // sub-component, using the local index set as the
-                    // membership filter. Only edges with both endpoints
-                    // in the local set contribute.
+                    // Recompute avg_vec_sim + avg_content_overlap across
+                    // edges internal to this sub-component, using the
+                    // local index set as the membership filter. Only
+                    // edges with both endpoints in the local set
+                    // contribute.
                     let local_set: BTreeSet<usize> =
                         sub_local_indices.iter().map(|&li| idxs[li]).collect();
-                    let (sub_sum, sub_n) = edges.iter().fold((0.0, 0usize), |(s, n), e| {
-                        if local_set.contains(&e.from) && local_set.contains(&e.to) {
-                            (s + e.vec_sim, n + 1)
-                        } else {
-                            (s, n)
-                        }
-                    });
-                    let sub_avg = if sub_n == 0 { 0.0 } else { sub_sum / sub_n as f64 };
+                    let (sub_vsum, sub_csum, sub_n) =
+                        edges.iter().fold((0.0, 0.0, 0usize), |(vs, cs, n), e| {
+                            if local_set.contains(&e.from) && local_set.contains(&e.to) {
+                                (vs + e.vec_sim, cs + e.content_overlap, n + 1)
+                            } else {
+                                (vs, cs, n)
+                            }
+                        });
+                    let (sub_avg_vec, sub_avg_content) = if sub_n == 0 {
+                        (0.0, 0.0)
+                    } else {
+                        (sub_vsum / sub_n as f64, sub_csum / sub_n as f64)
+                    };
 
                     if let Some(c) = build_cluster(
                         &sub_members,
-                        sub_avg,
+                        sub_avg_vec,
+                        sub_avg_content,
                         Some(parent_cluster_id.clone()),
                         p,
                         &mut by_pattern,
@@ -770,7 +829,14 @@ pub fn cluster(conn: &Connection, p: &ClusterParams) -> Result<ClusterReport> {
             // preserved — the user can re-run with a tighter threshold.
         }
 
-        if let Some(c) = build_cluster(&members, avg_vec_sim, None, p, &mut by_pattern) {
+        if let Some(c) = build_cluster(
+            &members,
+            avg_vec_sim,
+            avg_content_overlap,
+            None,
+            p,
+            &mut by_pattern,
+        ) {
             clusters.push(c);
         }
     }
@@ -877,27 +943,50 @@ mod tests {
         let a = mock_signal("a", "fact", None, 1);
         let b = mock_signal("b", "fact", None, 1);
         let members = [&a, &b];
-        // avg_vec_sim 0.85 exactly → near-dup.
-        let pats = classify_cluster(&members, 0.85);
+        // avg_vec_sim 0.85 + content overlap 0.30 exactly → near-dup.
+        let pats = classify_cluster(&members, 0.85, 0.30);
         assert!(pats.iter().any(|p| p == "near-dup"), "got {pats:?}");
-        // 0.84 — strictly below cutoff → no near-dup.
-        let pats = classify_cluster(&members, 0.84);
+        // 0.84 vec — strictly below cutoff → neither near-dup nor related.
+        let pats = classify_cluster(&members, 0.84, 0.50);
         assert!(!pats.iter().any(|p| p == "near-dup"), "got {pats:?}");
+        assert!(!pats.iter().any(|p| p == "related"), "got {pats:?}");
+    }
+
+    #[test]
+    fn classify_cluster_demotes_to_related_when_content_overlap_low() {
+        // High vec_sim but low content_overlap → 'related', not 'near-dup'.
+        // Mirrors task pbhm pilot: vec_sim 0.97 with word-jaccard 0.17.
+        let a = mock_signal("a", "lesson", None, 1);
+        let b = mock_signal("b", "lesson", None, 1);
+        let pats = classify_cluster(&[&a, &b], 0.97, 0.17);
+        assert!(
+            pats.iter().any(|p| p == "related"),
+            "expected 'related', got {pats:?}",
+        );
+        assert!(
+            !pats.iter().any(|p| p == "near-dup"),
+            "must NOT carry near-dup, got {pats:?}",
+        );
+
+        // Same vec but content overlap exactly at the cutoff → near-dup.
+        let pats = classify_cluster(&[&a, &b], 0.97, NEAR_DUP_MIN_CONTENT_OVERLAP);
+        assert!(pats.iter().any(|p| p == "near-dup"), "got {pats:?}");
+        assert!(!pats.iter().any(|p| p == "related"), "got {pats:?}");
     }
 
     #[test]
     fn classify_cluster_type_confused_requires_two_types() {
         let a = mock_signal("a", "fact", None, 1);
         let b = mock_signal("b", "fact", None, 1);
-        let pats = classify_cluster(&[&a, &b], 0.80);
+        let pats = classify_cluster(&[&a, &b], 0.80, 0.0);
         assert!(!pats.iter().any(|p| p == "type-confused"));
 
         let c = mock_signal("c", "idea", None, 1);
-        let pats = classify_cluster(&[&a, &c], 0.80);
+        let pats = classify_cluster(&[&a, &c], 0.80, 0.0);
         assert!(pats.iter().any(|p| p == "type-confused"), "got {pats:?}");
 
         // Below avg_vec_sim 0.75 → no type-confused even with mixed types.
-        let pats = classify_cluster(&[&a, &c], 0.70);
+        let pats = classify_cluster(&[&a, &c], 0.70, 0.0);
         assert!(!pats.iter().any(|p| p == "type-confused"));
     }
 
@@ -907,18 +996,19 @@ mod tests {
         let b = mock_signal("b", "fact", Some("log-2026-05-02"), 1);
         let c = mock_signal("c", "fact", Some("plain-slug"), 1);
         // 2/3 dated → ≥0.5 → temporal-log.
-        let pats = classify_cluster(&[&a, &b, &c], 0.0);
+        let pats = classify_cluster(&[&a, &b, &c], 0.0, 0.0);
         assert!(pats.iter().any(|p| p == "temporal-log"), "got {pats:?}");
 
         // 1/3 dated → < 0.5 → no temporal-log.
-        let pats = classify_cluster(&[&a, &c, &c], 0.0);
+        let pats = classify_cluster(&[&a, &c, &c], 0.0, 0.0);
         assert!(!pats.iter().any(|p| p == "temporal-log"));
     }
 
     /// Helper: build edges with synthetic scores. `(from, to, score)`.
     /// vec_sim is set equal to score for simplicity — the split pass
     /// only reads `score`, not `vec_sim`, so this keeps the test focus
-    /// on the cutoff behavior.
+    /// on the cutoff behavior. content_overlap defaults to 0.0; the
+    /// split pass doesn't read it.
     fn mock_edges(specs: &[(usize, usize, f64)]) -> Vec<Edge> {
         specs
             .iter()
@@ -926,6 +1016,7 @@ mod tests {
                 from,
                 to,
                 vec_sim: score,
+                content_overlap: 0.0,
                 score,
             })
             .collect()

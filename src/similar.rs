@@ -12,6 +12,14 @@
 //!   when either side has no tags.
 //! - `type_match` — 1.0 if both units share the same type, else 0.0.
 //!
+//! Plus a passive signal carried alongside `score` (not summed in):
+//!
+//! - `content_overlap` — Jaccard index over word-token sets after stripping
+//!   leading YAML frontmatter (case-folded, tokens len≥3). Used by `cluster`
+//!   to demote a `near-dup` cluster to `related` when vec sim is high but
+//!   the literal text doesn't actually overlap (task pbhm). Computed per-hit
+//!   so downstream tools can apply their own threshold.
+//!
 //! Final score: `α·vec_sim + β·tag_overlap + γ·type_match`. Default weights
 //! are `α=0.6, β=0.3, γ=0.1`. Each is overridable via env:
 //! `SIMARIS_SIM_ALPHA`, `SIMARIS_SIM_BETA`, `SIMARIS_SIM_GAMMA`. Weights are
@@ -51,6 +59,10 @@ pub struct SimilarHit {
     pub vec_sim: f64,
     pub tag_overlap: f64,
     pub type_match: f64,
+    /// Word-token Jaccard between source and candidate bodies (frontmatter
+    /// stripped). Carried alongside `score` but NOT folded into it — the
+    /// cluster command uses it as a separate near-dup gate (task pbhm).
+    pub content_overlap: f64,
     pub score: f64,
     pub content_preview: String,
 }
@@ -83,6 +95,60 @@ fn tag_jaccard(a: &[String], b: &[String]) -> f64 {
         0.0
     } else {
         inter as f64 / union as f64
+    }
+}
+
+/// Strip a leading YAML frontmatter block delimited by `---` … `---`.
+/// Returns the input unchanged when no leading `---` is present.
+fn strip_leading_frontmatter(s: &str) -> &str {
+    let s = s.trim_start_matches('\u{feff}');
+    if let Some(rest) = s.strip_prefix("---") {
+        // Look for the closing `---` on its own line.
+        if let Some(end) = rest.find("\n---") {
+            let after = &rest[end + 4..];
+            // Skip the trailing newline after the closing ---, if any.
+            return after.strip_prefix('\n').unwrap_or(after);
+        }
+    }
+    s
+}
+
+/// Lower-case word-token set for content-overlap Jaccard. Tokens are
+/// `[a-z0-9_]+` runs of length ≥ 3 — drops single letters, punctuation,
+/// and tiny stop-words that would inflate the union without signal.
+fn content_tokens(s: &str) -> HashSet<String> {
+    let body = strip_leading_frontmatter(s).to_ascii_lowercase();
+    let mut out: HashSet<String> = HashSet::new();
+    let mut current = String::new();
+    for ch in body.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            current.push(ch);
+        } else {
+            if current.chars().count() >= 3 {
+                out.insert(std::mem::take(&mut current));
+            } else {
+                current.clear();
+            }
+        }
+    }
+    if current.chars().count() >= 3 {
+        out.insert(current);
+    }
+    out
+}
+
+/// Jaccard index over word-token sets after frontmatter strip + lowercase.
+/// Both empty → 0.0 (no signal). Used by cluster as a near-dup gate
+/// independent of `vec_sim` — high cosine on bge-m3 can fire on units that
+/// share vocabulary but cover distinct subjects (task pbhm pilot finding).
+pub fn content_overlap_jaccard(a: &str, b: &str) -> f64 {
+    let ta = content_tokens(a);
+    let tb = content_tokens(b);
+    let union = ta.union(&tb).count();
+    if union == 0 {
+        0.0
+    } else {
+        ta.intersection(&tb).count() as f64 / union as f64
     }
 }
 
@@ -187,6 +253,7 @@ pub fn similar(
             continue;
         }
 
+        let content_overlap = content_overlap_jaccard(&source.content, &unit.content);
         let slug = db::get_slugs_for_unit(conn, &unit.id)
             .ok()
             .and_then(|v| v.into_iter().next());
@@ -197,6 +264,7 @@ pub fn similar(
             vec_sim,
             tag_overlap,
             type_match,
+            content_overlap,
             score,
             content_preview: content_preview(&unit.content),
         });
@@ -270,6 +338,7 @@ pub(crate) fn similar_with_ranking(
         if score < threshold {
             continue;
         }
+        let content_overlap = content_overlap_jaccard(&source.content, &unit.content);
         let slug = db::get_slugs_for_unit(conn, &unit.id)
             .ok()
             .and_then(|v| v.into_iter().next());
@@ -280,6 +349,7 @@ pub(crate) fn similar_with_ranking(
             vec_sim,
             tag_overlap,
             type_match,
+            content_overlap,
             score,
             content_preview: content_preview(&unit.content),
         });
@@ -338,6 +408,61 @@ mod tests {
     fn content_preview_first_line_only() {
         let body = "first line\nsecond line";
         assert_eq!(content_preview(body), "first line");
+    }
+
+    #[test]
+    fn strip_leading_frontmatter_block() {
+        let body = "---\ntype: lesson\nrefs:\n---\nactual body here";
+        assert_eq!(strip_leading_frontmatter(body), "actual body here");
+    }
+
+    #[test]
+    fn strip_leading_frontmatter_passthrough() {
+        let body = "no frontmatter here";
+        assert_eq!(strip_leading_frontmatter(body), body);
+    }
+
+    #[test]
+    fn content_tokens_filter_short_and_lowercase() {
+        let toks = content_tokens("Foo Bar a IS the_KEY x");
+        // a/is/the/x dropped (len<3), foo/bar/the_key kept (case-folded).
+        assert!(toks.contains("foo"));
+        assert!(toks.contains("bar"));
+        assert!(toks.contains("the_key"));
+        assert!(!toks.contains("is"));
+        assert!(!toks.contains("a"));
+        assert!(!toks.contains("x"));
+    }
+
+    #[test]
+    fn content_overlap_jaccard_basic() {
+        // Symmetric, identical bodies → 1.0 (after frontmatter strip).
+        let a = "alpha beta gamma";
+        let b = "alpha beta gamma";
+        assert!((content_overlap_jaccard(a, b) - 1.0).abs() < 1e-9);
+
+        // Disjoint vocab → 0.0.
+        let a = "alpha beta gamma";
+        let b = "delta epsilon zeta";
+        assert!(content_overlap_jaccard(a, b) < 1e-9);
+    }
+
+    #[test]
+    fn content_overlap_jaccard_handles_frontmatter() {
+        // Frontmatter words must NOT contribute. With strip, the two bodies
+        // share only "actual body here" → overlap is high.
+        let a = "---\nshared:\n  - tag-a\n  - tag-b\n---\nactual body here";
+        let b = "---\nshared:\n  - tag-c\n  - tag-d\n---\nactual body here";
+        let j = content_overlap_jaccard(a, b);
+        assert!(j > 0.99, "expected near-1.0, got {j}");
+    }
+
+    #[test]
+    fn content_overlap_jaccard_empty_both() {
+        // Two frontmatter-only bodies leave empty token sets → 0.0.
+        let a = "---\n---\n";
+        let b = "---\n---\n";
+        assert_eq!(content_overlap_jaccard(a, b), 0.0);
     }
 
     // Env-touching weight tests run sequentially under a single #[test] so
