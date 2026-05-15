@@ -23,6 +23,7 @@ Binaries: `./target/release/simaris`, `./target/release/simaris-server`
 | `SIMARIS_ENV=dev` | Isolate to dev database | `~/.simaris/dev/sanctuary.db` |
 | `SIMARIS_WARN_BYTES` | Warn threshold — body above this triggers a stderr warning citing `split-ruleset` at `add`/`edit` time | `2048` (placeholder; Story 4 calibrates) |
 | `SIMARIS_HARD_BYTES` | Hard threshold — body above this rejects the write (exit non-zero) unless `--force` or tag `flow`/`--flow` | `8192` (placeholder; Story 4 calibrates) |
+| (none) | Tag policy: see `src/tag_guard.rs` — `add`/`edit` normalize tags (lowercase, trim, dedupe), reject noise patterns (`task:*`, `phase-*`, `gate-N`, `priority-N`, `story-N`, single-char, `v\d+`, hex UUID fragments) unless `--force`, and warn on novel tags. Cites slug `tag-taxonomy`. | n/a |
 | `SIMARIS_BIN` | Path to `simaris` binary used by `simaris-server` | `simaris` (resolved via `PATH`) |
 
 Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
@@ -43,6 +44,7 @@ Data lives at `~/.simaris/sanctuary.db`. Backups go to `~/.simaris/backups/`.
 | `src/rewrite.rs` | `$EDITOR` rewrite flow with type-aware skeletons |
 | `src/frontmatter.rs` | YAML frontmatter parse/write + `refs:` graph materialization |
 | `src/size_guard.rs` | Write-time body-size thresholds + warnings (`add`/`edit`) |
+| `src/tag_guard.rs` | Tag normalization (lowercase/dedupe) + noise-pattern rejection + novel-tag suggestion (`add`/`edit`/`clone`) |
 | `tests/integration.rs` | End-to-end CLI tests via subprocess |
 | `simaris-server/src/main.rs` | ~115 | Axum HTTP entry, route mount, embedded `web/` static serve via rust_embed |
 | `simaris-server/src/cli.rs` | 56 | Shells out to `simaris` CLI for all data ops |
