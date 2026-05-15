@@ -4648,3 +4648,188 @@ fn test_cluster_type_filter_narrows_scope() {
         }
     }
 }
+
+#[test]
+fn test_cluster_split_oversized_shared_tag_bleed() {
+    // Reproduces the shared-tag bleed scenario that motivated task
+    // vnll: every unit carries the bleed tag (`bleed`), and two
+    // sub-themes (`sub-a` / `sub-b`) within it. Cross-theme edges
+    // exist via the shared `bleed` tag but score below the split
+    // cutoff, while within-theme edges (both tags shared) clear it.
+    //
+    // With --max-cluster-size set, the parent component is split into
+    // its two sub-themes. Each sub-cluster gets `split_from` = the
+    // parent cluster_id; the parent itself is replaced.
+    let env = TestEnv::new("cluster_split_oversized");
+
+    // 5 units per sub-theme — each carries 'bleed' + its sub-tag, and
+    // a date-stamped slug so temporal-log fires (gives every cluster
+    // a pattern to emit under --no-vec, where vec_sim is always 0).
+    let mut sub_a_ids: Vec<String> = Vec::new();
+    let mut sub_b_ids: Vec<String> = Vec::new();
+    for i in 0..5 {
+        let body = format!("a entry {i}");
+        let id = extract_id_first_line(&env.run_ok(&[
+            "add",
+            &body,
+            "--type",
+            "fact",
+            "--tags",
+            "bleed,sub-a",
+        ]));
+        let slug = format!("theme-a-2026-05-{:02}", i + 1);
+        env.run_ok(&["slug", "set", &slug, &id]);
+        sub_a_ids.push(id);
+    }
+    for i in 0..5 {
+        let body = format!("b entry {i}");
+        let id = extract_id_first_line(&env.run_ok(&[
+            "add",
+            &body,
+            "--type",
+            "fact",
+            "--tags",
+            "bleed,sub-b",
+        ]));
+        let slug = format!("theme-b-2026-05-{:02}", i + 1);
+        env.run_ok(&["slug", "set", &slug, &id]);
+        sub_b_ids.push(id);
+    }
+
+    let out = env.run_ok(&[
+        "cluster",
+        "--tag",
+        "bleed",
+        "--no-vec",
+        "--threshold",
+        "0.15", // low enough to keep cross-theme bridge edges
+        "--max-similar",
+        "20", // wide enough to materialize every pair
+        "--max-cluster-size",
+        "6", // 10-member parent triggers split
+        "--split-threshold",
+        "0.25", // cross-theme edges (~0.2) drop; within-theme (~0.4) keep
+    ]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let clusters = report["clusters"].as_array().expect("clusters array");
+
+    // Exactly two sub-clusters survive — one per sub-theme.
+    let split_clusters: Vec<&serde_json::Value> = clusters
+        .iter()
+        .filter(|c| c.get("split_from").is_some())
+        .collect();
+    assert_eq!(
+        split_clusters.len(),
+        2,
+        "expected 2 split sub-clusters, got {}: {out}",
+        split_clusters.len()
+    );
+
+    // Every split cluster carries the same parent id.
+    let parent_id = split_clusters[0]["split_from"].as_str().unwrap();
+    for c in &split_clusters {
+        assert_eq!(c["split_from"].as_str().unwrap(), parent_id);
+    }
+
+    // Sub-themes are clean: every member's id sits in either sub_a or
+    // sub_b — no cross-contamination across sub-clusters.
+    let sub_a_set: std::collections::HashSet<&str> =
+        sub_a_ids.iter().map(|s| s.as_str()).collect();
+    let sub_b_set: std::collections::HashSet<&str> =
+        sub_b_ids.iter().map(|s| s.as_str()).collect();
+    for c in &split_clusters {
+        let members = c["members"].as_array().unwrap();
+        let member_ids: Vec<&str> = members
+            .iter()
+            .map(|m| m["id"].as_str().unwrap())
+            .collect();
+        let in_a = member_ids.iter().filter(|id| sub_a_set.contains(*id)).count();
+        let in_b = member_ids.iter().filter(|id| sub_b_set.contains(*id)).count();
+        assert!(
+            (in_a == member_ids.len()) ^ (in_b == member_ids.len()),
+            "sub-cluster mixes themes: in_a={in_a} in_b={in_b} members={member_ids:?}"
+        );
+        assert_eq!(member_ids.len(), 5, "expected each sub-theme to keep all 5 members");
+    }
+
+    // No parent (un-split) cluster should still be in the output — it
+    // was replaced by its sub-clusters.
+    for c in clusters {
+        if c.get("split_from").is_none() {
+            // Any standalone clusters must NOT contain bleed-tagged
+            // members (the parent was replaced).
+            let cid = c["cluster_id"].as_str().unwrap();
+            assert_ne!(
+                cid, parent_id,
+                "parent cluster {parent_id} should be replaced by splits, got: {c}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_cluster_split_disabled_with_zero_max_size() {
+    // --max-cluster-size 0 disables the split post-pass — oversized
+    // clusters survive intact. Same fixture as the split test but with
+    // the cap turned off.
+    let env = TestEnv::new("cluster_split_disabled");
+
+    for i in 0..5 {
+        let body = format!("a entry {i}");
+        let id = extract_id_first_line(&env.run_ok(&[
+            "add",
+            &body,
+            "--type",
+            "fact",
+            "--tags",
+            "bleed2,sub-a",
+        ]));
+        let slug = format!("theme-aa-2026-05-{:02}", i + 1);
+        env.run_ok(&["slug", "set", &slug, &id]);
+    }
+    for i in 0..5 {
+        let body = format!("b entry {i}");
+        let id = extract_id_first_line(&env.run_ok(&[
+            "add",
+            &body,
+            "--type",
+            "fact",
+            "--tags",
+            "bleed2,sub-b",
+        ]));
+        let slug = format!("theme-bb-2026-05-{:02}", i + 1);
+        env.run_ok(&["slug", "set", &slug, &id]);
+    }
+
+    let out = env.run_ok(&[
+        "cluster",
+        "--tag",
+        "bleed2",
+        "--no-vec",
+        "--threshold",
+        "0.15",
+        "--max-similar",
+        "20",
+        "--max-cluster-size",
+        "0", // disable split
+        "--split-threshold",
+        "0.25",
+    ]);
+    let report: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let clusters = report["clusters"].as_array().unwrap();
+
+    // No split_from anywhere — and at least one 10-member parent
+    // cluster survived.
+    for c in clusters {
+        assert!(
+            c.get("split_from").is_none(),
+            "split should be disabled: {c}"
+        );
+    }
+    let max_size = clusters
+        .iter()
+        .map(|c| c["members"].as_array().unwrap().len())
+        .max()
+        .unwrap_or(0);
+    assert_eq!(max_size, 10, "expected one 10-member cluster, got {out}");
+}

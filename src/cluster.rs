@@ -57,6 +57,15 @@ pub const TYPE_CONFUSED_AVG_VEC_SIM: f64 = 0.75;
 pub const LOW_SIGNAL_MIN_AGE_DAYS: i64 = 90;
 pub const TEMPORAL_LOG_MIN_FRACTION: f64 = 0.5;
 
+/// Default cluster size cap before the split post-pass activates.
+/// Clusters with more members than this get re-clustered using
+/// `split_threshold` as a tighter edge cutoff to break shared-tag bleed.
+/// `0` disables the post-pass entirely.
+pub const DEFAULT_MAX_CLUSTER_SIZE: usize = 10;
+/// Default edge-score cutoff used by the split post-pass. Sits well
+/// above the main `threshold` (0.3) so only solid edges survive.
+pub const DEFAULT_SPLIT_THRESHOLD: f64 = 0.55;
+
 /// CLI-facing parameters. Mirrors the clap struct shape so main.rs can
 /// pass-through without re-shuffling.
 #[derive(Debug, Clone)]
@@ -81,6 +90,16 @@ pub struct ClusterParams {
     pub threshold: f64,
     /// Pass-through to `similar()` — disables the embedding leg.
     pub no_vec: bool,
+    /// Maximum members a cluster can carry before the split post-pass
+    /// activates. `0` disables splitting. Defaults to
+    /// `DEFAULT_MAX_CLUSTER_SIZE` (10) — large enough to leave genuine
+    /// near-dup clusters alone, small enough to catch shared-tag bleed.
+    pub max_cluster_size: usize,
+    /// Edge-score cutoff used by the split post-pass — within an
+    /// oversized cluster, only edges scoring ≥ this value are kept when
+    /// re-running union-find on its members. Bridge edges driven by tag
+    /// overlap alone fall below; genuine near-dup edges survive.
+    pub split_threshold: f64,
 }
 
 impl Default for ClusterParams {
@@ -93,6 +112,8 @@ impl Default for ClusterParams {
             max_similar: 5,
             threshold: 0.3,
             no_vec: false,
+            max_cluster_size: DEFAULT_MAX_CLUSTER_SIZE,
+            split_threshold: DEFAULT_SPLIT_THRESHOLD,
         }
     }
 }
@@ -119,6 +140,11 @@ pub struct Cluster {
     pub reason: String,
     pub avg_vec_sim: f64,
     pub members: Vec<ClusterMember>,
+    /// When the split post-pass carved this cluster out of a larger
+    /// parent (shared-tag bleed survey), records the parent cluster id.
+    /// `None` for clusters that emerged unsplit from the main union-find.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub split_from: Option<String>,
 }
 
 /// Top-level summary block — used by the consolidation UI to render
@@ -293,10 +319,14 @@ fn load_signals(conn: &Connection, units: &[db::Unit]) -> Result<HashMap<String,
 
 /// One edge in the similarity graph — directed (`from` ran similar()
 /// and `to` is one of its hits) but treated as undirected by union-find.
+/// `score` is the full weighted similarity (`α·vec_sim + β·tag_overlap
+/// + γ·type_match`); the split post-pass uses it to drop bridge edges
+/// driven by tag overlap alone within an oversized component.
 struct Edge {
     from: usize,
     to: usize,
     vec_sim: f64,
+    score: f64,
 }
 
 /// Walk every candidate, run `similar::similar`, keep hits inside the
@@ -333,6 +363,7 @@ fn build_edges(
                     from: i,
                     to: j,
                     vec_sim: h.vec_sim,
+                    score: h.score,
                 });
             }
         }
@@ -420,6 +451,12 @@ fn suggested_action_for(patterns: &[String]) -> (String, String) {
                     "orphan: no outbound part_of / related_to edges".into(),
                 );
             }
+            "shared-tag-bleed" => {
+                return (
+                    "review sub-cluster (manual)".into(),
+                    "shared-tag-bleed: surfaced by split post-pass; no other pattern fired".into(),
+                );
+            }
             _ => {}
         }
     }
@@ -431,6 +468,154 @@ fn suggested_action_for(patterns: &[String]) -> (String, String) {
 /// (they do: roots are the smallest index in each component).
 fn cluster_id_for(canonical: &str) -> String {
     canonical.chars().take(8).collect()
+}
+
+/// Split-pass result: list of sub-component member-index groups (within
+/// the original cluster's member slice) that cleared the higher edge
+/// cutoff, plus the count of bleed members that fell out (members with
+/// no surviving high-score edges to any sub-component).
+struct SplitResult {
+    sub_components: Vec<Vec<usize>>,
+    dropped_count: usize,
+}
+
+/// Re-cluster the members of an oversized component using only edges
+/// with `score ≥ split_threshold`. Returns the sub-component groups
+/// (each a list of indices into `member_idxs`) that survived. Members
+/// that end up isolated (no surviving high-score edges) are reported via
+/// `dropped_count` — bleed members from shared-tag union, dropped from
+/// the output.
+fn split_oversized_cluster(
+    member_idxs: &[usize],
+    edges: &[Edge],
+    uf_find_for: &dyn Fn(usize) -> usize,
+    component_root: usize,
+    split_threshold: f64,
+    min_cluster_size: usize,
+) -> SplitResult {
+    // Build a local index: original candidate index -> position within
+    // member_idxs. Sub union-find runs in member-local index space.
+    let mut local: HashMap<usize, usize> = HashMap::with_capacity(member_idxs.len());
+    for (i, &orig) in member_idxs.iter().enumerate() {
+        local.insert(orig, i);
+    }
+
+    let mut sub_uf = UnionFind::new(member_idxs.len());
+    let mut has_high_edge = vec![false; member_idxs.len()];
+    for e in edges {
+        // Only edges within this component, scoring above the cutoff.
+        if uf_find_for(e.from) != component_root || uf_find_for(e.to) != component_root {
+            continue;
+        }
+        if e.score < split_threshold {
+            continue;
+        }
+        if let (Some(&li), Some(&lj)) = (local.get(&e.from), local.get(&e.to)) {
+            sub_uf.union(li, lj);
+            has_high_edge[li] = true;
+            has_high_edge[lj] = true;
+        }
+    }
+
+    // Group local indices by sub-root, but only for members that
+    // actually participated in a surviving edge. Isolated members
+    // (no high-score edge) are the bleed; drop them.
+    let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    let mut dropped_count = 0usize;
+    for (li, &had_edge) in has_high_edge.iter().enumerate() {
+        if !had_edge {
+            dropped_count += 1;
+            continue;
+        }
+        let r = sub_uf.find(li);
+        groups.entry(r).or_default().push(li);
+    }
+
+    // Keep only sub-components that clear min_cluster_size — anything
+    // smaller is a residual bridge fragment, treat as bleed.
+    let mut sub_components: Vec<Vec<usize>> = Vec::new();
+    for (_, g) in groups {
+        if g.len() >= min_cluster_size {
+            sub_components.push(g);
+        } else {
+            dropped_count += g.len();
+        }
+    }
+
+    SplitResult {
+        sub_components,
+        dropped_count,
+    }
+}
+
+/// Stable deterministic order: by slug if present, else by id.
+/// Applied to every cluster (and split sub-cluster) so the canonical
+/// member (used to derive `cluster_id`) and rendered member list are
+/// reproducible across runs.
+fn sort_members(mut members: Vec<&UnitSignals>) -> Vec<&UnitSignals> {
+    members.sort_by(|a, b| {
+        a.slug
+            .as_deref()
+            .unwrap_or("")
+            .cmp(b.slug.as_deref().unwrap_or(""))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    members
+}
+
+/// Build a `Cluster` from member signals + an avg_vec_sim already
+/// computed by the caller. Returns `None` when classify yields no
+/// patterns (multi-member below min_cluster_size, or singleton that
+/// fits neither low-signal nor orphan). On success, updates the
+/// `by_pattern` summary counter. `split_from` is threaded through so
+/// the consumer can tell parent-derived sub-clusters apart.
+///
+/// Sub-clusters that emerged from the split post-pass always emit —
+/// the split itself is the signal of a coherent sub-theme. If
+/// classify yields no patterns (common under `--no-vec` where
+/// `avg_vec_sim` is zero), they're labeled `shared-tag-bleed` so the
+/// schema contract (every cluster carries ≥1 pattern) holds.
+fn build_cluster(
+    members: &[&UnitSignals],
+    avg_vec_sim: f64,
+    split_from: Option<String>,
+    p: &ClusterParams,
+    by_pattern: &mut BTreeMap<String, usize>,
+) -> Option<Cluster> {
+    let mut patterns = if members.len() >= p.min_cluster_size {
+        classify_cluster(members, avg_vec_sim)
+    } else if members.len() == 1 {
+        classify_singleton(members[0])
+    } else {
+        Vec::new()
+    };
+
+    if patterns.is_empty() {
+        if split_from.is_some() {
+            // Split-emerged sub-cluster with no detected pattern under
+            // the default detectors. Tag it so it surfaces in the
+            // output — the bleed-split itself is the signal.
+            patterns.push("shared-tag-bleed".into());
+        } else {
+            return None;
+        }
+    }
+
+    for pat in &patterns {
+        *by_pattern.entry(pat.clone()).or_insert(0) += 1;
+    }
+
+    let (suggested_action, reason) = suggested_action_for(&patterns);
+    let canonical_id = members[0].id.clone();
+    Some(Cluster {
+        cluster_id: cluster_id_for(&canonical_id),
+        patterns,
+        suggested_action,
+        reason,
+        avg_vec_sim,
+        members: members.iter().map(|m| member_from(m)).collect(),
+        split_from,
+    })
 }
 
 /// Build a `ClusterMember` from in-memory signals.
@@ -491,54 +676,103 @@ pub fn cluster(conn: &Connection, p: &ClusterParams) -> Result<ClusterReport> {
     let mut clusters: Vec<Cluster> = Vec::new();
     let mut by_pattern: BTreeMap<String, usize> = BTreeMap::new();
 
+    // Snapshot uf.find() results so the closure passed to the split
+    // pass can resolve roots without borrowing the mutable UnionFind.
+    let roots_for_candidates: Vec<usize> = (0..units.len()).map(|i| uf.find(i)).collect();
+    let root_of = |i: usize| -> usize { roots_for_candidates[i] };
+
     for (root, idxs) in &components {
-        let mut members: Vec<&UnitSignals> = idxs
-            .iter()
-            .filter_map(|&i| signals.get(&units[i].id))
-            .collect();
-        // Stable order: by slug if present, else by id, so output is
-        // deterministic.
-        members.sort_by(|a, b| {
-            a.slug
-                .as_deref()
-                .unwrap_or("")
-                .cmp(b.slug.as_deref().unwrap_or(""))
-                .then_with(|| a.id.cmp(&b.id))
-        });
+        let members: Vec<&UnitSignals> = sort_members(
+            idxs.iter()
+                .filter_map(|&i| signals.get(&units[i].id))
+                .collect(),
+        );
 
         let avg_vec_sim = edge_sums
             .get(root)
             .map(|(sum, n)| if *n == 0 { 0.0 } else { sum / *n as f64 })
             .unwrap_or(0.0);
 
-        let patterns = if members.len() >= p.min_cluster_size {
-            classify_cluster(&members, avg_vec_sim)
-        } else if members.len() == 1 {
-            classify_singleton(members[0])
-        } else {
-            // 2..min_cluster_size — too small to classify, too big to
-            // treat as singleton. Drop.
-            Vec::new()
-        };
+        // Oversized component? Run the split post-pass. If it produces
+        // ≥2 sub-components, emit each as its own cluster tagged
+        // `split_from = <parent cluster_id>` and skip the parent. Bleed
+        // members (no surviving high-score edge) are dropped silently.
+        // Bypass when: split disabled (max_cluster_size=0), under cap,
+        // or singleton component (no edges to split on).
+        if p.max_cluster_size > 0
+            && members.len() > p.max_cluster_size
+            && idxs.len() > 1
+        {
+            let parent_canonical = members[0].id.clone();
+            let parent_cluster_id = cluster_id_for(&parent_canonical);
+            let split = split_oversized_cluster(
+                idxs,
+                &edges,
+                &root_of,
+                *root,
+                p.split_threshold,
+                p.min_cluster_size,
+            );
 
-        if patterns.is_empty() {
-            continue;
+            if split.sub_components.len() >= 2 {
+                if split.dropped_count > 0 {
+                    eprintln!(
+                        "note: split cluster {} ({} members) into {} sub-clusters; dropped {} bleed member(s) below score {}",
+                        parent_cluster_id,
+                        members.len(),
+                        split.sub_components.len(),
+                        split.dropped_count,
+                        p.split_threshold,
+                    );
+                }
+                for sub_local_indices in &split.sub_components {
+                    // sub_local_indices are positions inside `idxs`; map
+                    // back to candidate indices, then to signals.
+                    let sub_members: Vec<&UnitSignals> = sort_members(
+                        sub_local_indices
+                            .iter()
+                            .filter_map(|&li| {
+                                let cand_idx = idxs[li];
+                                signals.get(&units[cand_idx].id)
+                            })
+                            .collect(),
+                    );
+
+                    // Recompute avg_vec_sim across edges internal to this
+                    // sub-component, using the local index set as the
+                    // membership filter. Only edges with both endpoints
+                    // in the local set contribute.
+                    let local_set: BTreeSet<usize> =
+                        sub_local_indices.iter().map(|&li| idxs[li]).collect();
+                    let (sub_sum, sub_n) = edges.iter().fold((0.0, 0usize), |(s, n), e| {
+                        if local_set.contains(&e.from) && local_set.contains(&e.to) {
+                            (s + e.vec_sim, n + 1)
+                        } else {
+                            (s, n)
+                        }
+                    });
+                    let sub_avg = if sub_n == 0 { 0.0 } else { sub_sum / sub_n as f64 };
+
+                    if let Some(c) = build_cluster(
+                        &sub_members,
+                        sub_avg,
+                        Some(parent_cluster_id.clone()),
+                        p,
+                        &mut by_pattern,
+                    ) {
+                        clusters.push(c);
+                    }
+                }
+                continue; // parent cluster is replaced by its sub-clusters.
+            }
+            // Split didn't help (≤1 sub-component or all bleed). Fall
+            // through and emit the parent unchanged so visibility is
+            // preserved — the user can re-run with a tighter threshold.
         }
 
-        for pat in &patterns {
-            *by_pattern.entry(pat.clone()).or_insert(0) += 1;
+        if let Some(c) = build_cluster(&members, avg_vec_sim, None, p, &mut by_pattern) {
+            clusters.push(c);
         }
-
-        let (suggested_action, reason) = suggested_action_for(&patterns);
-        let canonical_id = members[0].id.clone();
-        clusters.push(Cluster {
-            cluster_id: cluster_id_for(&canonical_id),
-            patterns,
-            suggested_action,
-            reason,
-            avg_vec_sim,
-            members: members.iter().map(|m| member_from(m)).collect(),
-        });
     }
 
     // Larger clusters first; ties broken by cluster_id for determinism.
@@ -679,6 +913,146 @@ mod tests {
         // 1/3 dated → < 0.5 → no temporal-log.
         let pats = classify_cluster(&[&a, &c, &c], 0.0);
         assert!(!pats.iter().any(|p| p == "temporal-log"));
+    }
+
+    /// Helper: build edges with synthetic scores. `(from, to, score)`.
+    /// vec_sim is set equal to score for simplicity — the split pass
+    /// only reads `score`, not `vec_sim`, so this keeps the test focus
+    /// on the cutoff behavior.
+    fn mock_edges(specs: &[(usize, usize, f64)]) -> Vec<Edge> {
+        specs
+            .iter()
+            .map(|&(from, to, score)| Edge {
+                from,
+                to,
+                vec_sim: score,
+                score,
+            })
+            .collect()
+    }
+
+    /// Split pass splits a triangle of two real sub-themes plus one
+    /// bridge member: members {0,1,2} form sub-theme A (high score
+    /// edges), members {3,4,5} form sub-theme B (high score edges),
+    /// and member {6} only has a low-score edge to {0} (the bridge).
+    /// Result: two sub-components, bridge member dropped.
+    #[test]
+    fn split_oversized_drops_bridge_member() {
+        // Component members in candidate-index space: 0..=6.
+        let member_idxs: Vec<usize> = (0..=6).collect();
+
+        // High-score edges within each sub-theme + one weak bridge to
+        // member 6 + one weak bridge between the sub-themes (member 2
+        // ↔ member 3) — that bridge unified them in the parent
+        // union-find but should NOT survive split_threshold=0.6.
+        let edges = mock_edges(&[
+            // Sub-theme A: 0-1-2 fully connected.
+            (0, 1, 0.9),
+            (1, 2, 0.85),
+            (0, 2, 0.88),
+            // Sub-theme B: 3-4-5 fully connected.
+            (3, 4, 0.9),
+            (4, 5, 0.87),
+            (3, 5, 0.86),
+            // Inter-theme bridge (low score — would be dropped).
+            (2, 3, 0.4),
+            // Bridge member 6 to sub-theme A via 0 — low score.
+            (0, 6, 0.35),
+        ]);
+
+        // All candidates fall under the same component root for this
+        // test — uf_find returns 0 for every input.
+        let uf_find = |_i: usize| -> usize { 0 };
+        let component_root = 0;
+
+        let res = split_oversized_cluster(
+            &member_idxs,
+            &edges,
+            &uf_find,
+            component_root,
+            0.6,
+            2, // min_cluster_size
+        );
+
+        // Two sub-components survive (the two sub-themes), bridge
+        // member 6 is dropped (no surviving high-score edge), and the
+        // inter-theme bridge edge is dropped (score 0.4 < 0.6).
+        assert_eq!(
+            res.sub_components.len(),
+            2,
+            "expected 2 sub-components, got {:?}",
+            res.sub_components
+        );
+        assert_eq!(res.dropped_count, 1, "expected 1 bleed member dropped");
+
+        // Sub-components together cover indices 0..=5 (the bridge is
+        // dropped). Local indices are positions within member_idxs.
+        let mut covered: Vec<usize> = res
+            .sub_components
+            .iter()
+            .flat_map(|sub| sub.iter().copied())
+            .collect();
+        covered.sort();
+        assert_eq!(covered, vec![0, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn split_oversized_below_min_cluster_size_counts_as_dropped() {
+        // 4 members: {0,1} sub-theme A (size 2), {2} alone with a
+        // surviving edge to itself? — can't have self-edge; instead
+        // {2,3} sub-theme B (size 2). With min_cluster_size=3, both
+        // sub-components fall under the cutoff → both dropped.
+        let member_idxs: Vec<usize> = (0..=3).collect();
+        let edges = mock_edges(&[(0, 1, 0.9), (2, 3, 0.9)]);
+        let uf_find = |_i: usize| -> usize { 0 };
+
+        let res = split_oversized_cluster(
+            &member_idxs,
+            &edges,
+            &uf_find,
+            0,
+            0.5,
+            3, // min_cluster_size
+        );
+        assert!(
+            res.sub_components.is_empty(),
+            "no sub-component should survive min_cluster_size=3"
+        );
+        assert_eq!(res.dropped_count, 4, "all 4 members should drop");
+    }
+
+    #[test]
+    fn split_oversized_no_high_edges_drops_all() {
+        // Every edge is below the cutoff — nothing survives.
+        let member_idxs: Vec<usize> = (0..=3).collect();
+        let edges = mock_edges(&[(0, 1, 0.3), (1, 2, 0.25), (2, 3, 0.2)]);
+        let uf_find = |_i: usize| -> usize { 0 };
+
+        let res = split_oversized_cluster(&member_idxs, &edges, &uf_find, 0, 0.5, 2);
+        assert!(res.sub_components.is_empty());
+        assert_eq!(res.dropped_count, 4);
+    }
+
+    #[test]
+    fn split_oversized_ignores_edges_outside_component() {
+        // Edge endpoints live outside this component → not seen.
+        let member_idxs: Vec<usize> = vec![10, 11, 12, 13];
+        // Edges in component root=0 (these); plus a stray edge for
+        // candidate indices 99/100 in a different component.
+        let edges = mock_edges(&[
+            (10, 11, 0.9),
+            (12, 13, 0.9),
+            (99, 100, 0.95), // outside this component
+        ]);
+        // uf_find returns 0 only for indices 10..=13; others -> 7.
+        let uf_find = |i: usize| -> usize {
+            if (10..=13).contains(&i) { 0 } else { 7 }
+        };
+
+        let res = split_oversized_cluster(&member_idxs, &edges, &uf_find, 0, 0.5, 2);
+        // Two sub-components survive — 10-11 and 12-13.
+        assert_eq!(res.sub_components.len(), 2);
+        assert_eq!(res.dropped_count, 0);
     }
 
     #[test]

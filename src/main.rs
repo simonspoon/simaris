@@ -309,6 +309,22 @@ enum Command {
         /// `--all` on large stores until vector backfill is cheap.
         #[arg(long)]
         no_vec: bool,
+
+        /// Maximum members a cluster can carry before the split
+        /// post-pass activates. Oversized clusters are re-clustered
+        /// using `--split-threshold` as a tighter edge cutoff to break
+        /// shared-tag bleed (e.g. one 22-member `claude-code` cluster
+        /// splitting into 3 sub-themes). `0` disables splitting.
+        #[arg(long, default_value_t = cluster::DEFAULT_MAX_CLUSTER_SIZE, value_name = "N")]
+        max_cluster_size: usize,
+
+        /// Edge-score cutoff used by the split post-pass — within an
+        /// oversized cluster, only edges scoring ≥ this value survive.
+        /// Bridge edges driven by tag overlap alone fall below;
+        /// genuine near-dup edges survive. Defaults to 0.55 — sits
+        /// well above the main `--threshold` (0.3).
+        #[arg(long, default_value_t = cluster::DEFAULT_SPLIT_THRESHOLD, value_name = "F")]
+        split_threshold: f64,
     },
 
     /// Vec subsystem operations (lance + tantivy + bge-m3 hybrid retrieval).
@@ -1721,6 +1737,8 @@ fn main() -> Result<()> {
             max_similar,
             threshold,
             no_vec,
+            max_cluster_size,
+            split_threshold,
         } => {
             // Either a scope filter or `--all` must be supplied — bare
             // `simaris cluster` is ambiguous and likely a mistake.
@@ -1737,6 +1755,8 @@ fn main() -> Result<()> {
                 max_similar,
                 threshold,
                 no_vec,
+                max_cluster_size,
+                split_threshold,
             };
             let start = std::time::Instant::now();
             let report = cluster::cluster(&conn, &params)?;
