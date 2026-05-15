@@ -136,9 +136,10 @@ fn extract_top_level_scalar(yaml: &str, key: &str) -> Option<String> {
             return None;
         }
         // Strip matched outer quotes.
-        let unquoted = if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
-            &value[1..value.len() - 1]
-        } else if value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'') {
+        let unquoted = if value.len() >= 2
+            && ((value.starts_with('"') && value.ends_with('"'))
+                || (value.starts_with('\'') && value.ends_with('\'')))
+        {
             &value[1..value.len() - 1]
         } else {
             value

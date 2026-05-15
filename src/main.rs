@@ -1530,11 +1530,11 @@ fn main() -> Result<()> {
                 })
                 .unwrap_or_default();
             // S1 bridge: refuse exact-match dup in 7d window before any write.
-            if refuse_dup {
-                if let Some(existing_id) = db::find_recent_duplicate(&conn, &final_content, 7)? {
-                    display::print_refused_dup(&existing_id, cli.json);
-                    std::process::exit(2);
-                }
+            if refuse_dup
+                && let Some(existing_id) = db::find_recent_duplicate(&conn, &final_content, 7)?
+            {
+                display::print_refused_dup(&existing_id, cli.json);
+                std::process::exit(2);
             }
             size_guard::check_size(&final_content, &tag_vec, flow, force)?;
             let id = if tags.is_some() {

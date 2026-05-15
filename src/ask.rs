@@ -396,6 +396,7 @@ fn expand_with_matches(
 
 /// Retrieval gather for `prime`. Default path is hybrid (lance KNN + tantivy
 /// + RRF) with FTS5 fallback if the lance dataset is missing or hybrid errors.
+///
 /// `--no-vec` forces the FTS5-only legacy path.
 ///
 /// Crash-safe: any error or absence on the hybrid leg degrades to FTS5
