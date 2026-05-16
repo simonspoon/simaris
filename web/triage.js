@@ -428,28 +428,8 @@ function renderEmptyState(cat) {
 // ── Detail pane ────────────────────────────────────────────────────────────
 
 async function openDetail(id) {
-  // Find item in current items
+  // Find item in current items (carries scan metadata: age, byte_size, latest_mark_kind)
   let item = state.items.find(i => i.id === id);
-  let fromContra = null;
-  if (!item) {
-    // Might be a contradiction side — fetch directly
-    fromContra = id;
-  }
-
-  if (!item && fromContra) {
-    // Fetch unit from server
-    try {
-      const res = await fetch(`/api/units/${id}`);
-      if (!res.ok) throw new Error(res.statusText);
-      const unit = await res.json();
-      item = unitToScanItem(unit);
-    } catch (err) {
-      setStatus(`failed to load unit: ${err.message}`, true);
-      return;
-    }
-  }
-
-  if (!item) return;
 
   state.openItemId = id;
   detailPane.classList.remove('hidden');
@@ -459,7 +439,24 @@ async function openDetail(id) {
     r.classList.toggle('selected', r.dataset.id === id);
   });
 
-  detailTitle.textContent = firstLine(item.snippet);
+  // Always fetch the full unit — the scan snippet is truncated to 200 chars.
+  let fullContent = null;
+  try {
+    const res = await fetch(`/api/units/${id}`);
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    const unit = data.unit ?? data;
+    fullContent = unit.content ?? '';
+    if (!item) item = unitToScanItem(unit);
+  } catch (err) {
+    setStatus(`failed to load unit: ${err.message}`, true);
+    if (!item) return;
+  }
+
+  if (!item) return;
+  const contentToShow = fullContent ?? item.snippet;
+
+  detailTitle.textContent = firstLine(contentToShow);
 
   const color = typeColor(item.type);
   const typeStyle = `background:${color}22;color:${color};border:1px solid ${color}44;display:inline-block;padding:1px 6px;border-radius:4px;font:600 10px var(--mono);text-transform:uppercase;`;
@@ -498,7 +495,7 @@ async function openDetail(id) {
     </div>
     <div class="triage__detail-content-wrap">
       <div class="triage__detail-label">Content</div>
-      <div class="triage__detail-content">${escHtml(item.snippet)}</div>
+      <div class="triage__detail-content">${escHtml(contentToShow)}</div>
     </div>
   `;
 
