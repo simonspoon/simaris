@@ -2362,6 +2362,102 @@ fn test_show_list_never_flag_existing_oversize_units() {
 }
 
 #[test]
+fn test_add_rejects_noise_tag_prefix() {
+    // Noise prefixes like `task:` are auto-rejected (limbo task yvck).
+    let env = TestEnv::new("tag-noise-prefix");
+    let output = env.run(&[
+        "add",
+        "content",
+        "--type",
+        "fact",
+        "--tags",
+        "rust,task:yvck",
+    ]);
+    assert!(
+        !output.status.success(),
+        "noise tag must reject: {output:?}"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("task:yvck"),
+        "stderr lacks offending tag: {stderr}"
+    );
+    assert!(
+        stderr.contains("tag-taxonomy"),
+        "stderr lacks citation: {stderr}"
+    );
+    let list = env.run_ok(&["list"]);
+    assert!(!list.contains(" fact "), "unit must not land: {list}");
+}
+
+#[test]
+fn test_add_force_overrides_noise_tag_with_warning() {
+    let env = TestEnv::new("tag-noise-force");
+    let output = env.run(&[
+        "add",
+        "content",
+        "--type",
+        "fact",
+        "--force",
+        "--tags",
+        "rust,phase-1",
+    ]);
+    assert!(output.status.success(), "--force must succeed: {output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("noise tag"), "stderr lacks warn: {stderr}");
+    assert!(stderr.contains("phase-1"), "stderr lacks tag: {stderr}");
+}
+
+#[test]
+fn test_add_novel_tag_warns_but_allows() {
+    // Tag the live store knows nothing about → warning, but write proceeds.
+    let env = TestEnv::new("tag-novel");
+    let output = env.run(&[
+        "add",
+        "content",
+        "--type",
+        "fact",
+        "--tags",
+        "completely-novel-domain-tag-x",
+    ]);
+    assert!(output.status.success(), "novel tag must allow: {output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("novel"),
+        "stderr lacks novel warning: {stderr}"
+    );
+    assert!(
+        stderr.contains("tag-taxonomy"),
+        "stderr lacks citation: {stderr}"
+    );
+}
+
+#[test]
+fn test_add_normalizes_tag_case_and_dedupes() {
+    // `Aspect` and `aspect` collapse; whitespace trimmed; second-write
+    // doesn't warn since first one seeded the tag.
+    let env = TestEnv::new("tag-normalize");
+    env.run_ok(&[
+        "add",
+        "first",
+        "--type",
+        "fact",
+        "--tags",
+        " Aspect , aspect , RUST ",
+    ]);
+    let raw = env.run_ok(&["list", "--type", "fact", "--json"]);
+    let v: serde_json::Value = serde_json::from_str(&raw).expect("json");
+    let units = v.as_array().expect("list array");
+    let stored: Vec<String> = units[0]["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(stored, vec!["aspect".to_string(), "rust".to_string()]);
+}
+
+#[test]
 fn test_add_defaults_allow_small_bodies_silently() {
     // Default thresholds (2048/8192) must leave normal-sized adds silent.
     let env = TestEnv::new("size-default-silent");
@@ -3686,7 +3782,7 @@ fn test_stats_json_shape_and_counts() {
 fn test_stats_top_flag_caps_tag_list() {
     let env = TestEnv::new("statstop");
     // Seed 5 distinct tags across 5 units.
-    for tag in ["a", "b", "c", "d", "e"] {
+    for tag in ["alpha", "bravo", "charlie", "delta", "echo"] {
         env.run_ok(&[
             "add",
             &format!("body {tag}"),
@@ -4245,16 +4341,21 @@ fn test_similar_no_vec_basic_shape() {
 #[test]
 fn test_similar_no_vec_identical_tags_max_score() {
     let env = TestEnv::new("similar_max");
-    let src = extract_id_first_line(
-        &env.run_ok(&["add", "src body", "--type", "fact", "--tags", "x,y,z"]),
-    );
+    let src = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "src body",
+        "--type",
+        "fact",
+        "--tags",
+        "alpha,beta,gamma",
+    ]));
     let twin = extract_id_first_line(&env.run_ok(&[
         "add",
         "twin body",
         "--type",
         "fact",
         "--tags",
-        "x,y,z",
+        "alpha,beta,gamma",
     ]));
 
     let out = env.run_ok(&["similar", &src, "--no-vec", "--top-k", "5"]);
@@ -4274,10 +4375,16 @@ fn test_similar_no_vec_identical_tags_max_score() {
 #[test]
 fn test_similar_threshold_filters() {
     let env = TestEnv::new("similar_threshold");
-    let src =
-        extract_id_first_line(&env.run_ok(&["add", "src", "--type", "fact", "--tags", "a,b"]));
-    env.run_ok(&["add", "twin", "--type", "fact", "--tags", "a,b"]);
-    env.run_ok(&["add", "weak", "--type", "fact", "--tags", "a"]);
+    let src = extract_id_first_line(&env.run_ok(&[
+        "add",
+        "src",
+        "--type",
+        "fact",
+        "--tags",
+        "alpha,beta",
+    ]));
+    env.run_ok(&["add", "twin", "--type", "fact", "--tags", "alpha,beta"]);
+    env.run_ok(&["add", "weak", "--type", "fact", "--tags", "alpha"]);
     env.run_ok(&["add", "noise", "--type", "idea"]);
 
     let lo = env.run_ok(&["similar", &src, "--no-vec", "--threshold", "0.0"]);
@@ -4356,11 +4463,11 @@ fn test_similar_include_archived_increases() {
 #[test]
 fn test_similar_self_never_in_results() {
     let env = TestEnv::new("similar_self");
-    let src = extract_id(&env.run_ok(&["add", "src body", "--type", "fact", "--tags", "t"]));
+    let src = extract_id(&env.run_ok(&["add", "src body", "--type", "fact", "--tags", "tango"]));
     // Add 5 near-dups so the candidate pool has enough material.
     for i in 0..5 {
         let body = format!("dup-{i}");
-        env.run_ok(&["add", &body, "--type", "fact", "--tags", "t"]);
+        env.run_ok(&["add", &body, "--type", "fact", "--tags", "tango"]);
     }
     let out = env.run_ok(&["similar", &src, "--no-vec", "--top-k", "50"]);
     let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
@@ -4373,9 +4480,9 @@ fn test_similar_self_never_in_results() {
 #[test]
 fn test_similar_resolves_slug() {
     let env = TestEnv::new("similar_slug");
-    let src = extract_id(&env.run_ok(&["add", "src", "--type", "fact", "--tags", "p"]));
+    let src = extract_id(&env.run_ok(&["add", "src", "--type", "fact", "--tags", "papa"]));
     env.run_ok(&["slug", "set", "src-slug", &src]);
-    env.run_ok(&["add", "twin", "--type", "fact", "--tags", "p"]);
+    env.run_ok(&["add", "twin", "--type", "fact", "--tags", "papa"]);
     // Pass slug instead of uuid — must resolve.
     let out = env.run_ok(&["similar", "src-slug", "--no-vec"]);
     let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
@@ -4388,10 +4495,10 @@ fn test_similar_resolves_slug() {
 #[test]
 fn test_similar_top_k_caps_results() {
     let env = TestEnv::new("similar_topk");
-    let src = extract_id(&env.run_ok(&["add", "src", "--type", "fact", "--tags", "z"]));
+    let src = extract_id(&env.run_ok(&["add", "src", "--type", "fact", "--tags", "zulu"]));
     for i in 0..10 {
         let body = format!("dup-{i}");
-        env.run_ok(&["add", &body, "--type", "fact", "--tags", "z"]);
+        env.run_ok(&["add", &body, "--type", "fact", "--tags", "zulu"]);
     }
     let out = env.run_ok(&["similar", &src, "--no-vec", "--top-k", "3"]);
     let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
@@ -4405,9 +4512,9 @@ fn test_similar_top_k_caps_results() {
 #[test]
 fn test_similar_content_preview_truncates() {
     let env = TestEnv::new("similar_preview");
-    let src = extract_id(&env.run_ok(&["add", "src", "--type", "fact", "--tags", "q"]));
+    let src = extract_id(&env.run_ok(&["add", "src", "--type", "fact", "--tags", "quebec"]));
     let long = "x".repeat(200);
-    env.run_ok(&["add", &long, "--type", "fact", "--tags", "q"]);
+    env.run_ok(&["add", &long, "--type", "fact", "--tags", "quebec"]);
     let out = env.run_ok(&["similar", &src, "--no-vec"]);
     let parsed: Vec<serde_json::Value> = serde_json::from_str(&out).expect("valid JSON");
     for h in &parsed {
@@ -4595,10 +4702,10 @@ fn test_cluster_type_filter_narrows_scope() {
     // `--type` composes with `--tag`: only matching-type units land in
     // the candidate set.
     let env = TestEnv::new("cluster_typefilter");
-    env.run_ok(&["add", "f1", "--type", "fact", "--tags", "scope,a"]);
-    env.run_ok(&["add", "f2", "--type", "fact", "--tags", "scope,a"]);
-    env.run_ok(&["add", "i1", "--type", "idea", "--tags", "scope,a"]);
-    env.run_ok(&["add", "i2", "--type", "idea", "--tags", "scope,a"]);
+    env.run_ok(&["add", "f1", "--type", "fact", "--tags", "scope,alpha"]);
+    env.run_ok(&["add", "f2", "--type", "fact", "--tags", "scope,alpha"]);
+    env.run_ok(&["add", "i1", "--type", "idea", "--tags", "scope,alpha"]);
+    env.run_ok(&["add", "i2", "--type", "idea", "--tags", "scope,alpha"]);
 
     let out = env.run_ok(&[
         "cluster",

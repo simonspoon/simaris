@@ -11,6 +11,7 @@ mod lint;
 mod rewrite;
 mod similar;
 mod size_guard;
+mod tag_guard;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -1520,7 +1521,7 @@ fn main() -> Result<()> {
                 }
             };
 
-            let tag_vec: Vec<String> = tags
+            let raw_tag_vec: Vec<String> = tags
                 .as_deref()
                 .map(|t| {
                     t.split(',')
@@ -1529,6 +1530,7 @@ fn main() -> Result<()> {
                         .collect()
                 })
                 .unwrap_or_default();
+            let tag_vec = tag_guard::normalize_tags(&raw_tag_vec);
             // S1 bridge: refuse exact-match dup in 7d window before any write.
             if refuse_dup
                 && let Some(existing_id) = db::find_recent_duplicate(&conn, &final_content, 7)?
@@ -1537,6 +1539,7 @@ fn main() -> Result<()> {
                 std::process::exit(2);
             }
             size_guard::check_size(&final_content, &tag_vec, flow, force)?;
+            tag_guard::check_tags(&conn, &tag_vec, force)?;
             let id = if tags.is_some() {
                 db::add_unit_full(&conn, &final_content, r#type.as_str(), &source, &tag_vec)?
             } else {
@@ -1836,11 +1839,18 @@ fn main() -> Result<()> {
                 .unwrap_or_else(|| original.unit_type.clone());
             let new_source = source.unwrap_or_else(|| original.source.clone());
             let new_tags: Vec<String> = match tags {
-                Some(t) => t
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect(),
+                Some(t) => {
+                    let raw: Vec<String> = t
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    // Clone has no --force escape; normalize but skip noise
+                    // check. Clones inherit from already-vetted source units;
+                    // explicit overrides can be cleaned up via `edit` if a
+                    // novel/noise tag slips in.
+                    tag_guard::normalize_tags(&raw)
+                }
                 None => original.tags.clone(),
             };
 
@@ -1992,10 +2002,12 @@ fn main() -> Result<()> {
             };
 
             let tag_vec: Option<Vec<String>> = tags.map(|t| {
-                t.split(',')
+                let raw: Vec<String> = t
+                    .split(',')
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
-                    .collect()
+                    .collect();
+                tag_guard::normalize_tags(&raw)
             });
 
             // Only check size when content is being set — tag/source-only
@@ -2006,6 +2018,12 @@ fn main() -> Result<()> {
                     None => existing.tags.clone(),
                 };
                 size_guard::check_size(nc, &effective_tags, flow, force)?;
+            }
+            // Tag policy: only check when the user is replacing tags (--tags
+            // present). Don't retroactively complain about pre-existing tags
+            // on content/source-only edits.
+            if let Some(ref t) = tag_vec {
+                tag_guard::check_tags(&conn, t, force)?;
             }
 
             let unit = db::update_unit(
