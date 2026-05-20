@@ -18,6 +18,10 @@ Knowledge unit storage. All commands support `--json` for machine-readable outpu
 | `SIMARIS_ENV` | Set to `dev` to use `$SIMARIS_HOME/dev` as the data directory. | (unset) |
 | `SIMARIS_BIN` | Path to the `simaris` binary used by `simaris-server` to shell out for data ops. | `simaris` (resolved via `PATH`) |
 | `SIMARIS_WEB_DIR` | Path to `web/` static assets served by `simaris-server`. | workspace-root `web/` |
+| `SIMARIS_SIM_ALPHA` / `_BETA` / `_GAMMA` | Scoring weights for `similar` (`α·vec_sim + β·tag_overlap + γ·type_match`). | `0.6 / 0.3 / 0.1` |
+| `SIMARIS_OLLAMA_URL` | Ollama base URL for `vec backfill`. | `http://localhost:11434` |
+| `ANTHROPIC_API_KEY` | Required for `context-enhance --execute` (Haiku 3.5 preamble generation). | (unset) |
+| `SIMARIS_RATE_LIMIT_RPM` | Rate limit for `context-enhance` Anthropic calls. | `50` |
 
 ---
 
@@ -998,3 +1002,234 @@ simaris clone 019660a3 --type principle --source design-doc
 | `from_id` | string | Source unit ID. |
 | `to_id` | string | Target unit ID. |
 | `relationship` | string | One of: `related_to`, `part_of`, `depends_on`, `contradicts`, `supersedes`, `sourced_from`. |
+
+---
+
+## similar
+
+Near-duplicate detection primitive. Ranks units against a seed via a weighted score: `α·vec_sim + β·tag_overlap + γ·type_match`. Vec leg uses the lance KNN index built by `vec backfill`; pass `--no-vec` to drop it and rank by tag/type only.
+
+```
+simaris similar <ID> [--top-k <N>] [--threshold <F>] [--no-vec] [--include-archived]
+```
+
+### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `ID` | string | yes | -- | Seed unit ID or slug. |
+| `--top-k` | int | no | `20` | Number of neighbours to return. |
+| `--threshold` | float | no | `0.0` | Drop hits with score below this cutoff. |
+| `--no-vec` | flag | no | -- | Skip the lance KNN leg; rank by tag overlap + type match only. |
+| `--include-archived` | flag | no | -- | Include archived units. |
+
+Scoring weights are tuned via `SIMARIS_SIM_ALPHA`, `SIMARIS_SIM_BETA`, `SIMARIS_SIM_GAMMA` (defaults `0.6 / 0.3 / 0.1`).
+
+### JSON output
+
+```json
+[
+  {
+    "id": "0196b021-...",
+    "score": 0.84,
+    "vec_sim": 0.91,
+    "tag_overlap": 0.5,
+    "type_match": 1.0,
+    "body_length": 412,
+    "tag_count": 4
+  }
+]
+```
+
+### Example
+
+```
+simaris similar 019660a3 --top-k 10 --threshold 0.6
+simaris similar canonical-procedure --no-vec --json
+```
+
+---
+
+## cluster
+
+Store-wide redundancy survey. Runs `similar` against every unit (optionally scoped by tag/type), builds a similarity graph, union-finds the connected components, and annotates each cluster with a pattern: `near-dup`, `temporal-log`, `type-confused`, `low-signal`, or `orphan`.
+
+```
+simaris cluster [--tag <TAG> | --all] [--type <TYPE>] [--min-cluster-size <N>] [--max-similar <N>] [--threshold <F>] [--no-vec] [--max-cluster-size <N>] [--split-threshold <F>]
+```
+
+### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `--tag` | string | one of | -- | Restrict to units carrying this tag. |
+| `--all` | flag | tag/all | -- | Run across the full store (mutually exclusive with `--tag`). |
+| `--type` | UnitType | no | -- | Additional type filter. |
+| `--min-cluster-size` | int | no | `2` | Drop clusters below this size from the report. |
+| `--max-similar` | int | no | `20` | Per-unit `similar` top-k used to build the edge set. |
+| `--threshold` | float | no | `0.7` | Edge-score cutoff. |
+| `--no-vec` | flag | no | -- | Run without the vec leg (tag/type only). |
+| `--max-cluster-size` | int | no | `50` | Oversized clusters are re-split at `--split-threshold`. |
+| `--split-threshold` | float | no | `0.85` | Raised cutoff used when re-splitting oversized clusters. |
+
+### JSON output
+
+```json
+{
+  "clusters": [
+    {
+      "id": 1,
+      "pattern": "near-dup",
+      "members": [{"id": "019660a3-...", "body_length": 320, "tag_count": 3}],
+      "summary": {"size": 4, "avg_score": 0.82}
+    }
+  ]
+}
+```
+
+### Example
+
+```
+simaris cluster --tag rust --min-cluster-size 3 --json
+simaris cluster --all --threshold 0.75
+```
+
+---
+
+## lint
+
+Read-only rot audit. Surfaces orphan units, duplicate slugs/content, procedures missing canonical `part_of` parents, dual-parent contradictions, and tag-variant drift. Supports persistent snapshots and a CI regression mode that fails when totals worsen vs the last snapshot.
+
+```
+simaris lint [--fix-suggest] [--by-aspect] [--snapshot] [--note <S>] [--history [--limit <N>] | --ci]
+```
+
+### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `--fix-suggest` | flag | no | -- | Print suggested remediations alongside findings. |
+| `--by-aspect` | flag | no | -- | Roll findings up by aspect. |
+| `--snapshot` | flag | no | -- | Persist totals to `lint_snapshots` for delta/CI comparison. |
+| `--note` | string | no | -- | Optional note stored with the snapshot. |
+| `--history` | flag | no | -- | Print snapshot history (mutually exclusive with `--ci`). |
+| `--limit` | int | no | `10` | History entry cap. |
+| `--ci` | flag | no | -- | Exit non-zero if any total has worsened since the most recent snapshot. |
+
+### Example
+
+```
+simaris lint --json
+simaris lint --snapshot --note "post-cleanup"
+simaris lint --ci
+```
+
+---
+
+## vec backfill
+
+(Re)build the hybrid retrieval indexes (`lance` dataset + `tantivy` text index) from the live `units` table. Embedding calls go to Ollama at `SIMARIS_OLLAMA_URL`. Uses `embedding_cache` to skip re-embedding bodies whose hash already matches.
+
+```
+simaris vec backfill [--model <MODEL>] [--backend <BACKEND>] [--batch-size <N>] [--reembed-with-context] [--sqlite <PATH>] [--lance-dir <PATH>] [--tantivy-dir <PATH>] [--ollama-url <URL>]
+```
+
+### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `--model` | string | no | `bge-m3` | Ollama model name; vectors live at `~/.simaris/vec/<model>/`. |
+| `--backend` | string | no | `lance` | Vector backend. Only `lance` is currently wired in. |
+| `--batch-size` | int | no | `32` | Batch size for embedding calls. |
+| `--reembed-with-context` | flag | no | -- | Prepend each unit's `context_preamble` (from `context-enhance`) before embedding. |
+| `--sqlite` | path | no | live DB | Source SQLite DB (override). |
+| `--lance-dir` | path | no | `~/.simaris/vec/<model>/lance` | Override lance dataset path. |
+| `--tantivy-dir` | path | no | `~/.simaris/vec/<model>/tantivy` | Override tantivy index path. |
+| `--ollama-url` | url | no | `$SIMARIS_OLLAMA_URL` | Ollama base URL. |
+
+Frontmatter is stripped before embedding so it does not pollute the vector signal.
+
+### Example
+
+```
+simaris vec backfill
+simaris vec backfill --reembed-with-context
+```
+
+---
+
+## context-enhance
+
+Generate an Anthropic-style preamble for each unit and persist it to `units.context_preamble`. Requires `ANTHROPIC_API_KEY`. Preambles are consumed by `vec backfill --reembed-with-context`.
+
+```
+simaris context-enhance [--dry-run | --execute] [--limit <N>] [--sample <N>]
+```
+
+### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `--dry-run` | flag | one of | (default) | Generate preambles to stdout without writing. |
+| `--execute` | flag | dry/exec | -- | Write generated preambles to `units.context_preamble`. |
+| `--limit` | int | no | -- | Cap total units processed. |
+| `--sample` | int | no | -- | Process a random sample of `N` units (deterministic ordering not guaranteed). |
+
+Rate-limited by `SIMARIS_RATE_LIMIT_RPM` (default `50`).
+
+### Example
+
+```
+simaris context-enhance --dry-run --limit 5
+simaris context-enhance --execute --sample 100
+```
+
+---
+
+## dream decay
+
+Apply Ebbinghaus forgetting to unit confidence and auto-archive units that fall below 0.1. Units pinned by a slug or referenced as a `part_of` parent are excluded.
+
+Decay formula: `confidence *= 0.5 ^ (days_since_activity / half_life_days)`. "Activity" is the most recent of `updated`, any mark, or the most recent incoming link.
+
+```
+simaris dream decay [--dry-run] [--half-life-days <N>]
+```
+
+### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `--dry-run` | flag | no | -- | Compute deltas and would-archive set without writing. |
+| `--half-life-days` | int | no | `90` | Half-life in days for the decay curve. |
+
+### Example
+
+```
+simaris dream decay --dry-run
+simaris dream decay --half-life-days 30
+```
+
+---
+
+## vacuum autolink
+
+Prune low-signal auto-link edges (`related_to` edges created by the auto-link rule at `add`/`clone` time). Default is dry-run; pass `--apply` to actually delete.
+
+```
+simaris vacuum autolink [--apply] [--limit <N>]
+```
+
+### Arguments
+
+| Argument | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `--apply` | flag | no | -- | Actually delete the identified edges (default is dry-run). |
+| `--limit` | int | no | -- | Cap number of edges considered. |
+
+### Example
+
+```
+simaris vacuum autolink
+simaris vacuum autolink --apply --limit 200
+```

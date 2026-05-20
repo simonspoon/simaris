@@ -26,13 +26,15 @@ Primary knowledge store. Each row is a single atomic knowledge unit.
 | conditions | TEXT | NOT NULL | `'{}'` | JSON object for conditional applicability |
 | created | TEXT | NOT NULL | `datetime('now')` | ISO 8601 timestamp |
 | updated | TEXT | NOT NULL | `datetime('now')` | ISO 8601 timestamp |
+| archived | INTEGER | NOT NULL, CHECK | `0` | Soft-delete flag (0/1). Added by migration v3→v4. |
+| context_preamble | TEXT | NULL | NULL | Anthropic-style preamble written by `context-enhance`; consumed by `vec backfill --reembed-with-context`. Added by migration v4→v5. |
 
-Type CHECK constraint (line 379):
+Type CHECK constraint (current `initialize`):
 ```sql
-CHECK(type IN ('fact','procedure','principle','preference','lesson','idea'))
+CHECK(type IN ('fact','procedure','principle','preference','lesson','idea','aspect'))
 ```
 
-Defined at line 374 (`initialize` function).
+The legacy `migrate_to_uuid` migration creates the table without `aspect` and without `archived`; the subsequent `migrate_add_archived` and `migrate_add_aspect_type` migrations bring older stores forward.
 
 ### links
 
@@ -87,6 +89,30 @@ CHECK(kind IN ('used','wrong','outdated','helpful'))
 Index: `idx_marks_unit ON marks(unit_id)` (line 414).
 
 Defined at line 407.
+
+### lint_snapshots
+
+Persisted totals from `simaris lint --snapshot`. Used by `--history` (display) and `--ci` (regression check vs the most recent snapshot).
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| id | INTEGER | PRIMARY KEY AUTOINCREMENT | -- |
+| totals | TEXT | NOT NULL | JSON blob of lint category totals |
+| note | TEXT | NULL | Optional `--note` string |
+| created | TEXT | NOT NULL DEFAULT `datetime('now')` | ISO 8601 timestamp |
+
+### embedding_cache
+
+Avoids re-embedding identical bodies between `vec backfill` runs. Keyed by content hash + model.
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| content_hash | TEXT | PRIMARY KEY | SHA-256 of frontmatter-stripped body (+ optional preamble prefix) |
+| model | TEXT | NOT NULL | Embedding model name (e.g. `bge-m3`) |
+| vector | BLOB | NOT NULL | Serialized embedding vector |
+| created | TEXT | NOT NULL DEFAULT `datetime('now')` | ISO 8601 timestamp |
+
+Vector indexes themselves live outside SQLite at `~/.simaris/vec/<model>/` (lance dataset + tantivy subdir).
 
 ### units_fts (FTS5 virtual table)
 
@@ -211,6 +237,7 @@ Constrained at the SQL layer via CHECK. Valid values:
 | `preference` | A personal preference or opinion |
 | `lesson` | Something learned from experience |
 | `idea` | A speculative or unvalidated thought |
+| `aspect` | A facet or dimension of a broader topic |
 
 ### Relationship
 

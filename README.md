@@ -4,11 +4,11 @@
 
 # simaris
 
-Knowledge management CLI with SQLite, FTS5 search, and graph-based linking.
+Knowledge management CLI with SQLite, hybrid (vector + text) retrieval, and graph-based linking.
 
 ## Overview
 
-Simaris stores typed knowledge units in a local SQLite database with full-text search, graph-based relationships between units, and confidence scoring via feedback marks. Built for LLM agents and developers who need structured, searchable knowledge that evolves over time.
+Simaris stores typed knowledge units in a local SQLite database with hybrid retrieval (lance KNN + tantivy + FTS5 fused via RRF), graph-based relationships between units, confidence scoring via feedback marks, and corpus-hygiene tooling (`similar`, `cluster`, `lint`, `dream`, `vacuum`). Built for LLM agents and developers who need structured, searchable knowledge that evolves over time.
 
 ## Installation
 
@@ -64,7 +64,9 @@ simaris ask "What do I know about Rust editions?"
 | `promote <id> --type <type>` | Convert an inbox item to a typed unit |
 | `inbox` | List pending inbox items |
 | `list [--type <type>] [--include-archived]` | List knowledge units |
-| `search <query> [--type <type>] [--include-archived]` | Full-text search across units |
+| `search <query> [--type <type>] [--no-vec] [--top-k <n>] [--scores] [--include-archived]` | Hybrid retrieval (lance KNN + tantivy + RRF); `--no-vec` forces FTS5-only |
+| `similar <id> [--top-k <n>] [--threshold <f>] [--no-vec]` | Rank near-duplicates of a unit (`α·vec_sim + β·tag_overlap + γ·type_match`) |
+| `cluster [--tag <tag> \| --all] [--type <y>] [--min-cluster-size <n>] [--threshold <f>]` | Store-wide redundancy survey with pattern annotation |
 | `ask <query> [--type <type>] [--include-archived]` | Query store; FTS5 + 1-hop graph expansion |
 | `prime <task> [--filter <strategy>] [--primary <id\|slug>]...` | Assemble a task-focused mindset grouped by unit type |
 | `stats [--top <n>] [--include-archived]` | Aggregate metrics for the admin dashboard |
@@ -77,6 +79,11 @@ simaris ask "What do I know about Rust editions?"
 | `emit --target <target> --type <type>` | Emit typed units as build artifacts |
 | `rewrite <id> [--template-only]` | Edit a unit in `$EDITOR` with a type-aware skeleton |
 | `scan [--stale-days <days>]` | Find low-confidence, stale, or orphaned units |
+| `lint [--fix-suggest] [--by-aspect] [--snapshot] [--history \| --ci]` | Read-only rot audit with optional snapshot history and CI regression check |
+| `vec backfill [--model bge-m3] [--reembed-with-context]` | (Re)build the lance + tantivy vector index from `units` (requires Ollama) |
+| `context-enhance [--dry-run \| --execute] [--limit <n>]` | Generate Anthropic-style preambles into `units.context_preamble` (Haiku 3.5) |
+| `dream decay [--dry-run] [--half-life-days <n>]` | Ebbinghaus confidence decay + auto-archive below 0.1 (excludes slug-pinned + `part_of`) |
+| `vacuum autolink [--apply] [--limit <n>]` | Prune low-signal auto-link edges |
 | `backup` | Create a database backup |
 | `restore [<filename>]` | Restore from backup (no args = list backups) |
 
@@ -123,15 +130,32 @@ simaris ask "What do I know about Rust editions?"
 |----------|---------|---------|
 | `SIMARIS_HOME` | Override data directory | `~/.simaris/` |
 | `SIMARIS_ENV=dev` | Isolate to dev database | `~/.simaris/dev/sanctuary.db` |
+| `SIMARIS_SIM_ALPHA` / `_BETA` / `_GAMMA` | `similar` scoring weights (`α·vec_sim + β·tag_overlap + γ·type_match`) | `0.6 / 0.3 / 0.1` |
+| `SIMARIS_OLLAMA_URL` | Ollama base URL for `vec backfill` embeddings | `http://localhost:11434` |
+| `ANTHROPIC_API_KEY` | Required by `context-enhance` for Haiku 3.5 preamble generation | — |
+| `SIMARIS_RATE_LIMIT_RPM` | Rate limit for `context-enhance` Anthropic calls | `50` |
 
-Data lives at `~/.simaris/sanctuary.db`.
+Data lives at `~/.simaris/sanctuary.db`. Vector indexes live at `~/.simaris/vec/<model>/` (lance dataset + tantivy subdir).
+
+### External Dependencies
+
+- SQLite is bundled via rusqlite — no system SQLite required.
+- Lance + tantivy are built into the binary.
+- Ollama on `localhost:11434` running `bge-m3` — only needed when running `vec backfill`.
+- Anthropic API (Haiku 3.5) — only needed when running `context-enhance --execute`.
 
 ## Architecture
 
 ```
-src/main.rs         CLI entry, clap derive command parsing, dispatch
+src/main.rs         CLI entry, clap derive command parsing, dispatch (also hosts vec/vacuum)
 src/db.rs           SQLite schema, migrations, CRUD, backup/restore, scan
 src/ask.rs          FTS5 search + 1-hop graph expansion (`ask`, `prime`)
+src/hybrid.rs       Hybrid retrieval: lance KNN + tantivy + RRF fusion (`search` default path)
+src/similar.rs      `similar` primitive — α·vec_sim + β·tag_overlap + γ·type_match
+src/cluster.rs      Store-wide redundancy survey + pattern annotation + union-find
+src/context.rs      `context-enhance` — Anthropic preamble generation via Haiku 3.5
+src/dream.rs        `dream decay` — Ebbinghaus confidence decay + auto-archive
+src/lint.rs         Read-only rot audit, snapshot history, CI regression check
 src/display.rs      Text and JSON output formatting
 src/emit.rs         Build-artifact emission (claude-code aspects, etc.)
 src/rewrite.rs      $EDITOR rewrite flow with type-aware skeletons
@@ -144,14 +168,18 @@ web/                Static dashboard + units page (vanilla JS + ECharts)
 
 ### Schema
 
-- **units** -- UUIDv7 primary key, content, type, source, confidence, verified, archived, tags (JSON), timestamps
+- **units** -- UUIDv7 primary key, content, type, source, confidence, verified, archived, tags (JSON), `context_preamble` (nullable), timestamps
 - **links** -- Composite key (from_id, to_id, relationship), CASCADE delete
 - **inbox** -- UUIDv7 primary key, content, source, timestamp
 - **marks** -- UUIDv7 primary key, unit_id FK, kind, timestamp
 - **slugs** -- TEXT primary key, unit_id FK, CASCADE delete
+- **lint_snapshots** -- persisted `lint` totals for delta/CI mode
+- **embedding_cache** -- cached embedding vectors keyed by content hash
 - **units_fts** -- FTS5 virtual table synced via triggers
 
-Default views (`list`, `search`, `ask`, `prime`, `scan`, `emit`) hide archived units. Pass `--include-archived` to fold them back in.
+Vector indexes live outside SQLite at `~/.simaris/vec/<model>/` (lance dataset + tantivy subdir).
+
+Default views (`list`, `search`, `ask`, `prime`, `scan`, `emit`, `similar`, `cluster`) hide archived units. Pass `--include-archived` to fold them back in.
 
 ## Admin Dashboard (simaris-server)
 

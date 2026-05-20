@@ -1,20 +1,44 @@
 # Simaris Architecture
 
-Knowledge unit storage and retrieval system backed by SQLite with FTS5 full-text search and graph-based linking.
+Knowledge unit storage and retrieval system backed by SQLite with hybrid retrieval (lance KNN + tantivy + FTS5, RRF fused) and graph-based linking.
 
 ## Module Overview
 
 ### `main.rs`
 
-CLI entry point. Defines the `Cli` struct (clap `Parser`) with global `--json` and `--debug` flags, and the `Command` enum covering all subcommands: `Add`, `Show`, `Edit`, `Link`, `Drop`, `Promote`, `Inbox`, `List`, `Search`, `Ask`, `Prime`, `Stats`, `Archive`, `Unarchive`, `Clone`, `Mark`, `Slug`, `Emit`, `Scan`, `Rewrite`, `Backup`, `Restore`, `Delete`. Also defines the `UnitType` enum (fact, procedure, principle, preference, lesson, idea, aspect), the `Relationship` enum (related_to, part_of, depends_on, contradicts, supersedes, sourced_from), and the `MarkKind` enum (used, wrong, outdated, helpful) with associated confidence deltas. The `main` function handles `Restore` without a database connection, then opens a connection for all other commands and dispatches to `db::*` and `display::*` functions.
+CLI entry point. Defines the `Cli` struct (clap `Parser`) with global `--json` and `--debug` flags, and the `Command` enum covering all subcommands: `Add`, `Show`, `Edit`, `Link`, `Drop`, `Promote`, `Inbox`, `List`, `Search`, `Similar`, `Cluster`, `Ask`, `Prime`, `Stats`, `Archive`, `Unarchive`, `Clone`, `Mark`, `Slug`, `Emit`, `Scan`, `Lint`, `Vec` (with `Backfill` subcommand), `ContextEnhance`, `Dream` (with `Decay`), `Vacuum` (with `Autolink`), `Rewrite`, `Backup`, `Restore`, `Delete`. Also defines the `UnitType` enum (fact, procedure, principle, preference, lesson, idea, aspect), the `Relationship` enum (related_to, part_of, depends_on, contradicts, supersedes, sourced_from), and the `MarkKind` enum (used, wrong, outdated, helpful) with associated confidence deltas. The `main` function handles `Restore` without a database connection, then opens a connection for all other commands and dispatches to `db::*`, `hybrid::*`, `similar::*`, `cluster::*`, `lint::*`, `context::*`, `dream::*`, and `display::*` functions. `vec` and `vacuum` handlers are implemented inline in this file.
 
 ### `db.rs`
 
-Database layer. Owns connection setup, schema initialization, migration, all CRUD operations, FTS5 search, backup/restore, and the `scan` health-check. All IDs are UUIDv7 strings. Tables: `units`, `links`, `inbox`, `marks`, `slugs`, and the `units_fts` virtual table. The module is entirely synchronous using `rusqlite::Connection`.
+Database layer. Owns connection setup, schema initialization, migration, all CRUD operations, FTS5 search, backup/restore, and the `scan` health-check. All IDs are UUIDv7 strings. Tables: `units`, `links`, `inbox`, `marks`, `slugs`, `lint_snapshots`, `embedding_cache`, and the `units_fts` virtual table. The module is entirely synchronous using `rusqlite::Connection`.
 
 ### `ask.rs`
 
 Two-phase retrieval pipeline: FTS5 search (up to 15 direct matches), then 1-hop graph expansion fetching all linked neighbours of each match. Returns an `AskResult` containing matched units, their IDs, and an optional debug trace. No LLM call — `ask` is a pure SQL + graph walk.
+
+### `hybrid.rs`
+
+Default retrieval path for `simaris search`. Issues a lance KNN query against the `~/.simaris/vec/<model>/` dataset and a parallel tantivy text query, then fuses the two rankings with Reciprocal Rank Fusion (k=60). Falls back to FTS5-only when the vec index is missing or `--no-vec` is passed; the fallback emits `fallback_method: "fts5"` in `--scores` output. Frontmatter is stripped before embedding so it does not pollute the vector signal.
+
+### `similar.rs`
+
+Near-duplicate detection primitive backing the `similar` command. Computes `α·vec_sim + β·tag_overlap + γ·type_match` against a seed unit; weights are tuned via `SIMARIS_SIM_ALPHA` / `_BETA` / `_GAMMA` (defaults `0.6 / 0.3 / 0.1`). Returns `SimilarHit { id, score, vec_sim, tag_overlap, type_match, body_length, tag_count }`. Vec-only near-dups with low content overlap are demoted to `related` via a Jaccard check (`content_overlap_jaccard`).
+
+### `cluster.rs`
+
+Store-wide redundancy survey. For each candidate unit (optionally tag/type filtered), runs `similar` and accumulates edges above a threshold; runs union-find to discover connected components; annotates each cluster with a pattern: `near-dup`, `temporal-log`, `type-confused`, `low-signal`, or `orphan`. Oversized clusters are re-split with a raised edge-score cutoff. Per-unit embeddings are cached across the scan to avoid re-hitting Ollama.
+
+### `lint.rs`
+
+Read-only rot audit. Surfaces orphan units, duplicate slugs/content, procedures missing canonical `part_of` parents, dual-parent contradictions, and tag-variant drift. Totals can be persisted to `lint_snapshots`; `--ci` exits non-zero on regression vs the most recent snapshot.
+
+### `context.rs`
+
+`context-enhance` command. Calls Anthropic (Haiku 3.5) via `ANTHROPIC_API_KEY` to generate a preamble for each unit and writes it to `units.context_preamble`. Rate-limited by `SIMARIS_RATE_LIMIT_RPM`. Consumed downstream by `vec backfill --reembed-with-context`.
+
+### `dream.rs`
+
+`dream decay` command. Applies Ebbinghaus forgetting `confidence *= 0.5 ^ (days_since_activity / half_life_days)` (default half-life 90 days), where "activity" = max(`updated`, latest mark timestamp, latest incoming link). Units below `0.1` are auto-archived; units pinned by a slug or referenced as a `part_of` parent are excluded.
 
 ### `display.rs`
 
@@ -105,17 +129,21 @@ pub fn connect() -> Result<Connection>
 
 ### Schema
 
-Five tables and one virtual table (see `docs/dev/data-model.md` for full column-by-column detail):
+Seven tables and one virtual table (see `docs/dev/data-model.md` for full column-by-column detail):
 
 ```sql
-units      (id TEXT PK, content, type, source, confidence, verified, archived,
-            tags JSON, conditions JSON, created, updated)
-links      (from_id, to_id, relationship)  -- composite PK, FK ON DELETE CASCADE
-inbox      (id TEXT PK, content, source, created)
-marks      (id TEXT PK, unit_id FK, kind, created)
-slugs      (slug TEXT PK, unit_id FK, created)
-units_fts  USING fts5(uuid, content, type, tags, source)  -- synced via triggers
+units            (id TEXT PK, content, type, source, confidence, verified, archived,
+                  tags JSON, conditions JSON, context_preamble, created, updated)
+links            (from_id, to_id, relationship)  -- composite PK, FK ON DELETE CASCADE
+inbox            (id TEXT PK, content, source, created)
+marks            (id TEXT PK, unit_id FK, kind, created)
+slugs            (slug TEXT PK, unit_id FK, created)
+lint_snapshots   (id, totals JSON, note, created)         -- persisted `lint` totals
+embedding_cache  (content_hash PK, model, vector BLOB, created)
+units_fts        USING fts5(uuid, content, type, tags, source)  -- synced via triggers
 ```
+
+Vector indexes live outside SQLite at `~/.simaris/vec/<model>/` (lance dataset + tantivy subdir).
 
 Indexes: `idx_links_to ON links(to_id)`, `idx_marks_unit ON marks(unit_id)`, `idx_slugs_unit_id ON slugs(unit_id)`.
 
@@ -328,3 +356,7 @@ From `Cargo.toml`:
 | `SIMARIS_WARN_BYTES` | Body-size warn threshold for `add`/`edit` (default `2048`) |
 | `SIMARIS_HARD_BYTES` | Body-size hard threshold for `add`/`edit` (default `8192`) |
 | `SIMARIS_BIN` | Path to `simaris` binary used by `simaris-server` (default: `simaris` via `PATH`) |
+| `SIMARIS_SIM_ALPHA` / `_BETA` / `_GAMMA` | `similar` scoring weights (`α·vec_sim + β·tag_overlap + γ·type_match`); defaults `0.6 / 0.3 / 0.1` |
+| `SIMARIS_OLLAMA_URL` | Ollama base URL used by `vec backfill` (default `http://localhost:11434`) |
+| `ANTHROPIC_API_KEY` | Required by `context-enhance --execute` |
+| `SIMARIS_RATE_LIMIT_RPM` | Rate limit for `context-enhance` Anthropic calls (default `50`) |
